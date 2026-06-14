@@ -39,4 +39,14 @@ resource documents 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   properties: { publicAccess: 'None' }
 }
 
+// Agency finance-policy documents uploaded by Finance, ingested into the RAG index
+// (SCOPING §7). Read by the ingestion worker (Blob Data Reader), written by the API
+// (Blob Data Contributor) — both via Managed Identity.
+resource agencyPolicies 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blob
+  name: 'agency-policies'
+  properties: { publicAccess: 'None' }
+}
+
 output name string = sa.name
+output blobEndpoint string = sa.properties.primaryEndpoints.blob

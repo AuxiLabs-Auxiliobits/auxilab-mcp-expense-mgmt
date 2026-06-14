@@ -114,6 +114,25 @@ module containerapps 'modules/containerapps.bicep' = {
   }
 }
 
+// Managed identities + least-privilege data-plane grants for the API and workers.
+module rbac 'modules/rbac.bicep' = {
+  scope: rg
+  name: 'rbac'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    location: location
+    tags: tags
+    storageName: storage.outputs.name
+    serviceBusNamespace: servicebus.outputs.namespace
+    keyVaultName: keyvault.outputs.name
+    deployAi: deployAi
+    foundryName: ai.?outputs.foundryName ?? ''
+    searchName: ai.?outputs.searchName ?? ''
+    docIntelName: ai.?outputs.docIntelName ?? ''
+  }
+}
+
 output resourceGroup string = rg.name
 output keyVaultName string = keyvault.outputs.name
 output acrLoginServer string = acr.outputs.loginServer
@@ -121,3 +140,7 @@ output postgresFqdn string = postgres.outputs.fqdn
 output foundryEndpoint string = ai.?outputs.foundryEndpoint ?? ''
 output searchEndpoint string = ai.?outputs.searchEndpoint ?? ''
 output containerAppsEnvId string = containerapps.outputs.environmentId
+output apiIdentityId string = rbac.outputs.apiIdentityId
+output apiIdentityClientId string = rbac.outputs.apiIdentityClientId
+output workerIdentityId string = rbac.outputs.workerIdentityId
+output workerIdentityClientId string = rbac.outputs.workerIdentityClientId

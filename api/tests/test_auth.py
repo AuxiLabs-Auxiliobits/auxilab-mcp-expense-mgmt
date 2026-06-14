@@ -1,50 +1,51 @@
-"""Proves the issuer-agnostic seam: a DbAuthProvider-minted token round-trips into the
-same Principal the rest of the app consumes, and RBAC guards reject the wrong role."""
+"""Auth + RBAC seam: tokens carry role + agency; the matrix and SoD are enforced."""
 
-import pytest
-from fastapi.testclient import TestClient
+from __future__ import annotations
 
-from app.main import app
-
-
-@pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
-
-
-def _login(client, email, password="demo") -> str:
-    r = client.post("/auth/login", json={"email": email, "password": password})
-    assert r.status_code == 200, r.text
-    return r.json()["access_token"]
+from tests.conftest import auth, login
 
 
 def test_login_and_me(client):
-    token = _login(client, "employee@demo.local")
-    r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    token = login(client, "employee@demo.local")
+    r = client.get("/auth/me", headers=auth(token))
     assert r.status_code == 200
     body = r.json()
     assert body["role"] == "employee"
-    assert body["scope"] == "self"  # derived from role, not stored
+    assert body["scope"] == "self"
+    assert body["agency_id"]  # bound to an agency
+
+
+def test_manager_scope_is_agency(client):
+    token = login(client, "manager@demo.local")
+    body = client.get("/auth/me", headers=auth(token)).json()
+    assert body["role"] == "manager"
+    assert body["scope"] == "agency"
 
 
 def test_bad_password_rejected(client):
-    r = client.post("/auth/login", json={"email": "employee@demo.local", "password": "wrong"})
+    r = client.post("/auth/login", json={"email": "employee@demo.local", "password": "nope"})
     assert r.status_code == 401
 
 
-def test_rbac_guard_blocks_employee(client):
-    token = _login(client, "employee@demo.local")
-    r = client.get("/finance/probe", headers={"Authorization": f"Bearer {token}"})
+def test_employee_cannot_access_manager_queue(client):
+    token = login(client, "employee@demo.local")
+    r = client.get("/manager/queue", headers=auth(token))
     assert r.status_code == 403
 
 
-def test_rbac_guard_allows_finance(client):
-    token = _login(client, "finance@demo.local")
-    r = client.get("/finance/probe", headers={"Authorization": f"Bearer {token}"})
+def test_finance_cannot_action_line_items(client):
+    token = login(client, "finance@demo.local")
+    # Finance lacks MANAGER_ACTION_LINE_ITEM capability.
+    r = client.get("/manager/queue", headers=auth(token))
+    assert r.status_code == 403
+
+
+def test_admin_can_list_agencies(client):
+    token = login(client, "admin@demo.local")
+    r = client.get("/admin/agencies", headers=auth(token))
     assert r.status_code == 200
-    assert r.json()["as"] == "finance"
+    assert any(a["name"] == "Crispin" for a in r.json())
 
 
-def test_no_token_is_401(client):
-    assert client.get("/me").status_code == 403  # HTTPBearer auto_error → 403 w/o creds
+def test_no_token_rejected(client):
+    assert client.get("/auth/me").status_code == 401  # HTTPBearer: no credentials

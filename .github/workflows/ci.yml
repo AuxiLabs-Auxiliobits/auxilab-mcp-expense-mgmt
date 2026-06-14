@@ -9,21 +9,27 @@ permissions:
   contents: read
 
 jobs:
-  api:
-    name: API — lint, type, test
+  python:
+    name: Python — lint + test (engine, api, workers, mcp)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: mypy app
-      - run: pytest -q
+      # Engine first — the other packages depend on it.
+      - run: pip install -e ./core-engine[dev]
+      - run: pip install -e ./api[dev] -e ./workers[dev] -e ./mcp-server[dev]
+      - name: Lint
+        run: ruff check core-engine api workers mcp-server
+      - name: Test core-engine
+        run: cd core-engine && pytest -q
+      - name: Test api
+        run: cd api && pytest -q
+      - name: Test workers
+        run: cd workers && pytest -q
+      - name: Test mcp-server
+        run: cd mcp-server && pytest -q
 
   infra:
     name: Infra — Bicep build + validate

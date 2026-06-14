@@ -1,0 +1,45 @@
+{
+  "name": "expense-management-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REFERENCE SCAFFOLD ONLY — Next.js 15 role-scoped portal for the enterprise expense-management platform. Not a finished app; see README.md.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.3.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "next-auth": "5.0.0-beta.25",
+    "@tanstack/react-query": "5.66.0",
+    "@tanstack/react-query-devtools": "5.66.0",
+    "react-hook-form": "7.54.2",
+    "@hookform/resolvers": "3.10.0",
+    "zod": "3.24.1",
+    "ag-grid-react": "33.1.0",
+    "ag-grid-community": "33.1.0",
+    "ag-grid-enterprise": "33.1.0",
+    "echarts": "5.6.0",
+    "echarts-for-react": "3.0.2",
+    "@tremor/react": "3.18.7",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "2.6.0",
+    "lucide-react": "0.474.0"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.13.0",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "tailwindcss": "3.4.17",
+    "postcss": "8.5.1",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.19.0",
+    "eslint-config-next": "15.3.0"
+  }
+}

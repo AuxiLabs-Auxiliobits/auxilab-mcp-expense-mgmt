@@ -104,6 +104,7 @@ output foundryName string = foundry.name
 output chatDeploymentName string = chatDeployment.name
 output embeddingDeploymentName string = embeddingDeployment.name
 output docIntelEndpoint string = docIntel.properties.endpoint
+output docIntelName string = docIntel.name
 output contentSafetyEndpoint string = contentSafety.properties.endpoint
 output searchEndpoint string = 'https://${search.name}.search.windows.net'
 output searchName string = search.name

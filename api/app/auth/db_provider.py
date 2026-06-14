@@ -26,7 +26,7 @@ class UserRecord:
     id: str
     email: str
     role: str
-    department: str | None
+    agency_id: str | None
     password_hash: str
     is_active: bool
 
@@ -60,7 +60,7 @@ class DbAuthProvider(AuthProvider):
             "sub": user.id,
             "email": user.email,
             "roles": [user.role],  # Entra emits a `roles` array
-            "department": user.department,
+            "agency_id": user.agency_id,
             "iat": now,
             "exp": now + self._ttl,
         }
