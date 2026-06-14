@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Manager Review Queue - Auxilab</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-primary-fixed-variant": "#930100",
+                "surface-container": "#f0eded",
+                "surface-dim": "#dcd9d9",
+                "on-secondary-fixed-variant": "#474746",
+                "surface-variant": "#e4e2e1",
+                "secondary-fixed": "#e5e2e1",
+                "outline-variant": "#ebbbb4",
+                "inverse-primary": "#ffb4a8",
+                "on-error-container": "#93000a",
+                "surface-alt": "#F6F6F6",
+                "primary-fixed": "#ffdad4",
+                "tertiary-container": "#1c7e9e",
+                "on-surface": "#1b1c1c",
+                "on-secondary-container": "#636262",
+                "on-secondary": "#ffffff",
+                "surface-container-high": "#eae8e7",
+                "primary": "#bc0100",
+                "error": "#ba1a1a",
+                "on-tertiary-fixed": "#001f2a",
+                "surface-container-low": "#f6f3f2",
+                "on-primary-fixed": "#410000",
+                "error-container": "#ffdad6",
+                "on-secondary-fixed": "#1c1b1b",
+                "secondary-container": "#e2dfde",
+                "on-surface-variant": "#603e39",
+                "on-primary-container": "#fffbff",
+                "primary-fixed-dim": "#ffb4a8",
+                "on-tertiary-fixed-variant": "#004d64",
+                "inverse-surface": "#303030",
+                "secondary-fixed-dim": "#c8c6c5",
+                "on-tertiary-container": "#fbfdff",
+                "secondary": "#5f5e5e",
+                "on-background": "#1b1c1c",
+                "signal-red": "#FF0100",
+                "success-green": "#61CE70",
+                "outline": "#956d67",
+                "background": "#fbf9f8",
+                "on-tertiary": "#ffffff",
+                "slate-muted": "#69727D",
+                "surface": "#fbf9f8",
+                "on-primary": "#ffffff",
+                "primary-container": "#ea0100",
+                "tertiary": "#006480",
+                "on-error": "#ffffff",
+                "inverse-on-surface": "#f3f0f0",
+                "deep-onyx": "#111110",
+                "surface-container-lowest": "#ffffff",
+                "surface-container-highest": "#e4e2e1",
+                "surface-tint": "#c00100",
+                "tertiary-fixed": "#bde9ff",
+                "tertiary-fixed-dim": "#7fd1f5",
+                "surface-bright": "#fbf9f8"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "stack-lg": "32px",
+                "margin-mobile": "16px",
+                "gutter": "24px",
+                "stack-md": "16px",
+                "margin-page": "40px",
+                "container-max": "1440px",
+                "unit": "4px",
+                "stack-sm": "8px"
+        },
+        "fontFamily": {
+                "body-sm": [
+                        "Hanken Grotesk"
+                ],
+                "body-lg": [
+                        "Hanken Grotesk"
+                ],
+                "headline-md": [
+                        "Hanken Grotesk"
+                ],
+                "headline-lg": [
+                        "Hanken Grotesk"
+                ],
+                "label-sm": [
+                        "JetBrains Mono"
+                ],
+                "label-md": [
+                        "JetBrains Mono"
+                ],
+                "headline-lg-mobile": [
+                        "Hanken Grotesk"
+                ],
+                "body-md": [
+                        "Hanken Grotesk"
+                ],
+                "headline-xl": [
+                        "Hanken Grotesk"
+                ]
+        },
+        "fontSize": {
+                "body-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "body-lg": [
+                        "18px",
+                        {
+                                "lineHeight": "28px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "headline-lg": [
+                        "32px",
+                        {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "label-sm": [
+                        "10px",
+                        {
+                                "lineHeight": "14px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "label-md": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-lg-mobile": [
+                        "28px",
+                        {
+                                "lineHeight": "36px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body-md": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "headline-xl": [
+                        "48px",
+                        {
+                                "lineHeight": "56px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        body {
+            background-color: #fbf9f8;
+            color: #1b1c1c;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md flex h-screen overflow-hidden bg-background">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-lowest dark:bg-surface-container-lowest font-body-md text-body-md h-screen w-64 fixed left-0 top-0 border-r border-outline-variant dark:border-outline-variant flex flex-col h-full py-6 z-50 hidden md:flex">
+<div class="px-6 mb-8 flex items-center space-x-3">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary font-bold">
+                A
+            </div>
+<div>
+<h1 class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed leading-none text-xl tracking-tight">Auxilab</h1>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase mt-1">Expense Management</p>
+</div>
+</div>
+<div class="px-4 mb-6">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded font-headline-md text-headline-md flex items-center justify-center space-x-2 hover:bg-on-tertiary-fixed-variant transition-colors text-base">
+<span class="material-symbols-outlined">add</span>
+<span>Submit Sheet</span>
+</button>
+</div>
+<ul class="flex-1 px-3 space-y-1 overflow-y-auto">
+<li>
+<a class="flex items-center space-x-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+</li>
+<li>
+<a class="flex items-center space-x-3 px-3 py-2.5 rounded text-secondary dark:text-secondary-fixed-dim font-bold border-r-4 border-secondary bg-surface-container-low opacity-80 transition-all duration-150" href="#">
+<span class="material-symbols-outlined fill">description</span>
+<span>Expense Sheets</span>
+</a>
+</li>
+<li>
+<a class="flex items-center space-x-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">receipt_long</span>
+<span>Receipts</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between px-3 py-2.5 rounded text-outline opacity-50 cursor-not-allowed" href="#">
+<div class="flex items-center space-x-3">
+<span class="material-symbols-outlined">gavel</span>
+<span>Policy Engine</span>
+</div>
+<span class="material-symbols-outlined text-[16px]">lock</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between px-3 py-2.5 rounded text-outline opacity-50 cursor-not-allowed" href="#">
+<div class="flex items-center space-x-3">
+<span class="material-symbols-outlined">history</span>
+<span>Audit Logs</span>
+</div>
+<span class="material-symbols-outlined text-[16px]">lock</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between px-3 py-2.5 rounded text-outline opacity-50 cursor-not-allowed" href="#">
+<div class="flex items-center space-x-3">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</div>
+<span class="material-symbols-outlined text-[16px]">lock</span>
+</a>
+</li>
+</ul>
+<ul class="px-3 mt-auto space-y-1 pt-4 border-t border-outline-variant">
+<li>
+<a class="flex items-center space-x-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">help</span>
+<span>Help Center</span>
+</a>
+</li>
+<li>
+<a class="flex items-center space-x-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span>Sign Out</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col md:ml-64 w-full bg-background h-screen">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-surface-container-low font-body-md text-body-md docked full-width top-0 sticky z-40 border-b border-outline-variant dark:border-outline-variant flex justify-between items-center w-full px-gutter h-16">
+<div class="flex items-center space-x-6">
+<!-- Search (on_left) -->
+<div class="relative w-64 hidden sm:block focus-within:ring-1 focus-within:ring-secondary rounded">
+<span class="material-symbols-outlined absolute left-3 top-2 text-on-surface-variant text-sm">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded py-1.5 pl-9 pr-3 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors h-8" placeholder="Search ID, Name, Amount..." type="text"/>
+</div>
+</div>
+<!-- Role Cues / Nav Links -->
+<div class="hidden lg:flex items-center space-x-1 border border-outline-variant rounded bg-surface-container-lowest p-1">
+<button class="px-4 py-1.5 rounded font-body-sm text-body-sm text-on-surface-variant dark:text-on-tertiary-container hover:text-secondary dark:hover:text-secondary-fixed transition-colors">Employee View</button>
+<button class="px-4 py-1.5 rounded font-body-sm text-body-sm text-secondary font-semibold bg-surface-container-low shadow-sm transition-colors border border-outline-variant focus:ring-1 focus:ring-secondary">Manager View</button>
+<button class="px-4 py-1.5 rounded font-body-sm text-body-sm text-outline opacity-50 cursor-not-allowed flex items-center space-x-1" disabled="">
+<span class="material-symbols-outlined text-[16px]">lock</span>
+<span>Finance View</span>
+</button>
+</div>
+<div class="flex items-center space-x-4">
+<button class="text-on-surface-variant hover:text-secondary transition-colors flex items-center justify-center p-1 rounded hover:bg-surface-container-low">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-secondary transition-colors flex items-center justify-center p-1 rounded hover:bg-surface-container-low">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="text-on-surface-variant hover:text-secondary transition-colors flex items-center justify-center p-1 rounded hover:bg-surface-container-low">
+<span class="material-symbols-outlined">help</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant ml-2">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A professional headshot of an enterprise manager in a well-lit modern office setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB3m0_a5ReeZrUNkj7Iso7Kok92k-R9PqJjrIJOVDOkssAu9bt76BRp2WvWqDQ_SKkjYGDJVB8lhDEKQqnRu6DDTl5fQH133cHHY28vWtnH6RSJ1joxfxgkGQRA6y09Yel8LF98fUPvsMc3_pGmdwlRUffI8ap8lNgj7loFBagaPsHc7X0jJ9m2WCZBuRSY2LbuBTF4SKMMnBL-1GYZ6suc_Hf2yIKrtgFf1sIl-kxg5wRbTbroAf6gKlWq3Vi-UYDStPrCW9FasZY"/>
+</div>
+</div>
+</header>
+<!-- Main Dashboard Canvas -->
+<main class="flex-1 overflow-hidden flex flex-col p-gutter md:p-margin-page gap-6">
+<!-- Header Section -->
+<div class="flex justify-between items-end">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">Review Queue</h2>
+<div class="flex items-center space-x-2 mt-1">
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded border border-outline-variant">AGENCY: US-EAST-01</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">12 Sheets Pending Approval</span>
+</div>
+</div>
+<div class="flex space-x-2">
+<button class="px-3 py-1.5 border border-outline-variant rounded bg-surface-container-lowest text-on-surface font-body-sm flex items-center space-x-1 hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+<span>Filter</span>
+</button>
+<button class="px-3 py-1.5 border border-outline-variant rounded bg-surface-container-lowest text-on-surface font-body-sm flex items-center space-x-1 hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px]">sort</span>
+<span>Sort</span>
+</button>
+</div>
+</div>
+<!-- Bento Master-Detail Layout -->
+<div class="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
+<!-- Master List (Left Column) -->
+<div class="w-full lg:w-1/3 flex flex-col bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden h-full">
+<div class="p-3 border-b border-outline-variant bg-surface-bright flex justify-between items-center">
+<h3 class="font-body-lg text-body-lg font-semibold text-on-surface">Pending Sheets</h3>
+<span class="bg-error-container text-error font-label-sm uppercase px-2 py-0.5 rounded border border-error-container/20">Needs Action</span>
+</div>
+<div class="flex-1 overflow-y-auto p-2 space-y-2">
+<!-- Sheet Item (Active) -->
+<div class="p-3 rounded border border-secondary bg-surface-container-low cursor-pointer shadow-sm relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary"></div>
+<div class="flex justify-between items-start mb-1">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-8891</span>
+<span class="font-body-sm text-body-sm text-on-surface font-semibold">$1,245.50</span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface mb-1">Q3 Field Operations</div>
+<div class="flex justify-between items-center text-on-surface-variant">
+<span class="font-body-sm text-body-sm">Jane Doe</span>
+<span class="font-body-sm text-body-sm text-xs">2 hours ago</span>
+</div>
+<div class="mt-2 pt-2 border-t border-outline-variant/30 flex items-center space-x-2">
+<span class="material-symbols-outlined text-[14px] text-error">pending_actions</span>
+<span class="font-body-sm text-xs text-on-surface-variant">5 Items</span>
+</div>
+</div>
+<!-- Sheet Item (Inactive) -->
+<div class="p-3 rounded border border-outline-variant hover:border-secondary hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex justify-between items-start mb-1">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-8890</span>
+<span class="font-body-sm text-body-sm text-on-surface font-semibold">$450.00</span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface mb-1">Client Dinner NYC</div>
+<div class="flex justify-between items-center text-on-surface-variant">
+<span class="font-body-sm text-body-sm">Mark Smith</span>
+<span class="font-body-sm text-body-sm text-xs">1 day ago</span>
+</div>
+<div class="mt-2 pt-2 border-t border-outline-variant/30 flex items-center space-x-2">
+<span class="material-symbols-outlined text-[14px] text-error">pending_actions</span>
+<span class="font-body-sm text-xs text-on-surface-variant">2 Items</span>
+</div>
+</div>
+<!-- Sheet Item (Inactive) -->
+<div class="p-3 rounded border border-outline-variant hover:border-secondary hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex justify-between items-start mb-1">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-8885</span>
+<span class="font-body-sm text-body-sm text-on-surface font-semibold">$3,120.00</span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface mb-1">Conference Travel SF</div>
+<div class="flex justify-between items-center text-on-surface-variant">
+<span class="font-body-sm text-body-sm">Sarah Jenkins</span>
+<span class="font-body-sm text-body-sm text-xs">2 days ago</span>
+</div>
+<div class="mt-2 pt-2 border-t border-outline-variant/30 flex items-center space-x-2">
+<span class="material-symbols-outlined text-[14px] text-error">pending_actions</span>
+<span class="font-body-sm text-xs text-on-surface-variant">8 Items</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Detail View (Right Column) -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden h-full">
+<!-- Detail Header -->
+<div class="p-4 border-b border-outline-variant bg-surface-bright">
+<div class="flex justify-between items-start mb-2">
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Q3 Field Operations</h3>
+<div class="flex items-center space-x-3 mt-1">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-8891</span>
+<span class="text-outline-variant">|</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Submitted by Jane Doe</span>
+</div>
+</div>
+<div class="text-right">
+<div class="font-headline-md text-headline-md text-on-surface">$1,245.50</div>
+<div class="font-label-sm text-label-sm uppercase text-error bg-error-container px-2 py-0.5 rounded inline-block border border-error-container/20">Pending Review</div>
+</div>
+</div>
+<!-- Progress Bar -->
+<div class="mt-4 bg-surface-container p-3 rounded border border-outline-variant">
+<div class="flex justify-between items-end mb-2">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Review Progress</span>
+<span class="font-label-md text-label-md text-on-surface-variant">3/5 Items Approved</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden flex">
+<div class="bg-success-green h-2" style="width: 60%"></div>
+<div class="bg-surface-dim h-2 flex-1"></div>
+</div>
+</div>
+</div>
+<!-- Line Items List -->
+<div class="flex-1 overflow-y-auto p-4 bg-background space-y-3">
+<!-- Line Item 1 (Approved) -->
+<div class="bg-surface-container-lowest border border-success-green/30 rounded p-3 shadow-sm flex items-start gap-4">
+<div class="mt-1">
+<span class="material-symbols-outlined text-success-green bg-success-green/10 rounded-full p-1">check_circle</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Flight to Chicago</div>
+<div class="font-label-md text-label-md text-on-surface-variant mt-0.5">CAT: Travel - Airfare</div>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">$450.00</div>
+</div>
+<div class="mt-2 text-success-green font-body-sm text-body-sm flex items-center">
+<span class="material-symbols-outlined text-[16px] mr-1">done_all</span>
+                                    Approved by AI Policy Engine
+                                </div>
+</div>
+</div>
+<!-- Line Item 2 (Approved) -->
+<div class="bg-surface-container-lowest border border-success-green/30 rounded p-3 shadow-sm flex items-start gap-4">
+<div class="mt-1">
+<span class="material-symbols-outlined text-success-green bg-success-green/10 rounded-full p-1">check_circle</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Uber to Hotel</div>
+<div class="font-label-md text-label-md text-on-surface-variant mt-0.5">CAT: Travel - Ground</div>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">$45.50</div>
+</div>
+</div>
+</div>
+<!-- Line Item 3 (Needs Review) -->
+<div class="bg-surface-container-lowest border border-secondary rounded p-4 shadow-sm flex items-start gap-4 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary"></div>
+<div class="mt-1">
+<span class="material-symbols-outlined text-secondary bg-secondary/10 rounded-full p-1">radio_button_unchecked</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start mb-2">
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Client Dinner - Steakhouse</div>
+<div class="font-label-md text-label-md text-on-surface-variant mt-0.5">CAT: Meals - Client</div>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">$650.00</div>
+</div>
+<div class="bg-error-container border border-error-container/20 rounded p-2 mb-3 flex items-start space-x-2">
+<span class="material-symbols-outlined text-error text-[16px] mt-0.5">warning</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Amount exceeds standard meal allowance ($150). Justification required per policy <a class="text-secondary hover:underline inline-flex items-center" href="#"><span class="material-symbols-outlined text-[14px] mx-0.5">link</span>MEAL-04</a>.</p>
+</div>
+<div class="flex justify-end space-x-2 border-t border-outline-variant/30 pt-3">
+<button class="px-3 py-1.5 text-on-surface-variant hover:text-secondary font-body-sm text-body-sm border border-outline-variant hover:border-secondary rounded transition-colors flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px]">info</span>
+<span>Request Info</span>
+</button>
+<button class="px-3 py-1.5 bg-error text-on-error font-body-sm text-body-sm rounded hover:bg-error/90 transition-colors flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px]">close</span>
+<span>Reject</span>
+</button>
+<button class="px-3 py-1.5 bg-secondary text-on-secondary font-body-sm text-body-sm rounded hover:bg-secondary/90 transition-colors flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px]">check</span>
+<span>Approve</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Line Item 4 (Needs Review) -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-3 shadow-sm flex items-start gap-4 hover:border-secondary/50 transition-colors">
+<div class="mt-1">
+<span class="material-symbols-outlined text-on-surface-variant bg-surface-container rounded-full p-1">radio_button_unchecked</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Equipment Rental</div>
+<div class="font-label-md text-label-md text-on-surface-variant mt-0.5">CAT: Ops - Equipment</div>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">$100.00</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Detail Footer Actions -->
+<div class="p-4 border-t border-outline-variant bg-surface-bright flex justify-end space-x-3">
+<button class="px-4 py-2 border border-outline-variant text-on-surface font-body-md text-body-md rounded hover:bg-surface-container-low transition-colors">
+                            Return to Queue
+                        </button>
+<button class="px-4 py-2 bg-primary text-on-primary font-body-md text-body-md rounded hover:bg-on-tertiary-fixed-variant transition-colors flex items-center space-x-2 opacity-50 cursor-not-allowed" disabled="" title="Complete line item reviews first">
+<span class="material-symbols-outlined text-[18px]">done_all</span>
+<span>Approve Entire Sheet</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API — lint, type, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy app
+      - run: pytest -q
+
+  infra:
+    name: Infra — Bicep build + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bicep build (compile check)
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+      # what-if against a real subscription runs in the deploy workflow, not on PRs.

@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employee Dashboard | Auxilab</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "primary-container": "#ea0100",
+                "on-secondary-fixed-variant": "#474746",
+                "surface-dim": "#dcd9d9",
+                "primary": "#bc0100",
+                "surface-container-highest": "#e4e2e1",
+                "surface-bright": "#fbf9f8",
+                "surface-container": "#f0eded",
+                "slate-muted": "#69727D",
+                "tertiary-fixed-dim": "#7fd1f5",
+                "outline-variant": "#ebbbb4",
+                "surface": "#fbf9f8",
+                "tertiary": "#006480",
+                "on-background": "#1b1c1c",
+                "success-green": "#61CE70",
+                "on-primary-fixed-variant": "#930100",
+                "signal-red": "#FF0100",
+                "on-tertiary-fixed-variant": "#004d64",
+                "secondary-container": "#e2dfde",
+                "surface-variant": "#e4e2e1",
+                "on-secondary-container": "#636262",
+                "on-primary-container": "#fffbff",
+                "surface-tint": "#c00100",
+                "deep-onyx": "#111110",
+                "primary-fixed": "#ffdad4",
+                "surface-alt": "#F6F6F6",
+                "on-secondary-fixed": "#1c1b1b",
+                "on-primary": "#ffffff",
+                "on-primary-fixed": "#410000",
+                "on-error": "#ffffff",
+                "error-container": "#ffdad6",
+                "inverse-primary": "#ffb4a8",
+                "background": "#fbf9f8",
+                "on-error-container": "#93000a",
+                "error": "#ba1a1a",
+                "secondary-fixed": "#e5e2e1",
+                "outline": "#956d67",
+                "inverse-surface": "#303030",
+                "surface-container-low": "#f6f3f2",
+                "tertiary-container": "#1c7e9e",
+                "surface-container-lowest": "#ffffff",
+                "primary-fixed-dim": "#ffb4a8",
+                "surface-container-high": "#eae8e7",
+                "inverse-on-surface": "#f3f0f0",
+                "on-surface": "#1b1c1c",
+                "on-secondary": "#ffffff",
+                "secondary": "#5f5e5e",
+                "on-tertiary": "#ffffff",
+                "on-surface-variant": "#603e39",
+                "tertiary-fixed": "#bde9ff",
+                "secondary-fixed-dim": "#c8c6c5",
+                "on-tertiary-fixed": "#001f2a",
+                "on-tertiary-container": "#fbfdff"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "margin-page": "40px",
+                "gutter": "24px",
+                "unit": "4px",
+                "container-max": "1440px",
+                "stack-md": "16px",
+                "margin-mobile": "16px",
+                "stack-sm": "8px",
+                "stack-lg": "32px"
+        },
+        "fontFamily": {
+                "headline-xl": [
+                        "Hanken Grotesk"
+                ],
+                "body-lg": [
+                        "Hanken Grotesk"
+                ],
+                "body-md": [
+                        "Hanken Grotesk"
+                ],
+                "label-md": [
+                        "JetBrains Mono"
+                ],
+                "headline-md": [
+                        "Hanken Grotesk"
+                ],
+                "headline-lg": [
+                        "Hanken Grotesk"
+                ],
+                "headline-lg-mobile": [
+                        "Hanken Grotesk"
+                ],
+                "body-sm": [
+                        "Hanken Grotesk"
+                ],
+                "label-sm": [
+                        "JetBrains Mono"
+                ]
+        },
+        "fontSize": {
+                "headline-xl": [
+                        "48px",
+                        {
+                                "lineHeight": "56px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "body-lg": [
+                        "18px",
+                        {
+                                "lineHeight": "28px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "body-md": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "label-md": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "headline-lg": [
+                        "32px",
+                        {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "headline-lg-mobile": [
+                        "28px",
+                        {
+                                "lineHeight": "36px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "label-sm": [
+                        "10px",
+                        {
+                                "lineHeight": "14px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        .material-symbols-outlined {
+          font-family: 'Material Symbols Outlined';
+          font-weight: normal;
+          font-style: normal;
+          font-size: 24px;
+          line-height: 1;
+          letter-spacing: normal;
+          text-transform: none;
+          display: inline-block;
+          white-space: nowrap;
+          word-wrap: normal;
+          direction: ltr;
+          -webkit-font-feature-settings: 'liga';
+          -webkit-font-smoothing: antialiased;
+        }
+      </style>
+</head>
+<body class="bg-background text-on-surface font-body-sm min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-lowest dark:bg-surface-container-lowest h-screen w-64 fixed left-0 top-0 border-r border-outline-variant dark:border-outline-variant hidden md:flex flex-col py-6 z-50">
+<!-- Header -->
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_balance</span>
+</div>
+<div>
+<h1 class="font-headline-lg text-body-lg font-bold text-primary dark:text-primary-fixed">Auxilab</h1>
+<p class="font-label-md text-label-md text-on-surface-variant">Expense Management</p>
+</div>
+</div>
+</div>
+<!-- CTA -->
+<div class="px-6 mb-6">
+<button class="w-full bg-primary text-on-primary font-body-sm text-body-sm py-2.5 px-4 rounded flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                Submit Sheet
+            </button>
+</div>
+<!-- Main Nav -->
+<div class="flex-1 px-4 overflow-y-auto space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-r-full text-secondary dark:text-secondary-fixed-dim font-bold border-r-4 border-secondary bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard" data-weight="fill" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+                My Expense Sheets
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+                My Receipts
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </a>
+</div>
+<!-- Footer Nav -->
+<div class="px-4 mt-auto space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+                Help Center
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded text-on-surface-variant dark:text-on-tertiary-container hover:text-primary hover:bg-surface-container-low transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+                Sign Out
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 md:ml-64 flex flex-col min-h-screen relative">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-surface-container-low border-b border-outline-variant dark:border-outline-variant docked full-width top-0 sticky z-40">
+<div class="flex justify-between items-center w-full px-gutter h-16">
+<!-- Left: Mobile Menu Toggle / Brand -->
+<div class="flex items-center gap-4">
+<button class="md:hidden text-on-surface-variant hover:text-primary">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<!-- Search Bar (on_left as per JSON) -->
+<div class="hidden sm:flex items-center relative">
+<span class="material-symbols-outlined absolute left-3 text-on-surface-variant text-[18px]">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-lowest border border-outline-variant rounded font-label-md text-label-md focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary w-64 transition-all" placeholder="Search sheets, receipts..." type="text"/>
+</div>
+</div>
+<!-- Middle: Context Links -->
+<div class="hidden lg:flex items-center h-full">
+<nav class="flex h-full">
+<a class="flex items-center h-full px-4 text-secondary font-semibold border-b-2 border-secondary hover:text-secondary dark:hover:text-secondary-fixed transition-colors" href="#">Employee View</a>
+</nav>
+</div>
+<!-- Right: Actions & Profile -->
+<div class="flex items-center gap-2 sm:gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded hover:bg-surface-container-high focus:ring-1 focus:ring-secondary relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border border-surface"></span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded hover:bg-surface-container-high focus:ring-1 focus:ring-secondary">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1.5 rounded hover:bg-surface-container-high focus:ring-1 focus:ring-secondary hidden sm:block">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<div class="h-8 w-px bg-outline-variant mx-2 hidden sm:block"></div>
+<button class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-body-lg text-body-lg overflow-hidden border border-outline-variant focus:ring-1 focus:ring-secondary">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-dK1yfEIvgQj41fz53badizKcUfgYS8n90fNB7I-N6mOoyM1Pdh2-WRTfe-uI9nuQVe9b8E0jaTp3lC_L1Li_XMkieY-HjRAOJ4m17KrsYCbEfv_qVEprK4La1-InT8XNdlxryqS_ALEEC2_C9s7b-JRMb9_nuaHqk1m2nnNVS9R0EthlZVIuHTCJiPbSkrNumXwSBI6DrR_FcP79z8Ss-iDgZuvC1RRHr963oPVK4st1a132SLA21CmN99iINZRGjO32oBJZ-BI"/>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Dashboard Canvas -->
+<main class="flex-1 p-margin-page bg-background w-full max-w-container-max mx-auto">
+<!-- Header Section -->
+<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Overview</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Manage your active sheets and recent expenses.</p>
+</div>
+<div class="flex gap-3">
+<button class="bg-surface-container-lowest border border-outline-variant text-primary font-body-sm text-body-sm py-2 px-4 rounded hover:bg-surface-container-low transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">upload_file</span>
+                        Quick Receipt
+                    </button>
+<button class="bg-primary text-on-primary font-body-sm text-body-sm py-2 px-4 rounded hover:opacity-90 transition-opacity flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        New Sheet
+                    </button>
+</div>
+</div>
+<!-- KPI Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+<!-- KPI 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-5 shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">Reimbursed This Month</span>
+<span class="material-symbols-outlined text-success-green text-[20px]">trending_up</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md text-primary">$2,450.00</span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-high rounded overflow-hidden">
+<div class="h-full bg-success-green w-3/4"></div>
+</div>
+</div>
+<!-- KPI 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-5 shadow-sm relative overflow-hidden">
+<div class="absolute right-0 top-0 w-24 h-24 bg-yellow-500 opacity-10 rounded-bl-full transform translate-x-8 -translate-y-8"></div>
+<div class="flex items-center justify-between mb-2 relative z-10">
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">Pending Approval</span>
+<span class="material-symbols-outlined text-yellow-500 text-[20px]">hourglass_empty</span>
+</div>
+<div class="flex items-baseline gap-2 relative z-10">
+<span class="font-headline-md text-headline-md text-primary">$845.50</span>
+<span class="font-label-md text-label-md text-on-surface-variant">/ 2 Sheets</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-3 flex items-center gap-1 relative z-10">
+<span class="material-symbols-outlined text-[14px]">info</span>
+                        Expected processing in 3 days
+                    </p>
+</div>
+<!-- KPI 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-5 shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">Drafts Value</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">draft</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md text-primary">$120.00</span>
+</div>
+<button class="mt-3 text-secondary font-label-md text-label-md hover:underline flex items-center gap-1">
+                        Complete drafts
+                        <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Main Content Grid Area -->
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+<!-- Left Column (Active Sheet Details) - Takes 2 cols on XL -->
+<div class="xl:col-span-2 flex flex-col gap-6">
+<!-- Current Active Sheet Panel -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col h-full shadow-sm">
+<!-- Panel Header -->
+<div class="px-5 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-bright rounded-t-lg">
+<div class="flex items-center gap-3">
+<h3 class="font-body-lg text-body-lg text-primary">Q3 Engineering Offsite</h3>
+<span class="bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-0.5 rounded-full font-label-md text-label-md flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    DRAFT
+                                </span>
+</div>
+<div class="font-label-md text-label-md text-on-surface-variant">
+                                SH-2023-089
+                            </div>
+</div>
+<!-- Panel Content / Grid -->
+<div class="p-0 flex-1 overflow-x-auto">
+<!-- Simulated AG Grid Header -->
+<div class="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-5 py-2 bg-surface-container-low border-b border-outline-variant font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider min-w-[600px]">
+<div class="w-8"></div>
+<div>Merchant / Category</div>
+<div class="w-24 text-right">Date</div>
+<div class="w-20 text-center">Receipt</div>
+<div class="w-24 text-right">Amount</div>
+</div>
+<!-- Grid Rows -->
+<div class="flex flex-col min-w-[600px]">
+<!-- Row 1 -->
+<div class="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-5 py-3 border-b border-outline-variant hover:bg-surface-container-lowest transition-colors group cursor-pointer">
+<div class="flex items-center w-8">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary w-4 h-4" type="checkbox"/>
+</div>
+<div>
+<div class="font-body-sm text-body-sm font-medium text-primary">Delta Airlines</div>
+<div class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">flight</span> Travel
+                                        </div>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-on-surface-variant w-24">
+                                        Oct 12
+                                    </div>
+<div class="flex items-center justify-center w-20">
+<button class="text-secondary hover:bg-secondary-fixed p-1 rounded transition-colors" title="View Attachment">
+<span class="material-symbols-outlined text-[18px]">attachment</span>
+</button>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-primary font-medium w-24">
+                                        $450.00
+                                    </div>
+</div>
+<!-- Row 2 (AI Flagged) -->
+<div class="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-5 py-3 border-b border-outline-variant bg-error-container/20 hover:bg-error-container/30 transition-colors group cursor-pointer relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500"></div>
+<div class="flex items-center w-8">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary w-4 h-4" type="checkbox"/>
+</div>
+<div>
+<div class="font-body-sm text-body-sm font-medium text-primary">Uber Eats</div>
+<div class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">restaurant</span> Meals
+                                        </div>
+<!-- AI Citation -->
+<div class="mt-1 flex items-center gap-1 text-yellow-500 text-[11px] font-label-md bg-surface p-1 rounded border border-outline-variant inline-flex">
+<span class="material-symbols-outlined text-[12px]">smart_toy</span>
+                                            Exceeds daily meal allowance
+                                            <span class="text-outline cursor-pointer hover:text-primary ml-1 border-l border-outline-variant pl-1">POL-ML-02</span>
+</div>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-on-surface-variant w-24">
+                                        Oct 13
+                                    </div>
+<div class="flex items-center justify-center w-20">
+<button class="text-error hover:bg-error-container p-1 rounded transition-colors" title="Missing Receipt">
+<span class="material-symbols-outlined text-[18px]">receipt_long</span>
+</button>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-primary font-medium w-24">
+                                        $85.50
+                                    </div>
+</div>
+<!-- Row 3 -->
+<div class="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-5 py-3 border-b border-outline-variant hover:bg-surface-container-lowest transition-colors group cursor-pointer">
+<div class="flex items-center w-8">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary w-4 h-4" type="checkbox"/>
+</div>
+<div>
+<div class="font-body-sm text-body-sm font-medium text-primary">WeWork</div>
+<div class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">desk</span> Office Space
+                                        </div>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-on-surface-variant w-24">
+                                        Oct 14
+                                    </div>
+<div class="flex items-center justify-center w-20">
+<button class="text-secondary hover:bg-secondary-fixed p-1 rounded transition-colors" title="View Attachment">
+<span class="material-symbols-outlined text-[18px]">attachment</span>
+</button>
+</div>
+<div class="flex items-center justify-end font-label-md text-label-md text-primary font-medium w-24">
+                                        $120.00
+                                    </div>
+</div>
+</div>
+</div>
+<!-- Panel Footer Actions -->
+<div class="px-5 py-4 border-t border-outline-variant bg-surface-container-lowest flex justify-between items-center rounded-b-lg">
+<button class="text-on-surface-variant hover:text-primary font-body-sm text-body-sm flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[18px]">add_circle</span> Add Line Item
+                            </button>
+<div class="flex items-center gap-4">
+<div class="font-label-md text-label-md text-on-surface-variant">Total: <span class="text-primary font-bold text-body-lg">$655.50</span></div>
+<button class="bg-primary text-on-primary font-body-sm text-body-sm py-1.5 px-4 rounded hover:opacity-90 transition-opacity">
+                                    Review &amp; Submit
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column (Recent Sheets List) -->
+<div class="flex flex-col gap-6">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm flex flex-col h-full">
+<div class="px-5 py-4 border-b border-outline-variant flex justify-between items-center">
+<h3 class="font-body-lg text-body-lg text-primary">Recent Sheets</h3>
+<button class="text-secondary hover:underline font-label-md text-label-md">View All</button>
+</div>
+<div class="flex flex-col p-2 space-y-1">
+<!-- Sheet Item (Submitted) -->
+<div class="p-3 rounded hover:bg-surface-container-low transition-colors border border-transparent hover:border-outline-variant cursor-pointer">
+<div class="flex justify-between items-start mb-1">
+<h4 class="font-body-sm text-body-sm font-medium text-primary">Client Dinner NYC</h4>
+<span class="font-label-md text-label-md text-primary">$340.00</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-088</span>
+<span class="bg-tertiary-fixed text-on-tertiary-fixed-variant px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">schedule</span> SUBMITTED
+                                    </span>
+</div>
+</div>
+<!-- Sheet Item (Approved) -->
+<div class="p-3 rounded hover:bg-surface-container-low transition-colors border border-transparent hover:border-outline-variant cursor-pointer">
+<div class="flex justify-between items-start mb-1">
+<h4 class="font-body-sm text-body-sm font-medium text-primary">Hardware Procurement</h4>
+<span class="font-label-md text-label-md text-primary">$1,200.00</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-085</span>
+<span class="bg-success-green/10 text-success-green px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 border border-success-green/20">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> APPROVED
+                                    </span>
+</div>
+</div>
+<!-- Sheet Item (Paid) -->
+<div class="p-3 rounded hover:bg-surface-container-low transition-colors border border-transparent hover:border-outline-variant cursor-pointer opacity-70">
+<div class="flex justify-between items-start mb-1">
+<h4 class="font-body-sm text-body-sm font-medium text-primary">September Commute</h4>
+<span class="font-label-md text-label-md text-primary">$150.00</span>
+</div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-label-md text-label-md text-on-surface-variant">SH-2023-070</span>
+<span class="bg-surface-container-highest text-on-surface-variant px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">paid</span> PAID
+                                    </span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

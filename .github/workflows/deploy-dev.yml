@@ -1,0 +1,58 @@
+name: Deploy (dev)
+
+# Manual trigger so infra/app changes are deployed deliberately, not on every push.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC federated login to Azure — no stored secrets
+  contents: read
+
+env:
+  RESOURCE_GROUP: expmgmt-dev-rg
+  LOCATION: centralindia
+
+jobs:
+  infra:
+    name: Deploy infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: What-if
+        run: |
+          az deployment sub what-if \
+            --location "$LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.dev.bicepparam \
+            --parameters pgAdminPassword="${{ secrets.PG_ADMIN_PASSWORD }}"
+      - name: Deploy
+        run: |
+          az deployment sub create \
+            --location "$LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.dev.bicepparam \
+            --parameters pgAdminPassword="${{ secrets.PG_ADMIN_PASSWORD }}"
+
+  api-image:
+    name: Build & push API image
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: ACR build (image built in Azure, no local Docker needed)
+        run: |
+          az acr build \
+            --registry expmgmtdevacr \
+            --image expense-api:${{ github.sha }} \
+            --file api/Dockerfile api
+      # Container App create/update is added once the app module lands (S2).
