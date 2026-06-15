@@ -384,8 +384,13 @@ def _clause_is_grounded(cited: str | None, clauses: list[str]) -> bool:
 
 
 def _retrieval_query(items: list[ApproverLineItem]) -> str:
-    """Build a retrieval query from the sheet's categories/merchants (SCOPING §7)."""
-    terms = {i.category or "" for i in items} | {i.merchant for i in items}
+    """Build a retrieval query from the sheet's categories/merchants/descriptions (SCOPING §7).
+
+    Descriptions carry the most policy-relevant signal (e.g. "Wi-Fi / internet"), so they're
+    included alongside category + merchant to improve ranking."""
+    terms: set[str] = set()
+    for i in items:
+        terms.update({i.category or "", i.merchant, i.description})
     return " ".join(sorted(t for t in terms if t)) or "expense policy"
 
 

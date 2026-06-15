@@ -12,6 +12,7 @@ Azure, no langgraph required). It reproduces the §20.E acceptance check: Wi-Fi 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from decimal import Decimal
 
@@ -72,7 +73,9 @@ def _demo() -> int:
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     argv = argv if argv is not None else sys.argv[1:]
-    command = argv[0] if argv else "demo"
+    # The container selects its consumer via WORKER_CONSUMER (finance | ingestion); an
+    # explicit CLI arg still wins. Falls back to the offline `demo` when neither is set.
+    command = argv[0] if argv else os.environ.get("WORKER_CONSUMER", "demo")
 
     if command == "demo":
         return _demo()

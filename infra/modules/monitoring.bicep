@@ -29,3 +29,4 @@ output workspaceId string = law.id
 output workspaceName string = law.name
 output workspaceCustomerId string = law.properties.customerId
 output appInsightsConnectionString string = appi.properties.ConnectionString
+output appInsightsName string = appi.name

@@ -13,7 +13,12 @@ from pathlib import Path
 import pytest
 
 from workers.config import Settings
-from workers.consumers.ingestion import chunk_text, ingest_document, upsert_to_search
+from workers.consumers.ingestion import (
+    chunk_text,
+    ingest_document,
+    upsert_to_search,
+    virus_scan,
+)
 
 
 def _offline_settings() -> Settings:
@@ -59,3 +64,16 @@ def test_ingest_empty_document_raises(tmp_path: Path):
 def test_upsert_offline_returns_chunk_count():
     n = upsert_to_search("crispin", "1", ["a", "b", "c"], [[], [], []], _offline_settings())
     assert n == 3
+
+
+def test_virus_scan_offline_noop_for_file_uri(tmp_path: Path):
+    # file:// URI → offline no-op even if storage is configured (no Azure call, no raise).
+    doc = tmp_path / "policy.txt"
+    doc.write_text("x", encoding="utf-8")
+    settings = Settings(storage_account_url="https://acct.blob.core.windows.net")
+    virus_scan(doc.resolve().as_uri(), settings)  # must not raise
+
+
+def test_virus_scan_offline_noop_when_no_storage():
+    # https blob URI but no storage configured → still offline no-op.
+    virus_scan("https://acct.blob.core.windows.net/c/policy.pdf", _offline_settings())

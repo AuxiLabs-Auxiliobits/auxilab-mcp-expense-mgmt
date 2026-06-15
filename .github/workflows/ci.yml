@@ -31,6 +31,19 @@ jobs:
       - name: Test mcp-server
         run: cd mcp-server && pytest -q
 
+  evals:
+    name: Eval — golden-dataset regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Offline, deterministic eval — no Azure/network. Exits non-zero on accuracy regression.
+      - run: pip install -e ./core-engine[dev]
+      - name: Golden-dataset regression gate (classifier + parser)
+        run: cd core-engine && python -m expense_core.evals
+
   infra:
     name: Infra — Bicep build + validate
     runs-on: ubuntu-latest

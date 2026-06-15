@@ -47,7 +47,10 @@ def build_llm(settings: Settings) -> LLMGateway:
         from expense_core.llm.providers import AzureFoundryProvider  # noqa: PLC0415
 
         return AzureFoundryProvider(
-            endpoint=settings.foundry_endpoint, deployment=settings.foundry_deployment
+            endpoint=settings.foundry_endpoint,
+            deployment=settings.foundry_deployment,
+            api_key=settings.foundry_api_key or None,
+            api_version=settings.embedding_api_version,
         )
     return LocalEchoProvider()
 
@@ -87,15 +90,64 @@ def handle_sheet(
         }
     )
     result = approve_sheet(state, retriever=retriever, llm=llm, shield=shield)
-    # TODO: persist `result` to the decisions table + emit the workflow event
-    # (FINANCE_APPROVED / FINANCE_REJECTED / FINANCE_MANUAL_REVIEW), with the audit row
-    # carrying model_version + policy_version + cited clauses (SCOPING §6.4).
+    # Persist the decision via the API webhook, which writes the audit row and emits the
+    # workflow event (FINANCE_APPROVED / FINANCE_REJECTED / FINANCE_MANUAL_REVIEW) carrying
+    # model_version + policy_version + cited clauses (SCOPING §6.4). A failed POST propagates
+    # so the consumer loop retries/dead-letters — it NEVER silent-approves (SCOPING §8).
+    post_decision(result, settings)
     logger.info(
         "Sheet %s → %s (policy=%s model=%s conf=%.2f)",
         result.sheet_id, result.decision, result.policy_version,
         result.model_version, result.confidence,
     )
     return result
+
+
+def _cited_clauses(result: SheetResult) -> list[str]:
+    """The distinct policy clauses the verdicts cited, in first-seen order (SCOPING §6.4)."""
+    clauses: list[str] = []
+    for verdict in result.line_item_verdicts:
+        clause = verdict.cited_clause
+        if clause and clause not in clauses:
+            clauses.append(clause)
+    return clauses
+
+
+def post_decision(result: SheetResult, settings: Settings) -> None:
+    """POST the approver decision to the API webhook (SCOPING §6.3, §6.4).
+
+    Mirrors `callback_indexed` in ingestion.py: lazy-import httpx, no-op offline (empty
+    `api_base_url`), authenticate as the AGENT principal, and `raise_for_status()` so a failed
+    post propagates to the consumer loop (NEVER silent-approve, SCOPING §8). The body matches
+    the API's `LlmDecisionRequest` (decision, model_version, policy_version, cited_clauses,
+    confidence).
+    """
+    if not settings.api_base_url:
+        logger.info(
+            "llm-decision callback (offline no-op): sheet=%s decision=%s",
+            result.sheet_id, result.decision,
+        )
+        return
+
+    import httpx  # noqa: PLC0415
+
+    url = (
+        f"{settings.api_base_url.rstrip('/')}"
+        f"/finance/sheets/{result.sheet_id}/llm-decision"
+    )
+    headers = {"Authorization": f"Bearer {settings.agent_token}"} if settings.agent_token else {}
+    resp = httpx.post(
+        url, headers=headers,
+        json={
+            "decision": result.decision.value,
+            "model_version": result.model_version,
+            "policy_version": result.policy_version,
+            "cited_clauses": _cited_clauses(result),
+            "confidence": result.confidence,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
 
 
 def main(settings: Settings | None = None) -> None:

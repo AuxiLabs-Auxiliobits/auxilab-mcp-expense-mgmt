@@ -13,6 +13,9 @@ param workspaceName string
 @description('Customer (workspace) id of the Log Analytics workspace')
 param workspaceCustomerId string
 
+@description('Infrastructure subnet id for VNet-injection. Empty = public (non-hardened) env.')
+param infrastructureSubnetId string = ''
+
 // Reference the already-deployed workspace to read its shared key at deploy time.
 resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
   name: workspaceName
@@ -31,6 +34,10 @@ resource cae 'Microsoft.App/managedEnvironments@2024-03-01' = {
       }
     }
     zoneRedundant: env == 'prod'
+    vnetConfiguration: empty(infrastructureSubnetId) ? null : {
+      infrastructureSubnetId: infrastructureSubnetId
+      internal: false
+    }
   }
 }
 

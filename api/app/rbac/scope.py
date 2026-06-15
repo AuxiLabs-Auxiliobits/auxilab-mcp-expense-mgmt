@@ -13,6 +13,19 @@ from app.models.line_item import LineItem
 from app.principal import Principal, Role, Scope
 
 
+def assert_can_manage_agency_policy(principal: Principal, agency_id: str) -> None:
+    """Policy-document management is agency-isolated for Finance: a Finance user may only
+    upload/publish/view policy docs for **their own** agency. Admin stays org-wide
+    (decision recorded against SCOPING §3 — Finance intentionally narrowed for policy docs)."""
+    if principal.role is Role.ADMIN:
+        return
+    if principal.role is Role.FINANCE:
+        if principal.agency_id != agency_id:
+            raise _forbidden("finance may only manage policy docs for its own agency")
+        return
+    raise _forbidden("policy-document management requires finance or admin")
+
+
 def assert_can_view_sheet(principal: Principal, sheet: ExpenseSheet) -> None:
     """Employee → own only; Manager → own agency; Finance/Admin → all (SCOPING §3.2)."""
     if principal.scope is Scope.ALL:

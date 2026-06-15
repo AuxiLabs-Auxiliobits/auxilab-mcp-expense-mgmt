@@ -1,0 +1,16 @@
+{"receipt_text": "Marriott Hotels, 2 nights @ $210, Tax $42, Total $462", "expected_total": "462", "expected_tax": "42", "expected_reconciles": true}
+{"receipt_text": "Hilton Garden, 3 nights @ $150, Tax $45, Total $495", "expected_total": "495", "expected_tax": "45", "expected_reconciles": true}
+{"receipt_text": "Hertz Rentals, 2 days @ $45, Tax $9, Total $99", "expected_total": "99", "expected_tax": "9", "expected_reconciles": true}
+{"receipt_text": "Delta Airlines, 1 ticket @ $320, Tax $28, Total $348", "expected_total": "348", "expected_tax": "28", "expected_reconciles": true}
+{"receipt_text": "Hotel Plaza, 1 nights @ $300, Tax $60, Total $360", "expected_total": "360", "expected_tax": "60", "expected_reconciles": true}
+{"receipt_text": "Uber Trip, 1 ride @ $23.50, Tax $0, Total $23.50", "expected_total": "23.50", "expected_tax": "0", "expected_reconciles": true}
+{"receipt_text": "Lyft Ride, 1 ride @ $15, Tax $0, Total $15", "expected_total": "15", "expected_tax": "0", "expected_reconciles": true}
+{"receipt_text": "Cafe Roma, Tax $3.20, Total $40.20", "expected_total": "40.20", "expected_tax": "3.20", "expected_reconciles": true}
+{"receipt_text": "Staples Store, Tax $5.00, Total $55.00", "expected_total": "55.00", "expected_tax": "5.00", "expected_reconciles": true}
+{"receipt_text": "GitHub Subscription, Tax $0, Total $21.00", "expected_total": "21.00", "expected_tax": "0", "expected_reconciles": true}
+{"receipt_text": "Restaurant XYZ, Tax $8.50, Total $58.50", "expected_total": "58.50", "expected_tax": "8.50", "expected_reconciles": true}
+{"receipt_text": "Coffee Shop, Tax $1.00, Total $6.00", "expected_total": "6.00", "expected_tax": "1.00", "expected_reconciles": true}
+{"receipt_text": "Diner with Tip, Tax $6, Total $80", "expected_total": "80", "expected_tax": "6", "expected_reconciles": true}
+{"receipt_text": "Rounding Cafe, Tax $3.33, Total $33.33", "expected_total": "33.33", "expected_tax": "3.33", "expected_reconciles": true}
+{"receipt_text": "Sparse Receipt, Total $100", "expected_total": "100", "expected_tax": "0", "expected_reconciles": true}
+{"receipt_text": "Mismatch Store, 1 item @ $50, Tax $5, Total $60", "expected_total": "60", "expected_tax": "5", "expected_reconciles": false}

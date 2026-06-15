@@ -41,10 +41,17 @@ class AzureFoundryProvider:
     Requires the optional `[azure]` dependencies. Construct once and inject.
     """
 
-    def __init__(self, endpoint: str, deployment: str, *, credential: object | None = None) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        deployment: str,
+        *,
+        api_key: str | None = None,
+        api_version: str = "2024-10-21",
+        credential: object | None = None,
+    ) -> None:
         try:
-            from azure.ai.inference import ChatCompletionsClient  # noqa: PLC0415
-            from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+            from openai import AzureOpenAI  # noqa: PLC0415
         except ImportError as e:  # pragma: no cover - exercised only with extras absent
             raise RuntimeError(
                 "AzureFoundryProvider needs the 'azure' extra: pip install expense-core[azure]"
@@ -52,10 +59,29 @@ class AzureFoundryProvider:
 
         self._deployment = deployment
         self._model_version = deployment
-        self._client = ChatCompletionsClient(
-            endpoint=endpoint,
-            credential=credential or DefaultAzureCredential(),
-        )
+
+        # AzureOpenAI builds the correct route ({endpoint}/openai/deployments/{model}/...),
+        # which is what a Foundry/AIServices resource serves chat on. Key auth if provided,
+        # else Managed Identity / az-login (needs "Cognitive Services OpenAI User").
+        if api_key:
+            self._client = AzureOpenAI(
+                azure_endpoint=endpoint, api_key=api_key, api_version=api_version
+            )
+        else:
+            from azure.identity import (  # noqa: PLC0415
+                DefaultAzureCredential,
+                get_bearer_token_provider,
+            )
+
+            token_provider = get_bearer_token_provider(
+                credential or DefaultAzureCredential(),
+                "https://cognitiveservices.azure.com/.default",
+            )
+            self._client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version=api_version,
+            )
 
     def complete(
         self,
@@ -65,9 +91,9 @@ class AzureFoundryProvider:
         max_tokens: int = 1024,
     ) -> str:
         payload = [{"role": m.role, "content": m.content} for m in messages]
-        resp = self._client.complete(
-            messages=payload,
+        resp = self._client.chat.completions.create(
             model=self._deployment,
+            messages=payload,
             temperature=temperature,
             max_tokens=max_tokens,
         )

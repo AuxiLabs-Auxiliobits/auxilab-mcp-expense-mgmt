@@ -16,6 +16,7 @@ from app.auth.dependencies import require, require_role
 from app.db import get_session
 from app.models.policy import AgencyPolicy
 from app.principal import Principal, Role
+from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
 from app.schemas.dto import PolicyIndexedCallback, PolicyOut
 from app.services import policy_service
@@ -36,6 +37,7 @@ async def list_agency_policies(
     session: Session = Depends(get_session),
 ) -> list[PolicyOut]:
     """All policy-doc versions for an agency, newest first."""
+    rbac_scope.assert_can_manage_agency_policy(principal, agency_id)
     return [_to_out(p) for p in policy_service.list_policies(session, agency_id)]
 
 
@@ -49,6 +51,7 @@ async def upload_agency_policy(
 ) -> PolicyOut:
     """Upload a new policy-doc version (maker step). Stored to Blob (or local fallback);
     starts unpublished/unindexed until a different Finance/Admin publishes it."""
+    rbac_scope.assert_can_manage_agency_policy(principal, agency_id)
     data = await file.read()
     policy = policy_service.upload_policy(
         session, actor=principal, agency_id=agency_id,
@@ -66,6 +69,7 @@ async def publish_agency_policy(
 ) -> PolicyOut:
     """Publish (checker step) — enqueues the doc for RAG ingestion. Maker-checker SoD:
     the publisher must differ from the uploader."""
+    rbac_scope.assert_can_manage_agency_policy(principal, agency_id)
     policy = policy_service.publish_policy(session, actor=principal, policy_id=policy_id)
     return _to_out(policy)
 

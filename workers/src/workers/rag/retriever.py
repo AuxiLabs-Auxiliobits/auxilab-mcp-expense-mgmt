@@ -102,16 +102,37 @@ class AzureSearchRetriever:
         )
 
     def retrieve(self, agency_id: str, query: str, *, top_k: int = 6) -> RetrievedPolicy:
-        # Hybrid (keyword + vector) + semantic ranker, filtered to the sheet's agency.
         # Agency filter is mandatory and server-enforced (SCOPING §7 agency trimming).
         agency_filter = f"agency_id eq '{_escape_odata(agency_id)}'"
-        results = self._client.search(
-            search_text=query,
-            filter=agency_filter,
-            query_type="semantic",
-            semantic_configuration_name=self._semantic_config,
-            top=top_k,
+
+        # First: semantic-ranked retrieval for the query (best for large policies).
+        clauses, policy_version = self._collect(
+            agency_id, search_text=query, agency_filter=agency_filter, top=top_k, semantic=True
         )
+
+        # Fallback: if the query terms don't lexically appear in the policy (so BM25 returns
+        # nothing), fetch the agency's FULL policy. Correct here — retrieval is already
+        # agency-scoped, policies are small, and the per-item judge needs every clause, not
+        # just query matches. (For very large policies, prefer hybrid vector ranking.)
+        if not clauses:
+            clauses, policy_version = self._collect(
+                agency_id, search_text="*", agency_filter=agency_filter,
+                top=max(top_k, 50), semantic=False,
+            )
+
+        return RetrievedPolicy(
+            agency_id=agency_id, policy_version=policy_version, clauses=clauses
+        )
+
+    def _collect(
+        self, agency_id: str, *, search_text: str, agency_filter: str, top: int, semantic: bool
+    ) -> tuple[list[str], str]:
+        """Run one filtered search and extract agency-trimmed clauses + policy version."""
+        kwargs: dict = {"search_text": search_text or "*", "filter": agency_filter, "top": top}
+        if semantic:
+            kwargs["query_type"] = "semantic"
+            kwargs["semantic_configuration_name"] = self._semantic_config
+        results = self._client.search(**kwargs)
 
         clauses: list[str] = []
         policy_version = "unknown"
@@ -123,12 +144,7 @@ class AzureSearchRetriever:
             if content:
                 clauses.append(content)
             policy_version = doc.get("policy_version") or policy_version
-
-        return RetrievedPolicy(
-            agency_id=agency_id,
-            policy_version=policy_version,
-            clauses=clauses,
-        )
+        return clauses, policy_version
 
 
 def _escape_odata(value: str) -> str:

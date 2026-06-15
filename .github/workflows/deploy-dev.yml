@@ -1,6 +1,15 @@
 name: Deploy (dev)
 
 # Manual trigger so infra/app changes are deployed deliberately, not on every push.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   AZURE_CLIENT_ID        — app/SP client id federated for OIDC login (no stored secret)
+#   AZURE_TENANT_ID        — Entra tenant id
+#   AZURE_SUBSCRIPTION_ID  — target subscription id
+#   PG_ADMIN_PASSWORD      — PostgreSQL admin password (passed to the Bicep deploy)
+#
+# The federated identity above needs Contributor (or scoped equivalent) on the
+# expmgmt-dev-rg resource group plus AcrPush on the expmgmtdevacr registry.
 on:
   workflow_dispatch:
 
@@ -11,6 +20,10 @@ permissions:
 env:
   RESOURCE_GROUP: expmgmt-dev-rg
   LOCATION: centralindia
+  ACR: expmgmtdevacr
+  API_APP: expmgmt-dev-api
+  WORKER_FINANCE_APP: expmgmt-dev-worker-finance
+  WORKER_INGESTION_APP: expmgmt-dev-worker-ingestion
 
 jobs:
   infra:
@@ -52,7 +65,54 @@ jobs:
       - name: ACR build (image built in Azure, no local Docker needed)
         run: |
           az acr build \
-            --registry expmgmtdevacr \
+            --registry "$ACR" \
             --image expense-api:${{ github.sha }} \
             --file api/Dockerfile api
-      # Container App create/update is added once the app module lands (S2).
+
+  worker-image:
+    name: Build & push worker image
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: ACR build (worker image built in Azure)
+        run: |
+          az acr build \
+            --registry "$ACR" \
+            --image expense-worker:${{ github.sha }} \
+            --file workers/Dockerfile workers
+
+  deploy-apps:
+    name: Roll Container Apps to the freshly built images
+    needs: [api-image, worker-image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update API container app
+        run: |
+          az containerapp update \
+            --name "$API_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR}.azurecr.io/expense-api:${{ github.sha }}"
+      - name: Update finance worker container app
+        run: |
+          az containerapp update \
+            --name "$WORKER_FINANCE_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR}.azurecr.io/expense-worker:${{ github.sha }}"
+      - name: Update ingestion worker container app
+        run: |
+          az containerapp update \
+            --name "$WORKER_INGESTION_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR}.azurecr.io/expense-worker:${{ github.sha }}"

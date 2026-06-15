@@ -9,6 +9,11 @@ param aiLocation = 'eastus'
 // Set to false to deploy everything EXCEPT the AI layer (useful for a first run / quota checks).
 param deployAi = true
 
+// S5 hardening layers — OFF for dev so it stays cheap and simple (public/flat topology).
+// Flip to true in staging/prod params to add VNet+Private Endpoints / Front Door+WAF+APIM+alerts.
+param deployNetworking = false
+param deployEdge = false
+
 // Object ID of the user/service principal running the deployment (az ad signed-in-user).
 param adminObjectId = 'cd178d64-97c2-4d46-89a4-f3313ac8e287'
 

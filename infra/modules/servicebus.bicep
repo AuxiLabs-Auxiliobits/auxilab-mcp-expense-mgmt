@@ -32,4 +32,16 @@ resource batch 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   }
 }
 
+// Finance-approval queue consumed by the finance worker (SCOPING §11, §14). The worker
+// scales on this queue's length (KEDA azure-servicebus scaler).
+resource financeApproval 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: sb
+  name: 'finance-approval'
+  properties: {
+    maxDeliveryCount: 5
+    deadLetteringOnMessageExpiration: true
+    lockDuration: 'PT5M'
+  }
+}
+
 output namespace string = sb.name

@@ -20,6 +20,19 @@ param aiLocation string = 'eastus'
 @description('Deploy the AI layer (Foundry/Search/DocIntel/ContentSafety). Turn off to bring up everything else first.')
 param deployAi bool = true
 
+@description('Deploy the networking hardening layer: VNet + subnets + NSGs + Private Endpoints, and VNet-inject the Container Apps env. Default OFF — dev stays public/flat.')
+param deployNetworking bool = false
+
+@description('Deploy the edge/ops hardening layer: Front Door + WAF, APIM, App Service portal host, and metric alerts. Default OFF for dev.')
+param deployEdge bool = false
+
+@description('Container image references. CI overwrites the apps with the real ACR tags; the defaults let the first infra deploy succeed before any image exists.')
+param apiImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+param workerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Email for APIM publisher contact and metric-alert notifications (edge layer).')
+param opsEmail string = 'operations@retinex.ai'
+
 @description('Resource name prefix, e.g. "expmgmt"')
 param namePrefix string
 
@@ -101,6 +114,13 @@ module ai 'modules/ai.bicep' = if (deployAi) {
   params: { namePrefix: namePrefix, env: env, location: aiLocation, tags: tags }
 }
 
+// --- Networking hardening (S5) — VNet + subnets + NSGs, gated OFF for dev ---- //
+module network 'modules/network.bicep' = if (deployNetworking) {
+  scope: rg
+  name: 'network'
+  params: { namePrefix: namePrefix, env: env, location: location, tags: tags }
+}
+
 module containerapps 'modules/containerapps.bicep' = {
   scope: rg
   name: 'containerapps'
@@ -111,6 +131,7 @@ module containerapps 'modules/containerapps.bicep' = {
     tags: tags
     workspaceName: monitoring.outputs.workspaceName
     workspaceCustomerId: monitoring.outputs.workspaceCustomerId
+    infrastructureSubnetId: network.?outputs.infrastructureSubnetId ?? ''
   }
 }
 
@@ -126,10 +147,113 @@ module rbac 'modules/rbac.bicep' = {
     storageName: storage.outputs.name
     serviceBusNamespace: servicebus.outputs.namespace
     keyVaultName: keyvault.outputs.name
+    acrName: acr.outputs.name
     deployAi: deployAi
     foundryName: ai.?outputs.foundryName ?? ''
     searchName: ai.?outputs.searchName ?? ''
     docIntelName: ai.?outputs.docIntelName ?? ''
+  }
+}
+
+// --- Container Apps (API + workers) ---------------------------------------- //
+module apps 'modules/apps.bicep' = {
+  scope: rg
+  name: 'apps'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    location: location
+    tags: tags
+    environmentId: containerapps.outputs.environmentId
+    acrLoginServer: acr.outputs.loginServer
+    apiIdentityId: rbac.outputs.apiIdentityId
+    apiIdentityClientId: rbac.outputs.apiIdentityClientId
+    workerIdentityId: rbac.outputs.workerIdentityId
+    workerIdentityClientId: rbac.outputs.workerIdentityClientId
+    apiImage: apiImage
+    workerImage: workerImage
+    postgresFqdn: postgres.outputs.fqdn
+    pgAdminLogin: pgAdminLogin
+    keyVaultUri: keyvault.outputs.uri
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    serviceBusNamespace: servicebus.outputs.namespace
+    blobEndpoint: storage.outputs.blobEndpoint
+    deployAi: deployAi
+    foundryEndpoint: ai.?outputs.foundryEndpoint ?? ''
+    searchEndpoint: ai.?outputs.searchEndpoint ?? ''
+    docIntelEndpoint: ai.?outputs.docIntelEndpoint ?? ''
+    contentSafetyEndpoint: ai.?outputs.contentSafetyEndpoint ?? ''
+  }
+}
+
+// --- Private Endpoints (S5) — only when the networking layer is on ---------- //
+module privateEndpoints 'modules/privateendpoints.bicep' = if (deployNetworking) {
+  scope: rg
+  name: 'privateEndpoints'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    tags: tags
+    vnetId: network.?outputs.vnetId ?? ''
+    subnetId: network.?outputs.privateEndpointsSubnetId ?? ''
+    storageName: storage.outputs.name
+    keyVaultName: keyvault.outputs.name
+    postgresServerName: postgres.outputs.serverName
+    deployAi: deployAi
+    searchName: ai.?outputs.searchName ?? ''
+    foundryName: ai.?outputs.foundryName ?? ''
+    docIntelName: ai.?outputs.docIntelName ?? ''
+    contentSafetyName: ai.?outputs.contentSafetyName ?? ''
+  }
+}
+
+// --- Edge / ops hardening (S5): Front Door + WAF, APIM, portal host, alerts -- //
+module frontdoor 'modules/frontdoor.bicep' = if (deployEdge) {
+  scope: rg
+  name: 'frontdoor'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    tags: tags
+    originHostName: apps.outputs.apiFqdn
+  }
+}
+
+module apim 'modules/apim.bicep' = if (deployEdge) {
+  scope: rg
+  name: 'apim'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    location: location
+    tags: tags
+    publisherEmail: opsEmail
+    apiBackendUrl: 'https://${apps.outputs.apiFqdn}'
+  }
+}
+
+module appservice 'modules/appservice.bicep' = if (deployEdge) {
+  scope: rg
+  name: 'appservice'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    location: location
+    tags: tags
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    apiBaseUrl: 'https://${apps.outputs.apiFqdn}'
+  }
+}
+
+module alerts 'modules/alerts.bicep' = if (deployEdge) {
+  scope: rg
+  name: 'alerts'
+  params: {
+    namePrefix: namePrefix
+    env: env
+    tags: tags
+    appInsightsName: monitoring.outputs.appInsightsName
+    alertEmail: opsEmail
   }
 }
 
@@ -144,3 +268,9 @@ output apiIdentityId string = rbac.outputs.apiIdentityId
 output apiIdentityClientId string = rbac.outputs.apiIdentityClientId
 output workerIdentityId string = rbac.outputs.workerIdentityId
 output workerIdentityClientId string = rbac.outputs.workerIdentityClientId
+output apiAppName string = apps.outputs.apiName
+output apiAppFqdn string = apps.outputs.apiFqdn
+output apiAppUrl string = 'https://${apps.outputs.apiFqdn}'
+output frontDoorHostName string = frontdoor.?outputs.endpointHostName ?? ''
+output apimGatewayUrl string = apim.?outputs.gatewayUrl ?? ''
+output portalHostName string = appservice.?outputs.portalDefaultHostName ?? ''

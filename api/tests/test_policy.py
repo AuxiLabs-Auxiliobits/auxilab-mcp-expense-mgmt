@@ -99,6 +99,49 @@ def test_different_checker_can_publish_and_agent_marks_indexed(client):
     assert cb.json()["status"] == "indexed"
 
 
+def test_indexed_callback_requires_agent_role(client):
+    fin = login(client, "finance@demo.local")
+    admin = login(client, "admin@demo.local")
+    agency_id = _agency_id(client, admin)
+    policy = _upload(client, fin, agency_id).json()
+
+    # A human Finance token must not be able to post the worker callback.
+    res = client.post(
+        f"/finance/policies/{policy['id']}/indexed",
+        json={"indexed": True, "chunks": 3},
+        headers=auth(fin),
+    )
+    assert res.status_code == 403, res.text
+
+
+def test_indexed_callback_failure_records_detail_and_stays_published(client):
+    fin = login(client, "finance@demo.local")
+    admin = login(client, "admin@demo.local")
+    agency_id = _agency_id(client, admin)
+
+    policy = _upload(client, fin, agency_id).json()
+    client.post(
+        f"/finance/policies/{agency_id}/{policy['id']}/publish", headers=auth(admin)
+    )
+
+    # Ingestion worker reports failure → not indexed, detail captured in the audit log.
+    cb = client.post(
+        f"/finance/policies/{policy['id']}/indexed",
+        json={"indexed": False, "chunks": 0, "detail": "blob download failed"},
+        headers=auth(_agent_token()),
+    )
+    assert cb.status_code == 200, cb.text
+    assert cb.json()["status"] == "published"  # indexed_at not stamped on failure
+
+    audit = client.get("/finance/audit", headers=auth(admin)).json()
+    failures = [
+        e for e in audit
+        if e["action"] == "POLICY_INDEX_FAILED" and e["entity"] == f"agency_policy:{policy['id']}"
+    ]
+    assert failures, "expected a POLICY_INDEX_FAILED audit entry"
+    assert failures[0]["after"]["detail"] == "blob download failed"
+
+
 def test_list_policies_finance_only(client):
     fin = login(client, "finance@demo.local")
     admin = login(client, "admin@demo.local")

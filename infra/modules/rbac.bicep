@@ -25,6 +25,9 @@ param serviceBusNamespace string
 @description('Key Vault name (from keyvault module output).')
 param keyVaultName string
 
+@description('Container Registry name (from acr module output) — for AcrPull grants.')
+param acrName string
+
 @description('Whether the AI layer (Foundry/Search/DocIntel) was deployed — gates those grants.')
 param deployAi bool = true
 
@@ -42,6 +45,7 @@ var roles = {
   searchIndexContributor: '8ebe5a00-799e-43f5-93ac-243d3dce84a7' // Search Index Data Contributor
   cognitiveUser: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User
   kvSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6' // Key Vault Secrets User
+  acrPull: '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
 }
 
 // --- User-assigned managed identities -------------------------------------- //
@@ -68,6 +72,10 @@ resource bus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' existing = {
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
+}
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
+  name: acrName
 }
 
 resource foundry 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (deployAi) {
@@ -109,6 +117,27 @@ resource apiKv 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.kvSecretsUser)
     principalId: apiId.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// --- ACR pull grants (both identities pull their images from ACR) ---------- //
+resource apiAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, apiId.id, roles.acrPull)
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPull)
+    principalId: apiId.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource workerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, workerId.id, roles.acrPull)
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPull)
+    principalId: workerId.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }

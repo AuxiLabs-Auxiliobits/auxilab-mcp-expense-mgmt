@@ -22,6 +22,7 @@ azure = [
     "azure-ai-documentintelligence>=1.0",  # policy-doc extraction (ingestion)
     "azure-storage-blob>=12.20",           # download uploaded policy docs (ingestion)
     "httpx>=0.27",                         # callback to the API after indexing
+    "openai>=1.40",                        # Azure OpenAI embeddings (ingestion)
 ]
 dev = ["pytest>=8", "ruff>=0.5"]
 

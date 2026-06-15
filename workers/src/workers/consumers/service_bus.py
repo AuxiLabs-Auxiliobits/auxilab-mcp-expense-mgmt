@@ -37,7 +37,8 @@ def run_consumer(
     if not settings.service_bus_enabled:
         raise RuntimeError(
             "No Service Bus connection configured. Set WORKERS_SERVICE_BUS_CONNECTION_STRING "
-            "and install the 'azure' extra, or use `python -m workers demo` for offline."
+            "or WORKERS_SERVICE_BUS_NAMESPACE and install the 'azure' extra, or use "
+            "`python -m workers demo` for offline."
         )
     try:
         from azure.servicebus import ServiceBusClient  # noqa: PLC0415
@@ -46,18 +47,43 @@ def run_consumer(
             "run_consumer needs the 'azure' extra: pip install expense-workers[azure]"
         ) from e
 
-    client = ServiceBusClient.from_connection_string(settings.service_bus_connection_string)
+    client = _build_client(ServiceBusClient, settings)
     processed = 0
     with client, client.get_queue_receiver(
         queue_name=queue_name,
         max_wait_time=settings.receive_max_wait_seconds,
     ) as receiver:
         logger.info("Consuming queue %s", queue_name)
-        for msg in receiver:
-            _process_message(receiver, msg, handler, settings)
-            processed += 1
-            if max_messages is not None and processed >= max_messages:
-                break
+        # The receiver iterator stops after an idle window; re-enter it so the worker stays
+        # alive and keeps waiting for messages. `max_messages` bounds this for tests/smoke.
+        while True:
+            for msg in receiver:
+                _process_message(receiver, msg, handler, settings)
+                processed += 1
+                if max_messages is not None and processed >= max_messages:
+                    return
+            if max_messages is not None:
+                return  # bounded run: idle window elapsed, nothing more to take
+            # Unbounded: loop and keep listening (Ctrl-C to stop).
+
+
+def _build_client(service_bus_client_cls, settings: Settings):
+    """Build the ServiceBusClient (SCOPING §11).
+
+    Prefer the connection string when set; otherwise authenticate to the fully-qualified
+    namespace with the worker's Managed Identity (Service Bus Data Receiver role).
+    """
+    if settings.service_bus_connection_string:
+        return service_bus_client_cls.from_connection_string(
+            settings.service_bus_connection_string
+        )
+
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+
+    return service_bus_client_cls(
+        fully_qualified_namespace=settings.service_bus_namespace,
+        credential=DefaultAzureCredential(),
+    )
 
 
 def _process_message(receiver, msg, handler: MessageHandler, settings: Settings) -> None:

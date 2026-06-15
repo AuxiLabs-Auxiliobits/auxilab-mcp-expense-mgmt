@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     )
 
     # --- Service Bus (async finance-approval + ingestion queues, SCOPING §11, §14) ---
-    service_bus_connection_string: str = ""  # empty → offline; no real consumer
+    service_bus_connection_string: str = ""  # empty → offline unless namespace set
+    # Fully-qualified namespace for Managed-Identity auth (no connection string), e.g.
+    # "expmgmt-dev-bus.servicebus.windows.net". The worker MI holds Service Bus Data Receiver.
+    service_bus_namespace: str = ""
     finance_queue_name: str = "finance-approval"
     ingestion_queue_name: str = "document-ingestion"
     max_delivery_count: int = 5  # dead-letter after N retries; never silent-approve
@@ -38,12 +41,17 @@ class Settings(BaseSettings):
 
     # --- Azure AI Foundry (model-agnostic LLM gateway, SCOPING §11) ---
     foundry_endpoint: str = ""  # empty → LocalEchoProvider
+    foundry_api_key: str = ""  # prefer Managed Identity; key only for local dev/seeding
     foundry_deployment: str = "gpt-4o-mini"
     embedding_deployment: str = "text-embedding-3-large"  # ingestion embeds with this
+    embedding_api_version: str = "2024-10-21"  # Azure OpenAI data-plane API version
 
     # --- Document ingestion: Blob + Document Intelligence (SCOPING §7) ---
     storage_account_url: str = ""  # empty → offline: read file:// blob URIs locally
     doc_intel_endpoint: str = ""  # empty → offline: read text blobs as-is
+    doc_intel_api_key: str = ""  # prefer Managed Identity; key only for local dev/seeding
+    # Defender for Storage malware scan: fail-closed if the scan-result tag is absent.
+    require_virus_scan: bool = True
 
     # --- Ingestion → API callback (stamps AgencyPolicy.indexed_at, SCOPING §7) ---
     api_base_url: str = ""  # empty → no callback (offline)
@@ -72,7 +80,8 @@ class Settings(BaseSettings):
 
     @property
     def service_bus_enabled(self) -> bool:
-        return bool(self.service_bus_connection_string)
+        # Either a connection string OR a namespace (Managed Identity) wires a real consumer.
+        return bool(self.service_bus_connection_string or self.service_bus_namespace)
 
 
 def load_settings() -> Settings:
