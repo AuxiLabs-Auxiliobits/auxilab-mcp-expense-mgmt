@@ -363,16 +363,42 @@ def _ask_llm(
     )
     if raw == LocalEchoProvider.SENTINEL:
         return None
+    data = _extract_json_obj(raw)
+    if data is None:
+        return None
     try:
-        data = json.loads(raw)
         return _LLMJudgement(
             verdict=str(data["verdict"]).lower(),
             cited_clause=data.get("cited_clause"),
             confidence=float(data.get("confidence", 0.0)),
             reason=str(data.get("reason", "")),
         )
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError):
         return None
+
+
+def _extract_json_obj(raw: str) -> dict | None:
+    """Parse a JSON object from an LLM response, tolerating ```json fences / surrounding prose.
+
+    Real chat models frequently wrap strict-JSON answers in markdown fences or add a
+    sentence, which a bare json.loads rejects. We strip fences and fall back to the first
+    {...last} span so a well-formed object inside chatter is still recovered.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 def _clause_is_grounded(cited: str | None, clauses: list[str]) -> bool:

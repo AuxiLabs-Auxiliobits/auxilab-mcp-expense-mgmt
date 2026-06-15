@@ -47,6 +47,14 @@ def main() -> None:
     print(f"  Search : {'AZURE' if settings.azure_search_enabled else 'offline'}")
     print(f"  LLM    : {'AZURE ' + settings.foundry_deployment if settings.azure_foundry_enabled else 'offline echo'}\n")
 
+    # Show what policy text was retrieved, so you can see whether the doc even covers the
+    # expense you're testing (a travel policy may have no Wi-Fi clause, etc.).
+    retrieved = retriever.retrieve(agency_id, " ".join(i.get("description", "") for i in raw_items))
+    print(f"Retrieved {len(retrieved.clauses)} clause(s), policy_version={retrieved.policy_version}:")
+    for c in retrieved.clauses[:3]:
+        print(f"  • {c[:300].replace(chr(10), ' ')}")
+    print()
+
     state = FinanceApproverState(
         sheet_id="TEST-SHEET",
         agency_id=agency_id,
