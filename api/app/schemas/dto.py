@@ -6,8 +6,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.value_sets import normalize_currency, validate_period
 from expense_core.schemas.enums import Category, FinanceDecision, LineItemStatus, SheetStatus
 
 
@@ -15,6 +16,10 @@ from expense_core.schemas.enums import Category, FinanceDecision, LineItemStatus
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+    model_config = {
+        "json_schema_extra": {"example": {"email": "employee@demo.local", "password": "demo"}}
+    }
 
 
 class TokenResponse(BaseModel):
@@ -24,7 +29,8 @@ class TokenResponse(BaseModel):
 
 # --- Line items / sheets --------------------------------------------------- #
 class LineItemCreate(BaseModel):
-    category: Category | None = None
+    category: Category | None = None  # the selected Expense Type
+    expense_type_other: str | None = None  # required free text when category == "Other"
     amount: Decimal = Field(gt=Decimal("0"))
     currency: str = "USD"
     merchant: str
@@ -32,22 +38,113 @@ class LineItemCreate(BaseModel):
     expense_date: date
     receipt_datetime: datetime | None = None
     receipt_total: Decimal | None = None
-    has_receipt: bool = False
+    tax: Decimal | None = Field(default=None, ge=Decimal("0"))  # Tax / VAT
+    # has_receipt is server-derived from attachments — not accepted from the client.
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str) -> str:
+        return normalize_currency(v)
+
+    @model_validator(mode="after")
+    def _other_needs_text(self) -> "LineItemCreate":
+        if self.category is Category.OTHER and not (self.expense_type_other or "").strip():
+            raise ValueError("expense_type_other is required when category is 'Other'")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "category": "Meals & Entertainment",
+                "amount": "82.50",
+                "currency": "USD",
+                "merchant": "Olive Garden",
+                "description": "Client dinner",
+                "expense_date": "2026-06-10",
+                "receipt_datetime": "2026-06-10T20:14:00",
+                "receipt_total": "82.50",
+                "tax": "6.50",
+            }
+        }
+    }
+
+
+class LineItemUpdate(BaseModel):
+    """Partial update of a draft line item — only provided fields change."""
+
+    category: Category | None = None
+    expense_type_other: str | None = None
+    amount: Decimal | None = Field(default=None, gt=Decimal("0"))
+    currency: str | None = None
+    merchant: str | None = None
+    description: str | None = None
+    expense_date: date | None = None
+    receipt_datetime: datetime | None = None
+    receipt_total: Decimal | None = None
+    tax: Decimal | None = Field(default=None, ge=Decimal("0"))
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str | None) -> str | None:
+        return normalize_currency(v) if v is not None else None
 
 
 class SheetCreate(BaseModel):
+    title: str = Field(min_length=1)
     period: str | None = None
-    line_items: list[LineItemCreate] = Field(min_length=1)
+    # Optional: create an empty draft (title + period) and add line items incrementally,
+    # or pass items inline. A receipt is still required on each item before submit.
+    line_items: list[LineItemCreate] = Field(default_factory=list)
+
+    @field_validator("period")
+    @classmethod
+    def _period(cls, v: str | None) -> str | None:
+        return validate_period(v) if v is not None else None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"title": "June client travel", "period": "2026-06", "line_items": []}
+        }
+    }
+
+
+class SheetUpdate(BaseModel):
+    """Edit a draft sheet's title/period (only while in DRAFT)."""
+
+    title: str | None = Field(default=None, min_length=1)
+    period: str | None = None
+
+    @field_validator("period")
+    @classmethod
+    def _period(cls, v: str | None) -> str | None:
+        return validate_period(v) if v is not None else None
+
+
+class AttachmentOut(BaseModel):
+    id: str
+    line_item_id: str
+    file_type: str
+    size: int
+    blob_uri: str
+    scan_status: str
+
+    model_config = {"from_attributes": True}
 
 
 class LineItemOut(BaseModel):
     id: str
     category: Category | None
+    expense_type_other: str | None = None
     amount: Decimal
     currency: str
     merchant: str
     description: str
     expense_date: date
+    receipt_datetime: datetime | None = None
+    receipt_total: Decimal | None = None
+    tax: Decimal | None = None
+    has_receipt: bool = False
+    receipt_count: int = 0  # set by the serializer from attachments
     manager_status: LineItemStatus
     policy_status: LineItemStatus | None
 
@@ -56,6 +153,7 @@ class LineItemOut(BaseModel):
 
 class SheetOut(BaseModel):
     id: str
+    title: str | None = None
     employee_id: str
     agency_id: str
     version: int
@@ -67,16 +165,39 @@ class SheetOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ValueSetsOut(BaseModel):
+    """Dropdown value sets for the expense-sheet form (expense types + currencies)."""
+
+    expense_types: list[str]
+    currencies: list[str]
+
+
 # --- Manager / finance actions --------------------------------------------- #
 class ManagerActionRequest(BaseModel):
     line_item_id: str
     action: LineItemStatus  # MANAGER_APPROVED | MANAGER_REJECTED | INFO_REQUESTED
     reason: str | None = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "line_item_id": "<paste a line_item id from GET /manager/queue>",
+                "action": "MANAGER_APPROVED",
+                "reason": "Within meal cap; receipt matches.",
+            }
+        }
+    }
+
 
 class FinanceHumanDecisionRequest(BaseModel):
     approve: bool
     reason: str
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"approve": True, "reason": "Justified client-entertainment over-limit."}
+        }
+    }
 
 
 class LlmDecisionRequest(BaseModel):
@@ -88,10 +209,24 @@ class LlmDecisionRequest(BaseModel):
     cited_clauses: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "decision": "APPROVED",
+                "model_version": "gpt-4o@2026-05",
+                "policy_version": "crispin-v3",
+                "cited_clauses": ["§4.2 meal cap", "§7 receipt threshold"],
+                "confidence": 0.92,
+            }
+        }
+    }
+
 
 # --- Admin ----------------------------------------------------------------- #
 class AgencyCreate(BaseModel):
     name: str
+
+    model_config = {"json_schema_extra": {"example": {"name": "Northwind"}}}
 
 
 class AgencyUpdate(BaseModel):
@@ -107,6 +242,18 @@ class UserCreate(BaseModel):
     role: str
     agency_id: str | None = None
     password: str | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "New Hire",
+                "email": "newhire@demo.local",
+                "role": "employee",
+                "agency_id": "<paste an agency id from GET /admin/agencies>",
+                "password": "demo",
+            }
+        }
+    }
 
 
 class UserUpdate(BaseModel):

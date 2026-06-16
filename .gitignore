@@ -38,6 +38,10 @@ appsettings.*.local.json
 *.db
 *.sqlite
 *.sqlite3
+
+# Offline upload fallback stores (receipts / policy docs written when no Azure storage)
+receipt_uploads/
+policy_uploads/
 stitch_mcp_server_frontend (1)
 postman
 docs

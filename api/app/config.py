@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     policy_local_dir: str = "./policy_uploads"  # offline fallback store
     ingestion_queue_name: str = "document-ingestion"  # Service Bus queue the worker reads
 
+    # --- Receipt uploads (per-line-item, SCOPING §4.2) -------------------- #
+    # Stored under receipts/{employee_id}/<file>. Offline falls back to a local directory.
+    receipt_container: str = "receipts"
+    receipt_local_dir: str = "./receipt_uploads"  # offline fallback store
+
     @property
     def is_postgres(self) -> bool:
         return self.database_url.startswith("postgresql")

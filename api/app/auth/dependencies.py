@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
 
 from app.auth.base import AuthError, AuthProvider
@@ -20,7 +20,12 @@ from app.principal import Principal, Role
 from app.rbac.permissions import Capability, require_capability
 from app.repositories.user_repo import SqlUserRepository
 
-_bearer = HTTPBearer(auto_error=True)
+# OAuth2 password flow so Swagger UI's "Authorize" button can log in directly with
+# email + password and auto-attach the bearer token to every request. The token endpoint
+# (`POST /auth/token`) is the form-based sibling of the JSON `POST /auth/login`. In `entra`
+# mode the token is issued by Entra instead, but the verification path below is identical —
+# this scheme only governs how the token is obtained/sent, never how it's validated.
+_bearer = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=True)
 
 
 def get_auth_provider(session: Session = Depends(get_session)) -> AuthProvider:
@@ -37,11 +42,11 @@ def get_auth_provider(session: Session = Depends(get_session)) -> AuthProvider:
 
 
 async def current_principal(
-    creds: HTTPAuthorizationCredentials = Depends(_bearer),
+    token: str = Depends(_bearer),
     provider: AuthProvider = Depends(get_auth_provider),
 ) -> Principal:
     try:
-        return await provider.verify(creds.credentials)
+        return await provider.verify(token)
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
 

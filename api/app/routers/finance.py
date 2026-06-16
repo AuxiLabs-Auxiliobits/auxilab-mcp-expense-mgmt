@@ -17,10 +17,17 @@ from app.serializers import sheet_to_out
 from app.services import finance_service, sheet_service
 from expense_core.schemas.enums import SheetStatus
 
-router = APIRouter(prefix="/finance", tags=["finance"])
+router = APIRouter(
+    prefix="/finance",
+    tags=["finance"],
+    responses={
+        401: {"description": "Missing or invalid bearer token"},
+        403: {"description": "Insufficient role (Finance/Admin, or Agent for the webhook)"},
+    },
+)
 
 
-@router.get("/queue", response_model=list[SheetOut])
+@router.get("/queue", response_model=list[SheetOut], summary="Manual-review queue (LLM-routed sheets)")
 async def manual_review_queue(
     principal: Principal = Depends(require(Capability.FINANCE_DECISION)),
     session: Session = Depends(get_session),
@@ -32,7 +39,12 @@ async def manual_review_queue(
     return [sheet_to_out(session, s) for s in rows]
 
 
-@router.post("/sheets/{sheet_id}/decision", response_model=SheetOut)
+@router.post(
+    "/sheets/{sheet_id}/decision",
+    response_model=SheetOut,
+    summary="Finance human decision (approve/reject)",
+    responses={404: {"description": "Sheet not found"}},
+)
 async def human_decision(
     sheet_id: str,
     body: FinanceHumanDecisionRequest,
@@ -46,7 +58,12 @@ async def human_decision(
     return sheet_to_out(session, sheet)
 
 
-@router.post("/sheets/{sheet_id}/override", response_model=SheetOut)
+@router.post(
+    "/sheets/{sheet_id}/override",
+    response_model=SheetOut,
+    summary="Override the LLM decision (reason required)",
+    responses={404: {"description": "Sheet not found"}},
+)
 async def override(
     sheet_id: str,
     body: FinanceHumanDecisionRequest,
@@ -60,7 +77,12 @@ async def override(
     return sheet_to_out(session, sheet)
 
 
-@router.post("/sheets/{sheet_id}/llm-decision", response_model=SheetOut)
+@router.post(
+    "/sheets/{sheet_id}/llm-decision",
+    response_model=SheetOut,
+    summary="LLM-approver webhook (Agent role) — post a decision",
+    responses={404: {"description": "Sheet not found"}},
+)
 async def llm_decision(
     sheet_id: str,
     body: LlmDecisionRequest,
@@ -78,7 +100,7 @@ async def llm_decision(
     return sheet_to_out(session, sheet)
 
 
-@router.get("/audit")
+@router.get("/audit", summary="Immutable audit log (most recent first)")
 async def audit_log(
     principal: Principal = Depends(require(Capability.VIEW_AUDIT_LOG)),
     session: Session = Depends(get_session),

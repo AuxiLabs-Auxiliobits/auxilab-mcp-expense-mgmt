@@ -17,7 +17,14 @@ from app.serializers import sheet_to_out
 from app.services import sheet_service
 from expense_core.schemas.enums import LineItemStatus, SheetStatus
 
-router = APIRouter(prefix="/manager", tags=["manager"])
+router = APIRouter(
+    prefix="/manager",
+    tags=["manager"],
+    responses={
+        401: {"description": "Missing or invalid bearer token"},
+        403: {"description": "Not a manager, or sheet outside your agency"},
+    },
+)
 
 _ALLOWED_ACTIONS = {
     LineItemStatus.MANAGER_APPROVED,
@@ -26,7 +33,7 @@ _ALLOWED_ACTIONS = {
 }
 
 
-@router.get("/queue", response_model=list[SheetOut])
+@router.get("/queue", response_model=list[SheetOut], summary="My agency's manager-review queue")
 async def manager_queue(
     principal: Principal = Depends(require(Capability.MANAGER_ACTION_LINE_ITEM)),
     session: Session = Depends(get_session),
@@ -41,7 +48,15 @@ async def manager_queue(
     return [sheet_to_out(session, s) for s in rows]
 
 
-@router.post("/sheets/{sheet_id}/action", response_model=SheetOut)
+@router.post(
+    "/sheets/{sheet_id}/action",
+    response_model=SheetOut,
+    summary="Approve / reject / request-info on a line item",
+    responses={
+        400: {"description": "Invalid manager action"},
+        404: {"description": "Sheet or line item not found"},
+    },
+)
 async def action_line_item(
     sheet_id: str,
     body: ManagerActionRequest,

@@ -206,65 +206,34 @@ def _judge_item(
     llm: LLMGateway,
     confidence_threshold: float,
 ) -> LineItemVerdict:
-    """Combine the LLM judgement with the deterministic cap check.
+    """Judge one line item.
 
-    The numeric check is authoritative for money: if a clause states a numeric cap, math
-    (expense_core inclusive boundary) decides pass/fail. The LLM may never overturn a hard
-    numeric fail; if the LLM disagrees with the numeric check we mark the item uncertain.
+    When an LLM is available it GROUNDS the verdict — it picks and cites the governing clause
+    — and deterministic math then re-verifies any numeric cap stated **in that cited clause**
+    (SCOPING §9.2). The math never independently scans for unrelated caps, so a Wi-Fi item is
+    never judged against, say, the hotel cap. Offline (no real LLM) we fall back to the
+    deterministic numeric scan so the engine still decides caps without a model.
     """
-    numeric = _numeric_cross_check(item, clauses)
     judgement = _ask_llm(item, clauses, llm)
+    if judgement is None:
+        # Offline / unparseable LLM → deterministic numeric scan (demo & tests path).
+        return _numeric_only_verdict(item, clauses)
+    return _llm_grounded_verdict(item, judgement, clauses, confidence_threshold)
 
-    # --- Path A: a numeric cap governs this item → math is authoritative. ---
-    if numeric is not None:
-        numeric_pass, cap_clause, cap_value = numeric
-        if not numeric_pass:
-            # Hard numeric fail — the LLM cannot override it (SCOPING §9.2).
-            return LineItemVerdict(
-                line_item_id=item.id,
-                status=LineItemStatus.POLICY_FAIL,
-                cited_clause=cap_clause,
-                reason=(
-                    f"Amount {item.amount} exceeds cap {cap_value} "
-                    f"(inclusive boundary) per cited clause."
-                ),
-                confidence=1.0,
-                numeric_cross_checked=True,
-            )
-        # Numeric says PASS. If the LLM confidently disagrees → disagreement → route.
-        llm_disagrees = (
-            judgement is not None
-            and judgement.verdict == "fail"
-            and judgement.confidence >= confidence_threshold
-        )
-        if llm_disagrees:
-            return LineItemVerdict(
-                line_item_id=item.id,
-                status=LineItemStatus.POLICY_UNCERTAIN,
-                cited_clause=cap_clause,
-                reason=(
-                    "LLM rejected but deterministic numeric check passed — "
-                    "disagreement, route to human."
-                ),
-                confidence=0.0,
-                numeric_cross_checked=True,
-            )
-        return LineItemVerdict(
-            line_item_id=item.id,
-            status=LineItemStatus.POLICY_PASS,
-            cited_clause=cap_clause,
-            reason=f"Amount {item.amount} within cap {cap_value} (inclusive boundary).",
-            confidence=1.0,
-            numeric_cross_checked=True,
-        )
 
-    # --- Path B: no numeric cap → rely on the (cited) LLM verdict. ---
-    if judgement is None or judgement.verdict == "uncertain":
+def _llm_grounded_verdict(
+    item: ApproverLineItem,
+    judgement: _LLMJudgement,
+    clauses: list[str],
+    confidence_threshold: float,
+) -> LineItemVerdict:
+    """LLM-grounded path: the LLM cites the governing clause; math re-verifies its cap."""
+    if judgement.verdict == "uncertain":
         return LineItemVerdict(
             line_item_id=item.id,
             status=LineItemStatus.POLICY_UNCERTAIN,
-            reason="No governing clause or ambiguous/unparseable LLM verdict — route to human.",
-            confidence=judgement.confidence if judgement else 0.0,
+            reason="LLM found no governing clause / ambiguous policy — route to human.",
+            confidence=judgement.confidence,
         )
 
     # Mandatory citation: an uncitable claim is treated as uncertain (SCOPING §9.2).
@@ -286,10 +255,41 @@ def _judge_item(
             confidence=judgement.confidence,
         )
 
+    # Deterministic money guard: re-verify a numeric cap stated IN THE CITED CLAUSE only.
+    cap = _extract_cap(judgement.cited_clause or "")
+    if cap is not None:
+        if _CAP_MATH.exceeds_cap(item.amount, cap):
+            # Hard numeric fail — the LLM cannot approve over the cited cap (SCOPING §9.2).
+            return LineItemVerdict(
+                line_item_id=item.id,
+                status=LineItemStatus.POLICY_FAIL,
+                cited_clause=judgement.cited_clause,
+                reason=f"Amount {item.amount} exceeds cap {cap} (inclusive boundary) in cited clause.",
+                confidence=1.0,
+                numeric_cross_checked=True,
+            )
+        if judgement.verdict == "fail":
+            # Within the cited cap but the LLM rejected → disagreement → route.
+            return LineItemVerdict(
+                line_item_id=item.id,
+                status=LineItemStatus.POLICY_UNCERTAIN,
+                cited_clause=judgement.cited_clause,
+                reason="LLM rejected but amount is within the cited numeric cap — route to human.",
+                confidence=0.0,
+                numeric_cross_checked=True,
+            )
+        return LineItemVerdict(
+            line_item_id=item.id,
+            status=LineItemStatus.POLICY_PASS,
+            cited_clause=judgement.cited_clause,
+            reason=f"Amount {item.amount} within cap {cap} (inclusive boundary) per cited clause.",
+            confidence=judgement.confidence,
+            numeric_cross_checked=True,
+        )
+
+    # No numeric cap in the cited clause → trust the LLM's qualitative verdict.
     status = (
-        LineItemStatus.POLICY_PASS
-        if judgement.verdict == "pass"
-        else LineItemStatus.POLICY_FAIL
+        LineItemStatus.POLICY_PASS if judgement.verdict == "pass" else LineItemStatus.POLICY_FAIL
     )
     return LineItemVerdict(
         line_item_id=item.id,
@@ -297,6 +297,39 @@ def _judge_item(
         cited_clause=judgement.cited_clause,
         reason=judgement.reason or f"LLM verdict: {judgement.verdict}",
         confidence=judgement.confidence,
+    )
+
+
+def _numeric_only_verdict(item: ApproverLineItem, clauses: list[str]) -> LineItemVerdict:
+    """Offline fallback: deterministic cap scan with no LLM (demo & tests).
+
+    Used only when no real LLM answered. Finds a numeric cap in a relevant clause and lets
+    math decide; no relevant numeric clause → uncertain (route)."""
+    numeric = _numeric_cross_check(item, clauses)
+    if numeric is None:
+        return LineItemVerdict(
+            line_item_id=item.id,
+            status=LineItemStatus.POLICY_UNCERTAIN,
+            reason="No governing clause and no LLM verdict — route to human.",
+            confidence=0.0,
+        )
+    passes, cap_clause, cap_value = numeric
+    if not passes:
+        return LineItemVerdict(
+            line_item_id=item.id,
+            status=LineItemStatus.POLICY_FAIL,
+            cited_clause=cap_clause,
+            reason=f"Amount {item.amount} exceeds cap {cap_value} (inclusive boundary) per cited clause.",
+            confidence=1.0,
+            numeric_cross_checked=True,
+        )
+    return LineItemVerdict(
+        line_item_id=item.id,
+        status=LineItemStatus.POLICY_PASS,
+        cited_clause=cap_clause,
+        reason=f"Amount {item.amount} within cap {cap_value} (inclusive boundary).",
+        confidence=1.0,
+        numeric_cross_checked=True,
     )
 
 

@@ -18,9 +18,10 @@ class ExpenseSheet(SQLModel, table=True):
     employee_id: str = Field(foreign_key="users.id", index=True)
     agency_id: str = Field(foreign_key="agencies.id", index=True)
 
+    title: str | None = None  # employee-supplied sheet title (change req)
     version: int = Field(default=1)  # increments on resubmission (SCOPING §5.1)
     status: SheetStatus = Field(default=SheetStatus.DRAFT, index=True)
-    period: str | None = None  # e.g. "2026-06"
+    period: str | None = None  # "YYYY-MM" (month + year of the current year)
 
     submitted_at: datetime | None = None
     finance_decision: FinanceDecision | None = None

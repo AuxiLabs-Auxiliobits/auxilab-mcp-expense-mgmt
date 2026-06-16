@@ -29,6 +29,10 @@ def seed_demo(session: Session) -> None:
         ("Mona Manager", "manager@demo.local", Role.MANAGER, crispin),
         ("Fin Finance", "finance@demo.local", Role.FINANCE, crispin),
         ("Ada Admin", "admin@demo.local", Role.ADMIN, crispin),
+        # AGENT (LLM approver) — a dev login so the worker-only webhooks
+        # (POST /finance/sheets/{id}/llm-decision, POST /finance/policies/{id}/indexed)
+        # are exercisable from Swagger; in prod this is a real service principal.
+        ("Auto Approver", "agent@demo.local", Role.AGENT, crispin),
     ]
     for name, email, role, agency_id in users:
         session.add(

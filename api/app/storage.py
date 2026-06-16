@@ -48,6 +48,34 @@ def upload_policy_blob(agency_id: str, version: int, filename: str, data: bytes)
     return f"{settings.storage_account_url.rstrip('/')}/{settings.policy_container}/{blob_name}"
 
 
+def upload_receipt_blob(employee_id: str, filename: str, data: bytes) -> str:
+    """Store a receipt under `receipts/{employee_id}/{filename}` and return its URI.
+
+    Azure: uploads to the `receipt_container` with the `{employee_id}/` prefix (the folder
+    hierarchy required by the change spec) and returns the blob URL. Offline: writes under
+    `receipt_local_dir/{employee_id}/` and returns a `file://` path. Callers pass an already
+    collision-safe `filename` (e.g. prefixed with the attachment id).
+    """
+    blob_name = f"{employee_id}/{filename}"
+
+    if not _use_azure():
+        root = Path(settings.receipt_local_dir) / employee_id
+        root.mkdir(parents=True, exist_ok=True)
+        dest = root / filename
+        dest.write_bytes(data)
+        return dest.resolve().as_uri()
+
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+    from azure.storage.blob import BlobServiceClient  # noqa: PLC0415
+
+    client = BlobServiceClient(
+        account_url=settings.storage_account_url, credential=DefaultAzureCredential()
+    )
+    container = client.get_container_client(settings.receipt_container)
+    container.upload_blob(name=blob_name, data=data, overwrite=True)
+    return f"{settings.storage_account_url.rstrip('/')}/{settings.receipt_container}/{blob_name}"
+
+
 def read_policy_blob(uri: str) -> bytes:
     """Read a policy document back (used by tests / local tooling). Offline only resolves
     `file://` URIs; Azure URIs require the worker's Blob reader role."""

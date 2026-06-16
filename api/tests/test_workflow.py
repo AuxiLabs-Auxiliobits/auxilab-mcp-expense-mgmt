@@ -17,7 +17,8 @@ _counter = iter(range(100, 1000))
 def _new_sheet_payload():
     n = next(_counter)
     return {
-        "period": "2026-06",
+        "title": f"Trip {n}",
+        "period": THIS_MONTH[:7],  # "YYYY-MM" of the current month/year
         "line_items": [
             {
                 "category": "Travel - Ground",
@@ -27,19 +28,31 @@ def _new_sheet_payload():
                 "expense_date": THIS_MONTH,
                 "receipt_datetime": f"{THIS_MONTH}T0{n % 9}:30:00",
                 "receipt_total": f"{n}.00",
-                "has_receipt": True,
+                "tax": "0.00",
             }
         ],
     }
+
+
+def _attach_receipts(client, token, sheet):
+    """Upload a receipt to every line item (mandatory before submit)."""
+    for li in sheet["line_items"]:
+        r = client.post(
+            f"/sheets/{sheet['id']}/line-items/{li['id']}/receipt",
+            files={"file": ("receipt.pdf", b"%PDF-1.4 receipt", "application/pdf")},
+            headers=auth(token),
+        )
+        assert r.status_code == 201, r.text
 
 
 def test_submit_advances_to_manager_review(client):
     emp = login(client, "employee@demo.local")
     created = client.post("/sheets", json=_new_sheet_payload(), headers=auth(emp))
     assert created.status_code == 201, created.text
-    sheet_id = created.json()["id"]
+    sheet = created.json()
+    _attach_receipts(client, emp, sheet)
 
-    submitted = client.post(f"/sheets/{sheet_id}/submit", headers=auth(emp))
+    submitted = client.post(f"/sheets/{sheet['id']}/submit", headers=auth(emp))
     assert submitted.status_code == 200, submitted.text
     assert submitted.json()["status"] == "IN_MANAGER_REVIEW"
 
@@ -48,6 +61,7 @@ def test_manager_approval_advances_to_finance(client):
     emp = login(client, "employee@demo.local")
     sheet = client.post("/sheets", json=_new_sheet_payload(), headers=auth(emp)).json()
     sheet_id = sheet["id"]
+    _attach_receipts(client, emp, sheet)
     client.post(f"/sheets/{sheet_id}/submit", headers=auth(emp))
 
     mgr = login(client, "manager@demo.local")

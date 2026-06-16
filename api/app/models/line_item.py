@@ -28,7 +28,8 @@ class LineItem(SQLModel, table=True):
     sheet_id: str = Field(foreign_key="expense_sheets.id", index=True)
     employee_id: str = Field(foreign_key="users.id", index=True)
 
-    category: Category | None = None
+    category: Category | None = None  # the selected Expense Type (value set incl. "Other")
+    expense_type_other: str | None = None  # free text when category == OTHER
     amount: Decimal = Field(sa_type=Numeric(12, 2))
     currency: str = "USD"
     expense_date: date
@@ -37,6 +38,8 @@ class LineItem(SQLModel, table=True):
 
     receipt_datetime: datetime | None = None
     receipt_total: Decimal | None = Field(default=None, sa_type=Numeric(12, 2))
+    tax: Decimal | None = Field(default=None, sa_type=Numeric(12, 2))  # Tax / VAT
+    # Server-derived from attachment presence; a receipt is mandatory at submission.
     has_receipt: bool = False
 
     # Manager verdict (Line 2).

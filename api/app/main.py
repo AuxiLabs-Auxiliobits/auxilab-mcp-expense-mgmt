@@ -26,10 +26,50 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_DESCRIPTION = """
+Enterprise expense-compliance platform — RBAC, agency-scoped workflow, audit, and the
+LLM-finance-approver webhook. **The whole API is testable from this page.**
+
+### How to test from here
+1. Click **Authorize** (top right) and log in with a demo account — username is the email,
+   password is `demo`:
+
+   | Role | Username |
+   |------|----------|
+   | Employee | `employee@demo.local` |
+   | Manager  | `manager@demo.local`  |
+   | Finance  | `finance@demo.local`  |
+   | Admin    | `admin@demo.local`    |
+   | Agent (LLM approver) | `agent@demo.local` |
+
+   The token is then attached to every request automatically. Call **`GET /auth/me`** to
+   confirm your role.
+2. Walk the lifecycle: as **employee** `POST /sheets` → `POST /sheets/{id}/submit`; as
+   **manager** `GET /manager/queue` → `POST /manager/sheets/{id}/action`; as **agent**
+   `POST /finance/sheets/{id}/llm-decision`; as **finance** `GET /finance/queue` →
+   `POST /finance/sheets/{id}/decision` and `GET /finance/audit`.
+3. RBAC is real — calling an endpoint your role lacks returns **403**; re-Authorize as a
+   different demo user to switch roles.
+
+Auth provider is `db` by default (this flow); in `entra` mode tokens come from Entra (ADR-001).
+"""
+
+_TAGS_METADATA = [
+    {"name": "auth", "description": "Log in (`/auth/token` powers Authorize) and inspect the current principal."},
+    {"name": "sheets", "description": "Employee: create a draft sheet with line items, view, submit/resubmit."},
+    {"name": "manager", "description": "Manager: per-line-item approve/reject/request-info — own agency only (SoD enforced)."},
+    {"name": "finance", "description": "Finance: manual-review queue, human decisions, override the LLM, audit log, + the LLM-approver webhook."},
+    {"name": "policy", "description": "Finance/Admin: upload + maker-checker publish of agency policy docs (feeds RAG); ingestion-worker callback."},
+    {"name": "admin", "description": "Admin: manage agencies and users/roles."},
+    {"name": "health", "description": "Liveness probe."},
+]
+
 app = FastAPI(
     title="Expense Management API",
     version="0.1.0",
-    description="Enterprise expense compliance platform — RBAC, agency-scoped workflow, audit.",
+    description=_DESCRIPTION,
+    openapi_tags=_TAGS_METADATA,
+    contact={"name": "Expense Platform", "email": "operations@retinex.ai"},
     lifespan=lifespan,
 )
 

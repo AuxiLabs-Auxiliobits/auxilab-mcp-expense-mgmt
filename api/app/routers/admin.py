@@ -20,7 +20,14 @@ from app.schemas.dto import AgencyCreate, AgencyUpdate, UserCreate, UserOut, Use
 from app.services import audit_service
 from expense_core.schemas.enums import SheetStatus
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    responses={
+        401: {"description": "Missing or invalid bearer token"},
+        403: {"description": "Admin role required"},
+    },
+)
 _ph = PasswordHasher()
 
 _OPEN_STATES = {
@@ -39,7 +46,7 @@ def _parse_role(value: str) -> Role:
         ) from e
 
 
-@router.get("/agencies", response_model=list[Agency])
+@router.get("/agencies", response_model=list[Agency], summary="List agencies")
 async def list_agencies(
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
@@ -47,7 +54,12 @@ async def list_agencies(
     return list(session.exec(select(Agency)).all())
 
 
-@router.post("/agencies", response_model=Agency, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/agencies",
+    response_model=Agency,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an agency",
+)
 async def create_agency(
     body: AgencyCreate,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
@@ -62,7 +74,12 @@ async def create_agency(
     return agency
 
 
-@router.get("/agencies/{agency_id}", response_model=Agency)
+@router.get(
+    "/agencies/{agency_id}",
+    response_model=Agency,
+    summary="Get one agency",
+    responses={404: {"description": "Agency not found"}},
+)
 async def get_agency(
     agency_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
@@ -74,7 +91,12 @@ async def get_agency(
     return agency
 
 
-@router.patch("/agencies/{agency_id}", response_model=Agency)
+@router.patch(
+    "/agencies/{agency_id}",
+    response_model=Agency,
+    summary="Rename / change agency status",
+    responses={404: {"description": "Agency not found"}, 409: {"description": "Name already exists"}},
+)
 async def update_agency(
     agency_id: str,
     body: AgencyUpdate,
@@ -111,7 +133,12 @@ async def update_agency(
     return agency
 
 
-@router.delete("/agencies/{agency_id}", response_model=Agency)
+@router.delete(
+    "/agencies/{agency_id}",
+    response_model=Agency,
+    summary="Soft-delete an agency",
+    responses={404: {"description": "Agency not found"}, 409: {"description": "Has open sheets"}},
+)
 async def soft_delete_agency(
     agency_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
@@ -144,7 +171,7 @@ async def soft_delete_agency(
     return agency
 
 
-@router.get("/users", response_model=list[UserOut])
+@router.get("/users", response_model=list[UserOut], summary="List users (filterable)")
 async def list_users(
     principal: Principal = Depends(require(Capability.MANAGE_USERS)),
     session: Session = Depends(get_session),
@@ -160,7 +187,12 @@ async def list_users(
     return list(session.exec(stmt).all())
 
 
-@router.get("/users/{user_id}", response_model=UserOut)
+@router.get(
+    "/users/{user_id}",
+    response_model=UserOut,
+    summary="Get one user",
+    responses={404: {"description": "User not found"}},
+)
 async def get_user(
     user_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_USERS)),
@@ -172,7 +204,13 @@ async def get_user(
     return user
 
 
-@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a user (admin signup)",
+    responses={409: {"description": "Email already exists"}, 422: {"description": "Invalid role"}},
+)
 async def create_user(
     body: UserCreate,
     principal: Principal = Depends(require(Capability.MANAGE_USERS)),
@@ -193,7 +231,12 @@ async def create_user(
     return user
 
 
-@router.patch("/users/{user_id}", response_model=UserOut)
+@router.patch(
+    "/users/{user_id}",
+    response_model=UserOut,
+    summary="Update a user (role, email, agency, active, password)",
+    responses={404: {"description": "User not found"}, 409: {"description": "Email already exists"}},
+)
 async def update_user(
     user_id: str,
     body: UserUpdate,
@@ -236,7 +279,12 @@ async def update_user(
     return user
 
 
-@router.delete("/users/{user_id}", response_model=UserOut)
+@router.delete(
+    "/users/{user_id}",
+    response_model=UserOut,
+    summary="Deactivate a user (soft delete)",
+    responses={404: {"description": "User not found"}, 409: {"description": "Cannot deactivate self"}},
+)
 async def deactivate_user(
     user_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_USERS)),

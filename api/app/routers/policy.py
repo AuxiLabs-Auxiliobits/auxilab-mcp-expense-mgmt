@@ -21,7 +21,14 @@ from app.rbac.permissions import Capability
 from app.schemas.dto import PolicyIndexedCallback, PolicyOut
 from app.services import policy_service
 
-router = APIRouter(prefix="/finance/policies", tags=["policy"])
+router = APIRouter(
+    prefix="/finance/policies",
+    tags=["policy"],
+    responses={
+        401: {"description": "Missing or invalid bearer token"},
+        403: {"description": "Insufficient role (Finance/Admin; Agent for the index callback)"},
+    },
+)
 
 
 def _to_out(policy: AgencyPolicy) -> PolicyOut:
@@ -30,7 +37,7 @@ def _to_out(policy: AgencyPolicy) -> PolicyOut:
     return out
 
 
-@router.get("/{agency_id}", response_model=list[PolicyOut])
+@router.get("/{agency_id}", response_model=list[PolicyOut], summary="List policy-doc versions")
 async def list_agency_policies(
     agency_id: str,
     principal: Principal = Depends(require(Capability.UPDATE_AGENCY_POLICY_DOC)),
@@ -41,7 +48,12 @@ async def list_agency_policies(
     return [_to_out(p) for p in policy_service.list_policies(session, agency_id)]
 
 
-@router.post("/{agency_id}", response_model=PolicyOut, status_code=201)
+@router.post(
+    "/{agency_id}",
+    response_model=PolicyOut,
+    status_code=201,
+    summary="Upload a policy doc (maker step)",
+)
 async def upload_agency_policy(
     agency_id: str,
     file: UploadFile = File(...),
@@ -60,7 +72,11 @@ async def upload_agency_policy(
     return _to_out(policy)
 
 
-@router.post("/{agency_id}/{policy_id}/publish", response_model=PolicyOut)
+@router.post(
+    "/{agency_id}/{policy_id}/publish",
+    response_model=PolicyOut,
+    summary="Publish a policy doc (checker step, SoD)",
+)
 async def publish_agency_policy(
     agency_id: str,
     policy_id: str,
@@ -74,7 +90,11 @@ async def publish_agency_policy(
     return _to_out(policy)
 
 
-@router.post("/{policy_id}/indexed", response_model=PolicyOut)
+@router.post(
+    "/{policy_id}/indexed",
+    response_model=PolicyOut,
+    summary="Ingestion-worker callback (Agent role)",
+)
 async def report_indexed(
     policy_id: str,
     body: PolicyIndexedCallback,
