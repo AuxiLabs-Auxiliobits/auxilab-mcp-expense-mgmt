@@ -26,6 +26,7 @@ class Capability(StrEnum):
     MANAGE_AGENCY = "manage_agency"  # create / onboard / delete agency
     MANAGE_USERS = "manage_users"
     VIEW_AUDIT_LOG = "view_audit_log"
+    VIEW_REPORTS = "view_reports"  # org-wide / agency reports (SCOPING §3.2)
     RAG_QUERY = "rag_query"
 
 
@@ -41,6 +42,7 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.MANAGE_AGENCY: {Role.ADMIN},
     Capability.MANAGE_USERS: {Role.ADMIN},
     Capability.VIEW_AUDIT_LOG: {Role.FINANCE, Role.ADMIN},
+    Capability.VIEW_REPORTS: {Role.MANAGER, Role.FINANCE, Role.ADMIN},
     Capability.RAG_QUERY: {Role.EMPLOYEE, Role.MANAGER, Role.FINANCE, Role.ADMIN, Role.AGENT},
 }
 

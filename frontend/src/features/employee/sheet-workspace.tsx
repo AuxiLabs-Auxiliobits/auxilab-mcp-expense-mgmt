@@ -1,0 +1,843 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import {
+  useRemoveLineItem,
+  useResubmitSheet,
+  useSheet,
+  useSubmitSheet,
+  useWithdrawSheet,
+} from "@/data/hooks";
+import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
+import { AiCitation, CitedClause } from "@/components/shared/ai-citation";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { Reveal } from "@/components/shared/reveal";
+import { Counter } from "@/components/shared/counter";
+import { LiveDot } from "@/components/shared/live-dot";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  CATEGORY_ICON,
+  LINE_ITEM_STATUS_META,
+  ROUTE_REASON_META,
+  SHEET_STATUS_META,
+} from "@/lib/status";
+import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { LineItemDialog } from "./line-item-form";
+
+const EDITABLE: SheetStatus[] = [
+  "DRAFT",
+  "RETURNED_TO_EMPLOYEE",
+  "FINANCE_REJECTED",
+  "REJECTED",
+];
+const NEEDS_FEEDBACK: SheetStatus[] = [
+  "RETURNED_TO_EMPLOYEE",
+  "FINANCE_REJECTED",
+  "REJECTED",
+];
+const IN_FLIGHT: SheetStatus[] = [
+  "SUBMITTED",
+  "IN_MANAGER_REVIEW",
+  "IN_FINANCE_REVIEW",
+  "FINANCE_MANUAL_REVIEW",
+];
+
+// ── Decision timeline model ──────────────────────────────────────────────────
+type StepState = "done" | "active" | "error" | "upcoming";
+interface TimelineStep {
+  key: string;
+  label: string;
+  icon: string;
+  state: StepState;
+  detail?: string;
+}
+
+/** Map the real sheet status onto the Submitted → Manager → AI → Finance/Paid rail. */
+function buildTimeline(sheet: ExpenseSheet): TimelineStep[] {
+  const s = sheet.status;
+  const submitted = s !== "DRAFT" && s !== "WITHDRAWN";
+
+  const draftDone = s !== "DRAFT";
+  const managerReached =
+    submitted &&
+    !["SUBMITTED"].includes(s); // SUBMITTED = queued, manager not yet acting
+  const managerReturned = s === "RETURNED_TO_EMPLOYEE" || s === "REJECTED";
+  const managerDone =
+    ["IN_FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_REJECTED", "FINANCE_MANUAL_REVIEW", "APPROVED", "PAID"].includes(s);
+
+  const aiReached = ["IN_FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_REJECTED", "FINANCE_MANUAL_REVIEW", "APPROVED", "PAID"].includes(s);
+  const routed = s === "FINANCE_MANUAL_REVIEW";
+  const aiRejected = s === "FINANCE_REJECTED";
+  const aiDone = ["FINANCE_APPROVED", "APPROVED", "PAID"].includes(s) || routed;
+
+  const financeReached = ["FINANCE_APPROVED", "FINANCE_MANUAL_REVIEW", "FINANCE_REJECTED", "APPROVED", "PAID"].includes(s);
+  const paidDone = s === "PAID";
+  const finalApproved = ["FINANCE_APPROVED", "APPROVED", "PAID"].includes(s);
+
+  const submitState: StepState = s === "DRAFT" ? "active" : "done";
+
+  let managerState: StepState = "upcoming";
+  if (managerReturned) managerState = "error";
+  else if (managerDone) managerState = "done";
+  else if (managerReached) managerState = "active";
+  else if (s === "SUBMITTED") managerState = "active";
+
+  let aiState: StepState = "upcoming";
+  if (aiRejected) aiState = "error";
+  else if (aiDone) aiState = routed ? "done" : "done";
+  else if (s === "IN_FINANCE_REVIEW") aiState = "active";
+
+  let financeState: StepState = "upcoming";
+  if (finalApproved) financeState = "done";
+  else if (routed) financeState = "active";
+  else if (s === "FINANCE_REJECTED") financeState = "error";
+
+  void draftDone;
+  void managerDone;
+  void aiReached;
+  void financeReached;
+
+  return [
+    {
+      key: "submitted",
+      label: "Submitted",
+      icon: "send",
+      state: submitState,
+      detail: sheet.submittedAt ? formatDate(sheet.submittedAt) : "Not yet submitted",
+    },
+    {
+      key: "manager",
+      label: "Manager Review",
+      icon: "supervisor_account",
+      state: managerState,
+      detail:
+        managerState === "error"
+          ? "Returned for changes"
+          : managerState === "done"
+            ? "Approved per line item"
+            : managerState === "active"
+              ? "In review"
+              : "Pending",
+    },
+    {
+      key: "ai",
+      label: "AI Finance Approver",
+      icon: "smart_toy",
+      state: aiState,
+      detail:
+        aiState === "error"
+          ? "Auto-rejected"
+          : routed
+            ? "Routed to a human"
+            : aiState === "done"
+              ? "Auto-approved"
+              : aiState === "active"
+                ? "Evaluating policy"
+                : "Pending",
+    },
+    {
+      key: "finance",
+      label: paidDone ? "Paid" : "Finance Decision",
+      icon: paidDone ? "paid" : "account_balance",
+      state: paidDone ? "done" : financeState,
+      detail:
+        paidDone
+          ? "Reimbursed"
+          : finalApproved
+            ? "Approved"
+            : financeState === "error"
+              ? "Rejected"
+              : financeState === "active"
+                ? "Manual review"
+                : "Pending",
+    },
+  ];
+}
+
+const STEP_TONE: Record<StepState, { ring: string; bg: string; text: string; bar: string }> = {
+  done: {
+    ring: "border-success-green/40",
+    bg: "bg-success-green/10 text-success-green",
+    text: "text-on-surface",
+    bar: "bg-success-green/40",
+  },
+  active: {
+    ring: "border-primary/50",
+    bg: "bg-primary/10 text-primary",
+    text: "text-on-surface",
+    bar: "bg-outline-variant",
+  },
+  error: {
+    ring: "border-error/40",
+    bg: "bg-error-container text-on-error-container",
+    text: "text-on-surface",
+    bar: "bg-outline-variant",
+  },
+  upcoming: {
+    ring: "border-outline-variant",
+    bg: "bg-surface-container-high text-on-surface-variant",
+    text: "text-on-surface-variant",
+    bar: "bg-outline-variant",
+  },
+};
+
+export function SheetWorkspace({ sheetId }: { sheetId: string }) {
+  const router = useRouter();
+  const { data: sheet, isLoading } = useSheet(sheetId);
+  const removeLineItem = useRemoveLineItem();
+  const submitSheet = useSubmitSheet();
+  const resubmitSheet = useResubmitSheet();
+  const withdrawSheet = useWithdrawSheet();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<LineItem | undefined>();
+
+  if (isLoading || !sheet) {
+    return (
+      <>
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="mt-4 h-36 rounded-lg" />
+        <Skeleton className="mt-4 h-20 rounded-lg" />
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <Skeleton className="h-72 rounded-lg lg:col-span-2" />
+          <Skeleton className="h-72 rounded-lg" />
+        </div>
+      </>
+    );
+  }
+
+  const editable = EDITABLE.includes(sheet.status);
+  const isResubmit = NEEDS_FEEDBACK.includes(sheet.status);
+  const inFlight = IN_FLIGHT.includes(sheet.status);
+  const errorCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "error").length;
+  const warningCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "warning").length;
+  const missingReceipts = sheet.lineItems.filter((li) => li.attachments.length === 0).length;
+  const empty = sheet.lineItems.length === 0;
+  const currencies = [...new Set(sheet.lineItems.map((li) => li.currency))];
+  const mixedCurrency = currencies.length > 1;
+  const timeline = buildTimeline(sheet);
+
+  const rejectionReasons = sheet.lineItems.filter(
+    (li) =>
+      (li.managerStatus === "MANAGER_REJECTED" || li.managerStatus === "INFO_REQUESTED") &&
+      li.managerReason,
+  );
+
+  function openAdd() {
+    setEditing(undefined);
+    setDialogOpen(true);
+  }
+  function openEdit(item: LineItem) {
+    setEditing(item);
+    setDialogOpen(true);
+  }
+  async function remove(item: LineItem) {
+    await removeLineItem.mutateAsync({ sheetId, lineItemId: item.id });
+    toast("Line item removed", { description: item.merchant });
+  }
+  async function submit() {
+    await submitSheet.mutateAsync(sheetId);
+    toast.success(`${sheet!.id} submitted for manager review`);
+    router.push("/employee");
+  }
+  async function resubmit() {
+    const result = await resubmitSheet.mutateAsync(sheetId);
+    toast.success(`${result.id} resubmitted (v${result.version})`, {
+      description: "Restarted from manager review.",
+    });
+    router.push("/employee");
+  }
+  async function withdraw() {
+    await withdrawSheet.mutateAsync(sheetId);
+    toast("Sheet withdrawn", { description: `${sheet!.id} pulled from the workflow.` });
+    router.push("/employee");
+  }
+
+  const blocked = empty || errorCount > 0;
+  const primaryPending = isResubmit ? resubmitSheet.isPending : submitSheet.isPending;
+
+  return (
+    <>
+      <Link
+        href="/employee/sheets"
+        className="inline-flex items-center gap-1 rounded text-body-sm text-on-surface-variant transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <Icon name="arrow_back" className="text-[18px]" /> Back to sheets
+      </Link>
+
+      {/* ── Sticky header ──────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 mt-3">
+        <Card className="overflow-hidden border-outline-variant/70 shadow-elevation-1 backdrop-blur supports-[backdrop-filter]:bg-surface-container-lowest/90">
+          <div className="flex flex-col gap-5 p-5 md:p-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">
+                  {sheet.title}
+                </h1>
+                <StatusBadge meta={SHEET_STATUS_META[sheet.status]} className="rounded-md" />
+                {inFlight && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-2 py-0.5 font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
+                    <LiveDot tone="primary" /> Live
+                  </span>
+                )}
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-label-md text-on-surface-variant">
+                <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-on-surface">{sheet.id}</span>
+                <span aria-hidden className="text-outline-variant">/</span>
+                <span>v{sheet.version}</span>
+                <span aria-hidden className="text-outline-variant">/</span>
+                <span className="inline-flex items-center gap-1">
+                  <Icon name="apartment" className="text-[14px]" />
+                  {sheet.agencyName}
+                </span>
+                <span aria-hidden className="text-outline-variant">/</span>
+                <span className="inline-flex items-center gap-1">
+                  <Icon name="event" className="text-[14px]" />
+                  {sheet.period}
+                </span>
+                <span aria-hidden className="text-outline-variant">/</span>
+                <span className="inline-flex items-center gap-1">
+                  <Icon name="person" className="text-[14px]" />
+                  {sheet.employeeName}
+                </span>
+              </div>
+            </div>
+
+            {/* Total + primary contextual action */}
+            <div className="flex shrink-0 flex-col items-start gap-3 border-t border-outline-variant pt-4 lg:items-end lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <div className="lg:text-right">
+                <div className="font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
+                  Sheet total
+                </div>
+                <div className="text-headline-xl font-semibold tabular-nums text-on-surface">
+                  <Counter
+                    value={sheet.total}
+                    format={(n) => formatCurrency(n, sheet.currency)}
+                  />
+                </div>
+                <div className="font-mono text-label-sm text-on-surface-variant">
+                  {sheet.lineItems.length} item{sheet.lineItems.length === 1 ? "" : "s"} ·
+                  updated {formatRelative(sheet.updatedAt)}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {inFlight && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={withdrawSheet.isPending}
+                    onClick={withdraw}
+                  >
+                    <Icon name="cancel_presentation" /> Withdraw
+                  </Button>
+                )}
+                {editable && (
+                  isResubmit ? (
+                    <Button
+                      onClick={resubmit}
+                      disabled={blocked || primaryPending}
+                      aria-label="Resubmit sheet for review"
+                    >
+                      <Icon name="restart_alt" /> Resubmit Sheet
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={submit}
+                      disabled={blocked || primaryPending}
+                      aria-label="Submit sheet for review"
+                    >
+                      <Icon name="send" /> Submit for Review
+                    </Button>
+                  )
+                )}
+              </div>
+              {editable && blocked && (
+                <p className="flex items-center gap-1 font-mono text-label-sm text-error lg:justify-end">
+                  <Icon name="error" className="text-[14px]" />
+                  {empty
+                    ? "Add a line item to submit"
+                    : `${errorCount} item${errorCount === 1 ? "" : "s"} need fixing`}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Decision timeline rail */}
+          <Timeline steps={timeline} />
+        </Card>
+      </header>
+
+      {/* ── Notices ────────────────────────────────────────────────────── */}
+      {mixedCurrency && (
+        <Reveal>
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-tertiary/30 bg-tertiary/5 px-4 py-3 text-body-sm text-on-surface">
+            <Icon name="currency_exchange" className="text-[18px] text-tertiary" />
+            Mixed-currency sheet ({currencies.join(", ")}). FX is applied at the reimbursement
+            decision; totals shown are nominal.
+          </div>
+        </Reveal>
+      )}
+
+      {isResubmit && (
+        <Reveal>
+          <Card className="mt-4 border-error/30 bg-error-container/30 shadow-sm">
+            <div className="p-5">
+              <div className="mb-2 flex items-center gap-2 text-on-error-container">
+                <Icon name="report" />
+                <h2 className="text-body-lg font-semibold">
+                  This sheet was{" "}
+                  {sheet.status === "RETURNED_TO_EMPLOYEE"
+                    ? "returned by your manager"
+                    : "rejected at the finance gate"}
+                </h2>
+              </div>
+              <p className="text-body-sm text-on-surface-variant">
+                Address the feedback below, then resubmit. The sheet keeps the same ID
+                ({sheet.id}); resubmitting increments the version and restarts review from
+                your manager.
+              </p>
+
+              {sheet.citedClause && (
+                <div className="mt-3">
+                  <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
+                </div>
+              )}
+              {sheet.routeReasonDetail && (
+                <p className="mt-3 rounded border border-outline-variant bg-surface p-3 text-body-sm text-on-surface">
+                  {sheet.routeReasonDetail}
+                </p>
+              )}
+              {rejectionReasons.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {rejectionReasons.map((li) => (
+                    <li key={li.id} className="rounded border border-outline-variant bg-surface p-3 text-body-sm">
+                      <span className="font-medium text-on-surface">{li.merchant}:</span>{" "}
+                      <span className="text-on-surface-variant">{li.managerReason}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Card>
+        </Reveal>
+      )}
+
+      {/* ── Body: line items (main) + decision sidebar ─────────────────── */}
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
+        {/* Line items */}
+        <Card className="shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between gap-3 border-b border-outline-variant px-5 py-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-body-lg font-semibold text-on-surface">Line Items</h2>
+              <span className="rounded-full bg-surface-container-high px-2 py-0.5 font-mono text-label-sm text-on-surface-variant">
+                {sheet.lineItems.length}
+              </span>
+            </div>
+            {editable && (
+              <Button size="sm" onClick={openAdd}>
+                <Icon name="add" /> Add Line Item
+              </Button>
+            )}
+          </div>
+
+          {isResubmit && (
+            <div className="flex items-start gap-2 border-b border-outline-variant bg-surface-bright px-5 py-2.5 text-body-sm text-on-surface-variant">
+              <Icon name="edit_note" className="mt-0.5 text-[18px] text-secondary" />
+              <span>
+                Edit the flagged items below to address the feedback — change details or
+                replace attachments — then resubmit. You can also add or remove items.
+              </span>
+            </div>
+          )}
+
+          {empty ? (
+            <div className="flex flex-col items-center gap-3 px-5 py-14 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
+                <Icon name="receipt_long" className="text-[24px]" />
+              </span>
+              <p className="text-body-sm text-on-surface-variant">No line items yet.</p>
+              {editable && (
+                <Button size="sm" variant="outline" onClick={openAdd}>
+                  <Icon name="add" /> Add your first one
+                </Button>
+              )}
+            </div>
+          ) : (
+            <ul className="divide-y divide-outline-variant">
+              {sheet.lineItems.map((item, i) => (
+                <Reveal key={item.id} delay={i * 50}>
+                  <LineItemRow
+                    item={item}
+                    editable={editable}
+                    onEdit={() => openEdit(item)}
+                    onRemove={() => remove(item)}
+                  />
+                </Reveal>
+              ))}
+            </ul>
+          )}
+
+          {editable && (
+            <div className="flex flex-col gap-3 border-t border-outline-variant bg-surface-container-low px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="font-mono text-label-md text-on-surface-variant">
+                {errorCount > 0 ? (
+                  <span className="flex items-center gap-1 text-error">
+                    <Icon name="error" className="text-[16px]" />
+                    {errorCount} item{errorCount === 1 ? "" : "s"} need fixing before submission
+                  </span>
+                ) : isResubmit ? (
+                  "You can resubmit with or without changes."
+                ) : (
+                  "Add all your expenses, then submit for review."
+                )}
+              </div>
+              {isResubmit ? (
+                <Button onClick={resubmit} disabled={blocked || resubmitSheet.isPending}>
+                  <Icon name="restart_alt" /> Resubmit Sheet
+                </Button>
+              ) : (
+                <Button onClick={submit} disabled={blocked || submitSheet.isPending}>
+                  <Icon name="send" /> Submit for Review
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {/* Decision / summary sidebar */}
+        <aside className="space-y-4 lg:sticky lg:top-44">
+          <DecisionPanel sheet={sheet} />
+
+          <Card className="shadow-sm">
+            <div className="border-b border-outline-variant px-5 py-3">
+              <h2 className="text-body-lg font-semibold text-on-surface">Summary</h2>
+            </div>
+            <dl className="divide-y divide-outline-variant text-body-sm">
+              <SummaryRow label="Line items" value={String(sheet.lineItems.length)} />
+              <SummaryRow
+                label="Sheet total"
+                value={formatCurrency(sheet.total, sheet.currency)}
+                emphasis
+              />
+              <SummaryRow
+                label="Missing receipts"
+                value={String(missingReceipts)}
+                tone={missingReceipts > 0 ? "error" : "muted"}
+              />
+              <SummaryRow
+                label="Policy flags"
+                value={`${errorCount} error${errorCount === 1 ? "" : "s"} · ${warningCount} warning${warningCount === 1 ? "" : "s"}`}
+                tone={errorCount > 0 ? "error" : warningCount > 0 ? "warning" : "muted"}
+              />
+            </dl>
+          </Card>
+
+          {isResubmit && (
+            <p className="flex items-start gap-1.5 px-1 text-body-sm text-on-surface-variant">
+              <Icon name="info" className="mt-0.5 text-[16px]" />
+              Anti-gaming: an unchanged resubmit of a policy-rejected sheet will be rejected
+              again deterministically.
+            </p>
+          )}
+        </aside>
+      </div>
+
+      <LineItemDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        sheetId={sheet.id}
+        item={editing}
+        siblings={sheet.lineItems.filter((l) => l.id !== editing?.id)}
+      />
+    </>
+  );
+}
+
+// ── Decision timeline rail ───────────────────────────────────────────────────
+function Timeline({ steps }: { steps: TimelineStep[] }) {
+  return (
+    <div
+      className="border-t border-outline-variant bg-surface-container-low px-4 py-4 md:px-6"
+      aria-label="Decision timeline"
+    >
+      <ol className="flex flex-col gap-4 sm:flex-row sm:items-stretch sm:gap-0">
+        {steps.map((step, i) => {
+          const tone = STEP_TONE[step.state];
+          const last = i === steps.length - 1;
+          return (
+            <li key={step.key} className="flex flex-1 items-start gap-3 sm:flex-col sm:items-stretch sm:gap-2">
+              <div className="flex items-center gap-3 sm:gap-2">
+                <span
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                    tone.ring,
+                    tone.bg,
+                  )}
+                  aria-hidden
+                >
+                  <Icon
+                    name={
+                      step.state === "done"
+                        ? "check"
+                        : step.state === "error"
+                          ? "priority_high"
+                          : step.icon
+                    }
+                    className="text-[18px]"
+                  />
+                </span>
+                {/* Connector (horizontal, desktop) */}
+                {!last && (
+                  <span className={cn("hidden h-0.5 flex-1 rounded sm:block", tone.bar)} aria-hidden />
+                )}
+              </div>
+              <div className="min-w-0 sm:pr-4">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 text-body-sm font-medium",
+                    tone.text,
+                  )}
+                >
+                  {step.label}
+                  {step.state === "active" && <LiveDot tone="primary" />}
+                </div>
+                <div className="font-mono text-label-sm text-on-surface-variant">
+                  {step.detail}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+// ── Decision panel (AI / finance outcome detail) ─────────────────────────────
+function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
+  const decided = sheet.financeDecision != null;
+  const routed = sheet.status === "FINANCE_MANUAL_REVIEW";
+
+  return (
+    <Card className="shadow-sm">
+      <div className="flex items-center gap-2 border-b border-outline-variant px-5 py-3">
+        <Icon name="smart_toy" className="text-[18px] text-secondary" />
+        <h2 className="text-body-lg font-semibold text-on-surface">Decision Trail</h2>
+      </div>
+      <div className="space-y-3 p-5">
+        {!decided && !routed && (
+          <p className="text-body-sm text-on-surface-variant">
+            {sheet.status === "DRAFT"
+              ? "Not submitted yet. Add your expenses and submit for manager review."
+              : "Awaiting decisions. Verdicts from your manager and the AI Finance Approver will appear here."}
+          </p>
+        )}
+
+        {sheet.financeDecidedBy && (
+          <div className="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2">
+            <div className="flex items-center gap-2 text-body-sm text-on-surface">
+              <Icon name="badge" className="text-[16px] text-on-surface-variant" />
+              Decided by
+            </div>
+            <span className="font-mono text-label-md text-on-surface-variant">
+              {sheet.financeDecidedBy}
+            </span>
+          </div>
+        )}
+
+        {sheet.routeReason && (
+          <div className="space-y-2 rounded-lg border border-outline-variant bg-surface-container-low p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
+                Route reason
+              </span>
+              <StatusBadge meta={ROUTE_REASON_META[sheet.routeReason]} className="rounded-md" />
+            </div>
+            {sheet.llmConfidence != null && (
+              <div className="flex items-center justify-between text-body-sm">
+                <span className="text-on-surface-variant">Model confidence</span>
+                <span className="font-mono tabular-nums text-on-surface">
+                  {Math.round(sheet.llmConfidence * 100)}%
+                </span>
+              </div>
+            )}
+            {sheet.routeReasonDetail && (
+              <p className="text-body-sm text-on-surface">{sheet.routeReasonDetail}</p>
+            )}
+          </div>
+        )}
+
+        {sheet.citedClause && (
+          <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
+        )}
+
+        {sheet.policyVersionUsed && (
+          <div className="flex items-center justify-between text-body-sm">
+            <span className="text-on-surface-variant">Policy version</span>
+            <span className="font-mono text-label-md text-on-surface">{sheet.policyVersionUsed}</span>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  emphasis,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+  tone?: "default" | "muted" | "error" | "warning";
+}) {
+  const toneClass =
+    tone === "error"
+      ? "text-error"
+      : tone === "warning"
+        ? "text-yellow-600"
+        : tone === "muted"
+          ? "text-on-surface-variant"
+          : "text-on-surface";
+  return (
+    <div className="flex items-center justify-between px-5 py-2.5">
+      <dt className="text-on-surface-variant">{label}</dt>
+      <dd
+        className={cn(
+          "font-mono tabular-nums",
+          emphasis ? "text-body-md font-semibold text-on-surface" : "text-label-md",
+          !emphasis && toneClass,
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+// ── Line item row ────────────────────────────────────────────────────────────
+function LineItemRow({
+  item,
+  editable,
+  onEdit,
+  onRemove,
+}: {
+  item: LineItem;
+  editable: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const needsFix =
+    editable &&
+    (item.managerStatus === "MANAGER_REJECTED" ||
+      item.managerStatus === "INFO_REQUESTED" ||
+      item.aiFlag?.severity === "error");
+  const hasReceipt = item.attachments.length > 0;
+
+  return (
+    <li
+      className={cn(
+        "relative flex items-start gap-4 px-5 py-4 transition-colors",
+        needsFix ? "bg-error-container/20" : "hover:bg-surface-container-low",
+      )}
+    >
+      {needsFix && <span className="absolute left-0 top-0 h-full w-1 bg-error" aria-hidden />}
+      <div
+        className={cn(
+          "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+          needsFix
+            ? "bg-error-container text-on-error-container"
+            : "bg-surface-container-high text-on-surface-variant",
+        )}
+      >
+        <Icon name={CATEGORY_ICON[item.category] ?? "category"} className="text-[20px]" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="truncate text-body-md font-medium text-on-surface">{item.merchant}</div>
+            <div className="font-mono text-label-md text-on-surface-variant">
+              {item.category} · {formatDate(item.expenseDate)}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="font-mono text-body-md font-semibold tabular-nums text-on-surface">
+              {formatCurrency(item.amount, item.currency)}
+            </div>
+            {editable && (
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant={needsFix ? "default" : "outline"} onClick={onEdit}>
+                  <Icon name="edit" /> {needsFix ? "Edit to fix" : "Edit"}
+                </Button>
+                <button
+                  onClick={onRemove}
+                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error"
+                  aria-label={`Remove ${item.merchant}`}
+                >
+                  <Icon name="delete" className="text-[18px]" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {item.description && item.description !== item.merchant && (
+          <p className="mt-1 text-body-sm text-on-surface-variant">{item.description}</p>
+        )}
+
+        {editable && item.managerReason && (
+          <div className="mt-2 flex items-start gap-2 rounded border border-error/20 bg-error-container/40 p-2 text-body-sm text-on-surface">
+            <Icon name="comment" className="mt-0.5 text-[16px] text-error" />
+            <span>
+              <span className="font-medium">Manager feedback:</span> {item.managerReason}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {!editable && (
+            <StatusBadge meta={LINE_ITEM_STATUS_META[item.managerStatus]} className="rounded-md" />
+          )}
+          {!editable && item.policyStatus && (
+            <StatusBadge meta={LINE_ITEM_STATUS_META[item.policyStatus]} className="rounded-md" />
+          )}
+          {hasReceipt ? (
+            item.attachments.map((a) => (
+              <span
+                key={a.id}
+                className="inline-flex items-center gap-1 rounded border border-outline-variant px-2 py-0.5 font-mono text-label-sm text-on-surface-variant"
+              >
+                <Icon name="attachment" className="text-[12px]" />
+                {a.fileName}
+              </span>
+            ))
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded border border-error/30 bg-error-container/30 px-2 py-0.5 font-mono text-label-sm text-error">
+              <Icon name="receipt_long" className="text-[12px]" /> No receipt
+            </span>
+          )}
+        </div>
+
+        {item.aiFlag && (
+          <div className="mt-2">
+            <AiCitation
+              message={item.aiFlag.message}
+              clauseRef={item.aiFlag.clauseRef}
+              severity={item.aiFlag.severity}
+            />
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}

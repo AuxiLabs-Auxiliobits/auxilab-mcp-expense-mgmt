@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.auth.dependencies import current_principal, require
 from app.db import get_session
 from app.deps import get_policy
+from app.models.attachment import Attachment
 from app.models.expense_sheet import ExpenseSheet
 from app.principal import Principal
 from app.rbac import scope as rbac_scope
@@ -177,6 +178,26 @@ async def delete_line_item(
     item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
     sheet_service.delete_line_item(session, sheet, item, principal)
     return _to_out(session, sheet)
+
+
+@router.get(
+    "/{sheet_id}/line-items/{line_item_id}/receipts",
+    response_model=list[AttachmentOut],
+    summary="List receipts attached to a line item",
+)
+async def list_receipts(
+    sheet_id: str,
+    line_item_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> list[AttachmentOut]:
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    rows = session.exec(
+        select(Attachment).where(Attachment.line_item_id == item.id)
+    ).all()
+    return [AttachmentOut.model_validate(a) for a in rows]
 
 
 @router.post(

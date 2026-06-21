@@ -1,7 +1,7 @@
 {
   "per_meal_limit": 75,
   "per_hotel_night_limit": 250,
-  "prohibited_categories": ["Other"],
+  "prohibited_categories": [],
   "receipt_required_threshold": 25,
   "submission_cutoff": "month_end_of_incurred_month",
   "max_file_mb": 25,

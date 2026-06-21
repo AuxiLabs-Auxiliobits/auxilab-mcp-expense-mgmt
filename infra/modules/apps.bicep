@@ -40,6 +40,9 @@ param apiTargetPort int = 8000
 param postgresFqdn string
 @description('PostgreSQL admin login (for the API DATABASE_URL).')
 param pgAdminLogin string
+@description('PostgreSQL admin password — injected as a Container App secret, never plaintext env.')
+@secure()
+param pgAdminPassword string
 @description('PostgreSQL database name.')
 param pgDatabase string = 'expense'
 @description('Key Vault URI (secret references resolve from here).')
@@ -70,6 +73,10 @@ var ingestionQueue = 'document-ingestion'
 
 var minReplicas = env == 'prod' ? 1 : 0
 
+// Full DB URL (with password) — stored as a Container App / Job secret, referenced via
+// secretRef so the password is never a plaintext env var. The migrate job reuses the same.
+var databaseUrl = 'postgresql://${pgAdminLogin}:${pgAdminPassword}@${postgresFqdn}:5432/${pgDatabase}?sslmode=require'
+
 // --- API app --------------------------------------------------------------- //
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-${env}-api'
@@ -83,6 +90,9 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: environmentId
     configuration: {
       activeRevisionsMode: 'Single'
+      secrets: [
+        { name: 'database-url', value: databaseUrl }
+      ]
       ingress: {
         external: true
         targetPort: apiTargetPort
@@ -106,7 +116,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'APP_ENVIRONMENT', value: env }
             { name: 'APP_AUTH_PROVIDER', value: authProvider }
-            { name: 'APP_DATABASE_URL', value: 'postgresql://${pgAdminLogin}@${postgresFqdn}:5432/${pgDatabase}?sslmode=require' }
+            { name: 'APP_DATABASE_URL', secretRef: 'database-url' }
             { name: 'APP_FOUNDRY_ENDPOINT', value: deployAi ? foundryEndpoint : '' }
             { name: 'APP_STORAGE_ACCOUNT_URL', value: blobEndpoint }
             { name: 'APP_SERVICEBUS_NAMESPACE', value: serviceBusFqdn }
@@ -264,7 +274,53 @@ resource workerIngestion 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// --- Migration job --------------------------------------------------------- //
+// Runs `alembic upgrade head` against Postgres using the SAME image, identity and DB
+// secret as the API. Manual trigger → CI starts it on deploy; re-runnable any time with
+// `az containerapp job start`. This is why prod schema actually gets migrated (the API
+// only create_all()s in dev).
+resource migrate 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${namePrefix}-${env}-migrate'
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${apiIdentityId}': {} }
+  }
+  properties: {
+    environmentId: environmentId
+    configuration: {
+      triggerType: 'Manual'
+      replicaTimeout: 600
+      replicaRetryLimit: 1
+      manualTriggerConfig: { parallelism: 1, replicaCompletionCount: 1 }
+      secrets: [
+        { name: 'database-url', value: databaseUrl }
+      ]
+      registries: [
+        { server: acrLoginServer, identity: apiIdentityId }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'migrate'
+          image: apiImage
+          command: [ 'alembic', 'upgrade', 'head' ]
+          resources: { cpu: json('0.5'), memory: '1.0Gi' }
+          env: [
+            { name: 'APP_ENVIRONMENT', value: env }
+            { name: 'APP_DATABASE_URL', secretRef: 'database-url' }
+            { name: 'AZURE_CLIENT_ID', value: apiIdentityClientId }
+          ]
+        }
+      ]
+    }
+  }
+}
+
 output apiFqdn string = api.properties.configuration.ingress.fqdn
 output apiName string = api.name
+output migrateJobName string = migrate.name
 output workerFinanceName string = workerFinance.name
 output workerIngestionName string = workerIngestion.name

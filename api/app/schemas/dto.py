@@ -172,6 +172,32 @@ class ValueSetsOut(BaseModel):
     currencies: list[str]
 
 
+# --- Reports (finance/manager dashboard, SCOPING §4 report summariser) ------ #
+class CategoryTotal(BaseModel):
+    category: str
+    total: Decimal
+
+
+class ReportSummaryOut(BaseModel):
+    """KPI tiles + spend-by-category + compliance for the dashboard.
+
+    Numbers are computed deterministically (engine report summariser); the narrative is
+    templated offline / LLM-written when a gateway is wired. Scope follows the caller's role
+    (manager → own agency; finance/admin → all, optionally filtered by `agency_id`)."""
+
+    period: str | None
+    agency_id: str | None  # the scope actually applied (None = all agencies)
+    sheet_count: int
+    line_item_count: int
+    grand_total: Decimal
+    total_at_risk: Decimal
+    violation_count: int
+    compliance_rate_pct: float
+    by_category: list[CategoryTotal]
+    by_status: dict[str, int]
+    narrative: str
+
+
 # --- Manager / finance actions --------------------------------------------- #
 class ManagerActionRequest(BaseModel):
     line_item_id: str

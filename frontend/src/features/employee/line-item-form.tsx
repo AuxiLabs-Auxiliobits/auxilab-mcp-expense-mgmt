@@ -1,0 +1,406 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useForm, type Resolver } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { useAddLineItem, useUpdateLineItem } from "@/data/hooks";
+import { baselinePolicy } from "@/data/mock";
+import {
+  EXPENSE_CATEGORIES,
+  type Currency,
+  type ExpenseCategory,
+  type LineItem,
+} from "@/data/types";
+import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
+import { fileIssue, fileNote, validateLineItem } from "@/lib/intake";
+import type { AttachmentInput } from "@/data/api";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Block sign/exponent keys so monetary number inputs can't go negative. */
+function blockNegativeKeys(e: React.KeyboardEvent<HTMLInputElement>) {
+  if (["-", "+", "e", "E"].includes(e.key)) e.preventDefault();
+}
+
+export function LineItemDialog({
+  open,
+  onOpenChange,
+  sheetId,
+  item,
+  siblings,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sheetId: string;
+  item?: LineItem;
+  siblings: LineItem[];
+}) {
+  const addLineItem = useAddLineItem();
+  const updateLineItem = useUpdateLineItem();
+  const [files, setFiles] = useState<AttachmentInput[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<LineItemValues>({
+    // Cast: the schema coerces number inputs (z.coerce / preprocess), so its
+    // input type differs from the inferred output type — runtime is correct.
+    resolver: zodResolver(lineItemSchema) as Resolver<LineItemValues>,
+    defaultValues: {
+      merchant: "",
+      description: "",
+      category: "Meals & Entertainment",
+      categoryOther: "",
+      amount: undefined as unknown as number,
+      currency: "USD",
+      expenseDate: "",
+      receiptDatetime: "",
+      tax: undefined,
+    },
+  });
+
+  // Reset whenever the dialog opens (for add) or the edited item changes.
+  useEffect(() => {
+    if (!open) return;
+    if (item) {
+      reset({
+        merchant: item.merchant,
+        description: item.description,
+        category: item.category,
+        categoryOther: item.categoryOther ?? "",
+        amount: item.amount,
+        currency: "USD",
+        expenseDate: item.expenseDate,
+        receiptDatetime: item.receiptDatetime?.slice(0, 16) ?? "",
+        tax: item.tax,
+      });
+      setFiles(
+        item.attachments.map((a) => ({
+          fileName: a.fileName,
+          fileType: a.fileType,
+          sizeBytes: a.sizeBytes,
+        })),
+      );
+    } else {
+      reset();
+      setFiles([]);
+    }
+  }, [open, item, reset]);
+
+  const v = watch();
+  const liveIssues = validateLineItem(
+    {
+      merchant: v.merchant ?? "",
+      description: v.description ?? "",
+      category: (v.category as ExpenseCategory) ?? "Other",
+      categoryOther: v.categoryOther,
+      amount: Number(v.amount) || 0,
+      currency: "USD" as Currency,
+      expenseDate: v.expenseDate ?? "",
+      receiptDatetime: v.receiptDatetime || undefined,
+      tax: v.tax != null ? Number(v.tax) : undefined,
+      attachments: files,
+    },
+    baselinePolicy,
+    siblings,
+  );
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    const accepted: AttachmentInput[] = [];
+    for (const f of picked) {
+      const issue = fileIssue(f, baselinePolicy);
+      if (issue) {
+        toast.error(`${f.name}: ${issue}`);
+        continue;
+      }
+      accepted.push({ fileName: f.name, fileType: f.type || "application/octet-stream", sizeBytes: f.size });
+    }
+    if (accepted.length) setFiles((prev) => [...prev, ...accepted]);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  const onSubmit = handleSubmit(async (values) => {
+    const input = {
+      merchant: values.merchant,
+      description: values.description,
+      category: values.category,
+      categoryOther: values.category === "Other" ? values.categoryOther?.trim() : undefined,
+      amount: Number(values.amount),
+      currency: "USD" as Currency,
+      expenseDate: values.expenseDate,
+      receiptDatetime: values.receiptDatetime || undefined,
+      tax: values.tax != null ? Number(values.tax) : undefined,
+      attachments: files,
+    };
+    if (item) {
+      await updateLineItem.mutateAsync({ sheetId, lineItemId: item.id, input });
+      toast.success("Line item updated");
+    } else {
+      await addLineItem.mutateAsync({ sheetId, input });
+      toast.success("Line item added");
+    }
+    onOpenChange(false);
+  });
+
+  const blockingError = liveIssues.find((i) => i.level === "error");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{item ? "Edit line item" : "Add line item"}</DialogTitle>
+          <DialogDescription>
+            Enter the bill details and attach supporting documents. Checks run as you type.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="li-merchant">Merchant</Label>
+              <Input id="li-merchant" placeholder="e.g. Delta Airlines" {...register("merchant")} />
+              {errors.merchant && <p className="text-label-md text-error">{errors.merchant.message}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-category">Expense Type</Label>
+              <Select
+                value={v.category}
+                onValueChange={(val) => setValue("category", val as ExpenseCategory, { shouldValidate: true })}
+              >
+                <SelectTrigger id="li-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {v.category === "Other" && (
+            <div className="space-y-1.5 rounded-md border border-secondary/30 bg-secondary-container/30 p-3">
+              <Label htmlFor="li-category-other">Specify expense type</Label>
+              <Input
+                id="li-category-other"
+                placeholder="e.g. Conference registration, professional membership…"
+                {...register("categoryOther")}
+              />
+              {errors.categoryOther ? (
+                <p className="text-label-md text-error">{errors.categoryOther.message}</p>
+              ) : (
+                <p className="text-label-md text-on-surface-variant">
+                  &ldquo;Other&rdquo; needs a specific type before it can be submitted.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="li-desc">Description / Business Justification</Label>
+            <Input id="li-desc" placeholder="What was this expense for?" {...register("description")} />
+            {errors.description && <p className="text-label-md text-error">{errors.description.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="li-amount">Amount</Label>
+              <Input
+                id="li-amount"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="0.00"
+                onKeyDown={blockNegativeKeys}
+                {...register("amount")}
+              />
+              {errors.amount && <p className="text-label-md text-error">{errors.amount.message}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-currency">Currency</Label>
+              <Input
+                id="li-currency"
+                value="USD"
+                readOnly
+                disabled
+                className="cursor-not-allowed bg-surface-container-low"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-date">Expense Date</Label>
+              <DateTimePicker
+                id="li-date"
+                mode="date"
+                value={v.expenseDate}
+                onChange={(val) => setValue("expenseDate", val, { shouldValidate: true })}
+                placeholder="Select date"
+              />
+              {errors.expenseDate && <p className="text-label-md text-error">{errors.expenseDate.message}</p>}
+            </div>
+          </div>
+
+          <p className="flex items-start gap-1.5 text-label-md text-on-surface-variant">
+            <Icon name="info" className="mt-px shrink-0 text-[14px] text-secondary" />
+            Amounts are recorded in USD. A receipt in another currency is converted to USD
+            using the exchange rate on the expense date.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="li-rdt">Receipt Date / Time</Label>
+              <DateTimePicker
+                id="li-rdt"
+                mode="datetime"
+                value={v.receiptDatetime}
+                onChange={(val) => setValue("receiptDatetime", val, { shouldValidate: true })}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-tax">Tax / VAT</Label>
+              <Input
+                id="li-tax"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="optional"
+                onKeyDown={blockNegativeKeys}
+                {...register("tax")}
+              />
+            </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="space-y-2">
+            <Label>Supporting Documents</Label>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-outline-variant bg-surface-container-low px-4 py-5 text-on-surface-variant transition-colors hover:border-secondary hover:text-primary"
+            >
+              <Icon name="upload_file" className="text-[22px]" />
+              <span className="text-body-sm font-medium">Click to attach receipts</span>
+              <span className="font-mono text-label-sm">
+                {baselinePolicy.allowed_extensions.join("  ")} · max {baselinePolicy.max_file_mb} MB
+              </span>
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept={baselinePolicy.allowed_extensions.join(",")}
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            {files.length > 0 && (
+              <ul className="space-y-1">
+                {files.map((f, i) => {
+                  const note = fileNote(f.fileName);
+                  return (
+                    <li
+                      key={`${f.fileName}-${i}`}
+                      className="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon name="description" className="text-[18px] text-secondary" />
+                        <span className="flex-1 truncate text-body-sm">{f.fileName}</span>
+                        <span className="font-mono text-label-sm text-on-surface-variant">
+                          {formatSize(f.sizeBytes)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="text-on-surface-variant hover:text-error"
+                          aria-label="Remove"
+                        >
+                          <Icon name="close" className="text-[16px]" />
+                        </button>
+                      </div>
+                      {note && (
+                        <p className="mt-1 flex items-center gap-1 font-mono text-label-sm text-tertiary">
+                          <Icon name="info" className="text-[12px]" /> {note}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Live intake checks */}
+          {liveIssues.length > 0 && (
+            <div className="space-y-1.5 rounded border border-outline-variant bg-surface-container-low p-3">
+              <p className="font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
+                Intake checks
+              </p>
+              {liveIssues.map((iss, i) => (
+                <div
+                  key={i}
+                  className={
+                    "flex items-start gap-1.5 text-body-sm " +
+                    (iss.level === "error" ? "text-error" : "text-yellow-600")
+                  }
+                >
+                  <Icon
+                    name={iss.level === "error" ? "error" : "warning"}
+                    className="mt-0.5 text-[16px]"
+                  />
+                  <span className="text-on-surface">
+                    {iss.message}{" "}
+                    <span className="font-mono text-label-sm text-on-surface-variant">[{iss.clauseRef}]</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!!blockingError || addLineItem.isPending || updateLineItem.isPending}>
+              {item ? "Save changes" : "Add line item"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

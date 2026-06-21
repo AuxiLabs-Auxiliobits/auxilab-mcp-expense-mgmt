@@ -24,6 +24,7 @@ env:
   API_APP: expmgmt-dev-api
   WORKER_FINANCE_APP: expmgmt-dev-worker-finance
   WORKER_INGESTION_APP: expmgmt-dev-worker-ingestion
+  MIGRATE_JOB: expmgmt-dev-migrate
 
 jobs:
   infra:
@@ -87,9 +88,47 @@ jobs:
             --image expense-worker:${{ github.sha }} \
             --file workers/Dockerfile workers
 
+  migrate:
+    name: Run DB migrations (alembic upgrade head)
+    needs: api-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # Point the migrate job at the freshly built API image, then run it to completion.
+      - name: Update migrate job image
+        run: |
+          az containerapp job update \
+            --name "$MIGRATE_JOB" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR}.azurecr.io/expense-api:${{ github.sha }}"
+      - name: Start migration and wait for success
+        run: |
+          set -euo pipefail
+          exec_name=$(az containerapp job start \
+            --name "$MIGRATE_JOB" --resource-group "$RESOURCE_GROUP" \
+            --query name -o tsv)
+          echo "Started migration execution: $exec_name"
+          for i in $(seq 1 40); do
+            status=$(az containerapp job execution show \
+              --name "$MIGRATE_JOB" --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$exec_name" \
+              --query properties.status -o tsv 2>/dev/null || echo "Unknown")
+            echo "[$i] migration status: $status"
+            case "$status" in
+              Succeeded) echo "Migration succeeded."; exit 0 ;;
+              Failed|Degraded) echo "Migration failed."; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Timed out waiting for migration."; exit 1
+
   deploy-apps:
     name: Roll Container Apps to the freshly built images
-    needs: [api-image, worker-image]
+    needs: [migrate, worker-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

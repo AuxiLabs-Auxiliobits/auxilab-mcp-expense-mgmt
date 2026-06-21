@@ -174,6 +174,7 @@ module apps 'modules/apps.bicep' = {
     workerImage: workerImage
     postgresFqdn: postgres.outputs.fqdn
     pgAdminLogin: pgAdminLogin
+    pgAdminPassword: pgAdminPassword
     keyVaultUri: keyvault.outputs.uri
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     serviceBusNamespace: servicebus.outputs.namespace
@@ -269,6 +270,7 @@ output apiIdentityClientId string = rbac.outputs.apiIdentityClientId
 output workerIdentityId string = rbac.outputs.workerIdentityId
 output workerIdentityClientId string = rbac.outputs.workerIdentityClientId
 output apiAppName string = apps.outputs.apiName
+output migrateJobName string = apps.outputs.migrateJobName
 output apiAppFqdn string = apps.outputs.apiFqdn
 output apiAppUrl string = 'https://${apps.outputs.apiFqdn}'
 output frontDoorHostName string = frontdoor.?outputs.endpointHostName ?? ''

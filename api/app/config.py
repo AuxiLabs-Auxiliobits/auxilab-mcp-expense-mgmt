@@ -16,6 +16,14 @@ class Settings(BaseSettings):
 
     environment: Literal["dev", "staging", "prod"] = "dev"
 
+    # Browser origins allowed to call the API (the Next.js dev server / portal host).
+    # Comma-separated; the frontend can't call the API cross-origin without this.
+    cors_allow_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
     # --- Auth -------------------------------------------------------------- #
     auth_provider: Literal["db", "entra"] = "db"
     jwt_secret: str = "dev-only-change-me"  # noqa: S105 — overridden via env/Key Vault

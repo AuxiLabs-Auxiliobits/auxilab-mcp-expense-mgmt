@@ -8,6 +8,10 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir .
 
 COPY app ./app
+# Alembic config + migrations so the same image can run `alembic upgrade head`
+# (used by the Container Apps "migrate" job before the app rolls out).
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 EXPOSE 8000
 # Container Apps sets PORT; default to 8000 locally.
