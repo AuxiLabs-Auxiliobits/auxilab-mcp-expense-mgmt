@@ -24,6 +24,18 @@ function num(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Coerce a backend timestamp to an absolute (UTC) instant. The API stores UTC, but SQLite
+ * round-trips drop the tz, so values arrive tz-naive ("2026-06-22T10:30:00"); the browser
+ * would then read them as *local* time (e.g. ~5.5h off in IST → "updated 6 hours ago" for a
+ * just-created sheet). Append "Z" when no tz designator is present.
+ */
+function asUtc(v: unknown): string | undefined {
+  if (v == null || v === "") return undefined;
+  const s = String(v);
+  return /([zZ]|[+-]\d{2}:?\d{2})$/.test(s) ? s : `${s}Z`;
+}
+
 export function mapLineItem(r: Raw, sheetId = ""): LineItem {
   const amount = num(r.amount);
   return {
@@ -79,8 +91,8 @@ export function mapSheet(r: Raw): ExpenseSheet {
     period: r.period ?? "",
     total,
     currency: lineItems[0]?.currency ?? r.currency ?? "USD",
-    submittedAt: r.submitted_at ?? r.submittedAt ?? undefined,
-    updatedAt: r.updated_at ?? r.updatedAt ?? new Date().toISOString(),
+    submittedAt: asUtc(r.submitted_at ?? r.submittedAt),
+    updatedAt: asUtc(r.updated_at ?? r.updatedAt) ?? new Date().toISOString(),
     financeDecision: r.finance_decision ?? r.financeDecision ?? undefined,
     financeDecidedBy: r.finance_decided_by ?? undefined,
     policyVersionUsed: r.policy_version_used ?? r.policy_version ?? undefined,

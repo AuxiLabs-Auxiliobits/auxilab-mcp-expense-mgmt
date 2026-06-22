@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,8 +9,10 @@ import {
   useResubmitSheet,
   useSheet,
   useSubmitSheet,
+  useUpdateSheet,
   useWithdrawSheet,
 } from "@/data/hooks";
+import { Input } from "@/components/ui/input";
 import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
 import { AiCitation, CitedClause } from "@/components/shared/ai-citation";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -278,9 +280,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
           <div className="flex flex-col gap-5 p-5 md:p-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-headline-lg font-semibold tracking-tight text-on-surface">
-                  {sheet.title}
-                </h1>
+                <EditableTitle sheet={sheet} editable={editable} />
                 <StatusBadge meta={SHEET_STATUS_META[sheet.status]} className="rounded-md" />
                 {inFlight && (
                   <span className="inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-2 py-0.5 font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
@@ -558,6 +558,88 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
         siblings={sheet.lineItems.filter((l) => l.id !== editing?.id)}
       />
     </>
+  );
+}
+
+// ── Inline sheet-title editor (rename a draft in place) ──────────────────────
+function EditableTitle({ sheet, editable }: { sheet: ExpenseSheet; editable: boolean }) {
+  const updateSheet = useUpdateSheet();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(sheet.title);
+
+  useEffect(() => {
+    setDraft(sheet.title);
+  }, [sheet.title]);
+
+  const h1 = "text-headline-lg font-semibold tracking-tight text-on-surface";
+
+  if (!editable) {
+    return <h1 className={h1}>{sheet.title}</h1>;
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <h1 className={h1}>{sheet.title}</h1>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(sheet.title);
+            setEditing(true);
+          }}
+          aria-label="Rename sheet"
+          className="rounded p-1 text-on-surface-variant transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Icon name="edit" className="text-[18px]" />
+        </button>
+      </div>
+    );
+  }
+
+  const trimmed = draft.trim();
+  const valid = trimmed.length >= 3 && trimmed.length <= 50;
+
+  async function save() {
+    if (!valid) return;
+    if (trimmed !== sheet.title) {
+      try {
+        await updateSheet.mutateAsync({ sheetId: sheet.id, title: trimmed });
+        toast.success("Sheet renamed");
+      } catch (e) {
+        toast.error("Couldn't rename the sheet", {
+          description: e instanceof Error ? e.message : undefined,
+        });
+        return;
+      }
+    }
+    setEditing(false);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        maxLength={50}
+        autoFocus
+        aria-label="Sheet title"
+        className="h-9 w-64 text-body-lg font-semibold"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void save();
+          } else if (e.key === "Escape") {
+            setEditing(false);
+          }
+        }}
+      />
+      <Button size="sm" onClick={save} disabled={!valid || updateSheet.isPending}>
+        <Icon name="check" /> Save
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+        Cancel
+      </Button>
+    </div>
   );
 }
 

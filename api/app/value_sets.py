@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date
 from pathlib import PurePosixPath
@@ -40,12 +41,34 @@ def normalize_currency(code: str) -> str:
     return norm
 
 
+def period_window(today: date | None = None) -> list[str]:
+    """Selectable expense periods: the current month plus the previous 11, newest first.
+
+    e.g. today = 2026-01 → ['2026-01', '2025-12', ..., '2025-02'] (12 entries). Single source
+    of truth for the periods API and `validate_period`."""
+    today = today or date.today()
+    out: list[str] = []
+    year, month = today.year, today.month
+    for _ in range(12):
+        out.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month, year = 12, year - 1
+    return out
+
+
+def period_label(value: str) -> str:
+    """'2026-01' → 'Jan 2026'."""
+    year, month = int(value[:4]), int(value[5:7])
+    return f"{calendar.month_abbr[month]} {year}"
+
+
 def validate_period(period: str) -> str:
-    """Expense period is 'YYYY-MM' and must fall in the current year (SCOPING change req)."""
+    """Period is 'YYYY-MM' and must fall within the rolling last-12-months window."""
     if not _PERIOD_RE.match(period):
         raise ValueError("period must be in 'YYYY-MM' format")
-    if int(period[:4]) != date.today().year:
-        raise ValueError(f"period must be within the current year ({date.today().year})")
+    if period not in set(period_window()):
+        raise ValueError("period must be within the last 12 months")
     return period
 
 

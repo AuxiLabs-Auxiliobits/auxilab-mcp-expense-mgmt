@@ -10,12 +10,14 @@ from app.auth.dependencies import current_principal, require
 from app.db import get_session
 from app.deps import get_policy
 from app.models.attachment import Attachment
+from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.principal import Principal
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
 from app.schemas.dto import (
     AttachmentOut,
+    DecisionOut,
     LineItemCreate,
     LineItemOut,
     LineItemUpdate,
@@ -23,6 +25,7 @@ from app.schemas.dto import (
     SheetOut,
     SheetUpdate,
 )
+from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
 from app.services import sheet_service
 from expense_core.policy import BaselinePolicy
@@ -47,12 +50,13 @@ async def create_sheet(
     body: SheetCreate,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
     """Create a DRAFT sheet (the Expense Draft API). Pass `title` + `period`; line items can
     be added inline or incrementally via `POST /sheets/{id}/line-items`. A receipt must be
     attached to every line item before submission."""
     sheet = sheet_service.create_draft(session, principal, body)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
 
 
 @router.get("", response_model=list[SheetOut], summary="List my own sheets")
@@ -60,6 +64,9 @@ async def list_my_sheets(
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
 ) -> list[SheetOut]:
+    # Policy flags are intentionally NOT computed here: running the checker per line item for
+    # every sheet would make the list O(sheets × items). They are computed lazily on the
+    # detail route (GET /sheets/{id}); in the list `policy_flags` stays at its zero default.
     rows = session.exec(
         select(ExpenseSheet).where(ExpenseSheet.employee_id == principal.subject_id)
     ).all()
@@ -76,10 +83,32 @@ async def get_sheet(
     sheet_id: str,
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     rbac_scope.assert_can_view_sheet(principal, sheet)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
+
+
+@router.get(
+    "/{sheet_id}/decisions",
+    response_model=list[DecisionOut],
+    summary="Decision trail for a sheet (manager/finance/LLM actions)",
+    responses={404: {"description": "Sheet not found"}},
+)
+async def sheet_decisions(
+    sheet_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> list[DecisionOut]:
+    """The append-only decision trail for the sheet, oldest first — powers the Decision Trail
+    panel. Scope-checked like the sheet itself."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    rows = session.exec(
+        select(Decision).where(Decision.sheet_id == sheet.id).order_by(Decision.timestamp)
+    ).all()
+    return [decision_to_out(d) for d in rows]
 
 
 @router.post(
@@ -98,7 +127,7 @@ async def submit_sheet(
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet_service._assert_owner(principal, sheet)
     sheet = sheet_service.submit_sheet(session, sheet, principal, policy)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
 
 
 # --------------------------------------------------------------------------- #
@@ -110,10 +139,11 @@ async def update_sheet(
     body: SheetUpdate,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet = sheet_service.update_sheet(session, sheet, principal, body)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
 
 
 @router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Withdraw a draft sheet")
@@ -137,10 +167,11 @@ async def add_line_item(
     body: LineItemCreate,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet_service.add_line_item(session, sheet, principal, body)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
 
 
 @router.patch(
@@ -173,11 +204,12 @@ async def delete_line_item(
     line_item_id: str,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
     sheet_service.delete_line_item(session, sheet, item, principal)
-    return _to_out(session, sheet)
+    return _to_out(session, sheet, policy=policy)
 
 
 @router.get(

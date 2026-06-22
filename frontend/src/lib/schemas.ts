@@ -16,7 +16,7 @@ export const newSheetSchema = z.object({
   title: z
     .string()
     .min(3, "Give the sheet a descriptive title (min 3 characters)")
-    .max(120),
+    .max(50, "Keep the title under 50 characters"),
   period: z.string().min(1, "Select the expense period"),
 });
 export type NewSheetValues = z.infer<typeof newSheetSchema>;

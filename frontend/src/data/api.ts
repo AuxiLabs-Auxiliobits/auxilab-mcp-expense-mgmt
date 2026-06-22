@@ -21,6 +21,7 @@ import {
   apiGet,
   apiPatch,
   apiPost,
+  apiUpload,
   backend,
 } from "./http";
 import {
@@ -232,7 +233,8 @@ export function getAllSheets(): Promise<ExpenseSheet[]> {
 export interface CreateSheetInput {
   title: string;
   period: string;
-  employee: User;
+  // Only used by the offline mock; in backend mode the owner comes from the auth token.
+  employee?: User;
 }
 
 export function createSheet(input: CreateSheetInput): Promise<ExpenseSheet> {
@@ -244,9 +246,9 @@ export function createSheet(input: CreateSheetInput): Promise<ExpenseSheet> {
       const sheet: ExpenseSheet = {
         id,
         title: input.title,
-        employeeId: input.employee.id,
-        employeeName: input.employee.name,
-        agencyId: input.employee.agencyId,
+        employeeId: input.employee?.id ?? "me",
+        employeeName: input.employee?.name ?? "Me",
+        agencyId: input.employee?.agencyId ?? "",
         agencyName: "Crispin",
         version: 1,
         status: "DRAFT",
@@ -258,6 +260,50 @@ export function createSheet(input: CreateSheetInput): Promise<ExpenseSheet> {
       };
       sheetStore.unshift(sheet);
       return delay(clone(sheet), 500);
+    },
+  );
+}
+
+export async function updateSheet(args: {
+  sheetId: string;
+  title?: string;
+  period?: string;
+}): Promise<ExpenseSheet> {
+  // PATCH /sheets/{id} — edit a draft's title/period (owner, DRAFT only).
+  return backend(
+    () =>
+      apiPatch<Raw>(`/sheets/${args.sheetId}`, {
+        title: args.title,
+        period: args.period,
+      }).then(mapSheet),
+    () => {
+      const sheet = findSheet(args.sheetId);
+      if (args.title != null) sheet.title = args.title;
+      if (args.period != null) sheet.period = args.period;
+      sheet.updatedAt = new Date().toISOString();
+      return delay(clone(sheet), 250);
+    },
+  );
+}
+
+/** Upload a receipt file and attach it to a line item (multipart). Backend-only; in mock
+ *  mode the attachment is already tracked client-side, so this is a no-op. */
+export function uploadReceipt(args: {
+  sheetId: string;
+  lineItemId: string;
+  file: File;
+}): Promise<void> {
+  return backend(
+    async () => {
+      const form = new FormData();
+      form.append("file", args.file);
+      await apiUpload<Raw>(
+        `/sheets/${args.sheetId}/line-items/${args.lineItemId}/receipt`,
+        form,
+      );
+    },
+    async () => {
+      /* mock: attachment metadata is already captured in makeLineItem */
     },
   );
 }

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { useAddLineItem, useUpdateLineItem } from "@/data/hooks";
+import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
+import { uploadReceipt } from "@/data/api";
 import { baselinePolicy } from "@/data/mock";
 import {
   EXPENSE_CATEGORIES,
@@ -62,7 +64,11 @@ export function LineItemDialog({
 }) {
   const addLineItem = useAddLineItem();
   const updateLineItem = useUpdateLineItem();
-  const [files, setFiles] = useState<AttachmentInput[]>([]);
+  const qc = useQueryClient();
+  // Each entry carries optional `file` bytes — present for newly picked/dropped files,
+  // absent for attachments already on the server (edit mode).
+  const [files, setFiles] = useState<(AttachmentInput & { file?: File })[]>([]);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -135,19 +141,34 @@ export function LineItemDialog({
     siblings,
   );
 
-  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files ?? []);
-    const accepted: AttachmentInput[] = [];
+  function acceptFiles(picked: File[]) {
+    const accepted: (AttachmentInput & { file?: File })[] = [];
     for (const f of picked) {
       const issue = fileIssue(f, baselinePolicy);
       if (issue) {
         toast.error(`${f.name}: ${issue}`);
         continue;
       }
-      accepted.push({ fileName: f.name, fileType: f.type || "application/octet-stream", sizeBytes: f.size });
+      accepted.push({
+        fileName: f.name,
+        fileType: f.type || "application/octet-stream",
+        sizeBytes: f.size,
+        file: f,
+      });
     }
     if (accepted.length) setFiles((prev) => [...prev, ...accepted]);
+  }
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    acceptFiles(Array.from(e.target.files ?? []));
     if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function onDrop(e: React.DragEvent) {
+    // Without this, the browser navigates to the dropped file (opens a new tab).
+    e.preventDefault();
+    setDragging(false);
+    acceptFiles(Array.from(e.dataTransfer.files ?? []));
   }
 
   const onSubmit = handleSubmit(async (values) => {
@@ -163,14 +184,35 @@ export function LineItemDialog({
       tax: values.tax != null ? Number(values.tax) : undefined,
       attachments: files,
     };
-    if (item) {
-      await updateLineItem.mutateAsync({ sheetId, lineItemId: item.id, input });
-      toast.success("Line item updated");
-    } else {
-      await addLineItem.mutateAsync({ sheetId, input });
-      toast.success("Line item added");
+    try {
+      const result = item
+        ? await updateLineItem.mutateAsync({ sheetId, lineItemId: item.id, input })
+        : await addLineItem.mutateAsync({ sheetId, input });
+
+      // Upload the actual receipt bytes for any newly added files. On add, the new
+      // line item is the one in the returned sheet that wasn't an existing sibling.
+      const newFiles = files.filter((f) => f.file);
+      if (newFiles.length) {
+        let targetId = item?.id;
+        if (!targetId) {
+          const known = new Set(siblings.map((s) => s.id));
+          targetId = result.lineItems.find((li) => !known.has(li.id))?.id;
+        }
+        if (targetId) {
+          for (const f of newFiles) {
+            await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
+          }
+          qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
+        }
+      }
+
+      toast.success(item ? "Line item updated" : "Line item added");
+      onOpenChange(false);
+    } catch (e) {
+      toast.error("Couldn't save the line item", {
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
     }
-    onOpenChange(false);
   });
 
   const blockingError = liveIssues.find((i) => i.level === "error");
@@ -312,10 +354,26 @@ export function LineItemDialog({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-outline-variant bg-surface-container-low px-4 py-5 text-on-surface-variant transition-colors hover:border-secondary hover:text-primary"
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setDragging(false);
+              }}
+              onDrop={onDrop}
+              className={
+                "flex w-full flex-col items-center justify-center gap-1 rounded border border-dashed px-4 py-5 transition-colors hover:border-secondary hover:text-primary " +
+                (dragging
+                  ? "border-secondary bg-secondary-container/30 text-primary"
+                  : "border-outline-variant bg-surface-container-low text-on-surface-variant")
+              }
             >
               <Icon name="upload_file" className="text-[22px]" />
-              <span className="text-body-sm font-medium">Click to attach receipts</span>
+              <span className="text-body-sm font-medium">
+                {dragging ? "Drop to attach" : "Click or drop receipts here"}
+              </span>
               <span className="font-mono text-label-sm">
                 {baselinePolicy.allowed_extensions.join("  ")} · max {baselinePolicy.max_file_mb} MB
               </span>

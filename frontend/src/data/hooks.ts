@@ -72,6 +72,7 @@ function useSheetMutation<TArgs>(fn: (args: TArgs) => Promise<import("./types").
   });
 }
 
+export const useUpdateSheet = () => useSheetMutation(api.updateSheet);
 export const useAddLineItem = () => useSheetMutation(api.addLineItem);
 export const useUpdateLineItem = () => useSheetMutation(api.updateLineItem);
 export const useRemoveLineItem = () => useSheetMutation(api.removeLineItem);

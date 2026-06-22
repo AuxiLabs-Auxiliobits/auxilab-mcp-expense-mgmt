@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.principal import Role
 from app.value_sets import normalize_currency, validate_period
 from expense_core.schemas.enums import Category, FinanceDecision, LineItemStatus, SheetStatus
 
@@ -90,16 +91,29 @@ class LineItemUpdate(BaseModel):
 
 
 class SheetCreate(BaseModel):
-    title: str = Field(min_length=1)
-    period: str | None = None
-    # Optional: create an empty draft (title + period) and add line items incrementally,
-    # or pass items inline. A receipt is still required on each item before submit.
+    # Required — the sheet must be named (max 50 chars).
+    title: str = Field(min_length=1, max_length=50)
+    # Required — the form always picks a month/year (drives the submission cutoff); validated
+    # against the rolling last-12-months window.
+    period: str = Field(..., description="Calendar month 'YYYY-MM' within the last 12 months.")
+    # Optional: create an empty draft (the two-step "Create draft & add items" flow) and add
+    # line items incrementally, or pass them inline. A receipt is still required per item at submit.
     line_items: list[LineItemCreate] = Field(default_factory=list)
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("title must not be blank")
+        if len(v) > 50:
+            raise ValueError("title must be at most 50 characters")
+        return v
 
     @field_validator("period")
     @classmethod
-    def _period(cls, v: str | None) -> str | None:
-        return validate_period(v) if v is not None else None
+    def _period(cls, v: str) -> str:
+        return validate_period(v)
 
     model_config = {
         "json_schema_extra": {
@@ -111,8 +125,20 @@ class SheetCreate(BaseModel):
 class SheetUpdate(BaseModel):
     """Edit a draft sheet's title/period (only while in DRAFT)."""
 
-    title: str | None = Field(default=None, min_length=1)
+    title: str | None = Field(default=None, min_length=1, max_length=50)
     period: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("title must not be blank")
+        if len(v) > 50:
+            raise ValueError("title must be at most 50 characters")
+        return v
 
     @field_validator("period")
     @classmethod
@@ -151,18 +177,63 @@ class LineItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PolicyFlags(BaseModel):
+    """Draft-time policy preview counts for the sheet summary panel. These come from a
+    non-mutating dry run of the baseline policy checker; the authoritative intake (which also
+    persists ClaimChecks and runs duplicate detection) still runs at submission (SCOPING §6.1)."""
+
+    errors: int = 0  # blocking violations (policy status FAIL)
+    warnings: int = 0  # non-blocking issues (policy status WARN)
+
+
 class SheetOut(BaseModel):
     id: str
     title: str | None = None
     employee_id: str
+    employee_name: str | None = None  # resolved from employee_id for display
     agency_id: str
+    agency_name: str | None = None  # resolved from agency_id for display
     version: int
     status: SheetStatus
     period: str | None
     finance_decision: FinanceDecision | None
     line_items: list[LineItemOut] = Field(default_factory=list)
 
+    # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
+    # when the sheet uses a single currency. `currency` is that sole currency, "USD" for an
+    # empty sheet, or None when items mix currencies — in which case read totals_by_currency.
+    total: Decimal = Decimal("0")
+    currency: str | None = None
+    totals_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+
+    # Summary-panel metrics.
+    missing_receipts: int = 0  # line items with no receipt attached
+    policy_flags: PolicyFlags = Field(default_factory=PolicyFlags)
+
+    # Submit gating for the "Submit for Review" button (mirrors the server submit pre-checks).
+    can_submit: bool = False
+    submit_blockers: list[str] = Field(default_factory=list)
+
+    # Timestamps (from the model) for "updated N days ago" and the workflow stepper.
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    submitted_at: datetime | None = None
+
     model_config = {"from_attributes": True}
+
+
+class DecisionOut(BaseModel):
+    """One entry in a sheet's decision trail (manager/finance/LLM actions, SCOPING §12.1)."""
+
+    id: str
+    actor_id: str
+    actor_role: Role
+    action: str
+    reason: str | None = None
+    llm_model_version: str | None = None
+    policy_version: str | None = None
+    cited_clauses: list[str] = Field(default_factory=list)  # decoded from the stored JSON
+    timestamp: datetime
 
 
 class ValueSetsOut(BaseModel):
@@ -170,6 +241,19 @@ class ValueSetsOut(BaseModel):
 
     expense_types: list[str]
     currencies: list[str]
+
+
+class PeriodOption(BaseModel):
+    value: str  # 'YYYY-MM'
+    label: str  # 'Jan 2026'
+    is_current: bool
+
+
+class PeriodsOut(BaseModel):
+    """Selectable expense periods for the form (rolling last 12 months, newest first)."""
+
+    default: str  # the current month ('YYYY-MM') — preselect this
+    periods: list[PeriodOption]
 
 
 # --- Reports (finance/manager dashboard, SCOPING §4 report summariser) ------ #

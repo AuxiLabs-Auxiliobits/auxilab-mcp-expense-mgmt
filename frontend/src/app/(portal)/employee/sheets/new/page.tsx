@@ -29,15 +29,16 @@ import {
 } from "@/components/ui/select";
 
 /**
- * Expense periods: every month of the current calendar year up to and including
- * the current month, newest first. Future months are never selectable — you
- * can't incur an expense that hasn't happened yet.
+ * Expense periods: the rolling last 12 months (current month + previous 11),
+ * newest first — matching the backend window (GET /meta/periods). Each option
+ * carries the API `value` ("YYYY-MM", what POST /sheets expects) and a human
+ * `label` ("MMM yyyy"). Future months are never selectable.
  */
-function buildPeriods(now = new Date()): string[] {
-  const year = now.getFullYear();
-  const list: string[] = [];
-  for (let m = now.getMonth(); m >= 0; m--) {
-    list.push(format(new Date(year, m, 1), "MMM yyyy"));
+function buildPeriods(now = new Date()): { value: string; label: string }[] {
+  const list: { value: string; label: string }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    list.push({ value: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
   }
   return list;
 }
@@ -93,23 +94,33 @@ export default function NewSheetPage() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<NewSheetValues>({
     resolver: zodResolver(newSheetSchema),
-    defaultValues: { title: "", period: periods[0] },
+    defaultValues: { title: "", period: periods[0].value },
   });
 
   const title = watch("title");
   const period = watch("period");
   const titleValid = (title?.trim().length ?? 0) >= 3;
+  // The selected period's display label (form value is the API "YYYY-MM").
+  const periodLabel = periods.find((p) => p.value === period)?.label ?? period;
+  const creating = createSheet.isPending;
 
   async function onSubmit(values: NewSheetValues) {
-    if (!user) return;
-    const sheet = await createSheet.mutateAsync({ ...values, employee: user });
-    toast.success(`Draft ${sheet.id} created`, {
-      description: "Now add line items and attachments.",
-    });
-    router.push(`/employee/sheets/${sheet.id}`);
+    try {
+      // The backend derives the owner from the auth token, so don't block on the
+      // (possibly still-loading) `user` query — pass it only for the offline mock.
+      const sheet = await createSheet.mutateAsync({ ...values, employee: user ?? undefined });
+      toast.success(`Draft created`, {
+        description: "Now add line items and attachments.",
+      });
+      router.push(`/employee/sheets/${sheet.id}`);
+    } catch (err) {
+      toast.error("Couldn't create the draft", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
   }
 
   // Wait for the session before deciding (avoids briefly showing the form).
@@ -202,8 +213,8 @@ export default function NewSheetPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {periods.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {p}
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -235,11 +246,18 @@ export default function NewSheetPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={creating}
+                    aria-busy={creating}
                     className="sm:min-w-44"
                   >
-                    {isSubmitting ? (
-                      "Creating…"
+                    {creating ? (
+                      <>
+                        <Icon
+                          name="progress_activity"
+                          className="mr-1.5 animate-spin text-[18px]"
+                        />
+                        Creating…
+                      </>
                     ) : (
                       <>
                         Create draft &amp; add items
@@ -272,7 +290,7 @@ export default function NewSheetPage() {
                     Period
                   </dt>
                   <dd className="text-body-md font-medium text-on-surface">
-                    {period || "—"}
+                    {periodLabel || "—"}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">

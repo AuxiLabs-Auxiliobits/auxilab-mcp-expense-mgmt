@@ -54,6 +54,36 @@ def test_value_sets_endpoint(client):
     assert "USD" in body["currencies"] and "INR" in body["currencies"]
 
 
+def test_periods_endpoint(client):
+    emp = login(client, "employee@demo.local")
+    r = client.get("/meta/periods", headers=auth(emp))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["periods"]) == 12  # current month + previous 11
+    assert body["default"] == PERIOD  # current month, newest first
+    assert body["periods"][0]["value"] == PERIOD
+    assert body["periods"][0]["is_current"] is True
+    assert {p["value"] for p in body["periods"]} >= {PERIOD}
+    # labels look like "Jun 2026"
+    assert " " in body["periods"][0]["label"]
+
+
+def test_title_required_and_max_50(client):
+    emp = login(client, "employee@demo.local")
+    # blank title → 422
+    assert client.post(
+        "/sheets", json={"title": "  ", "period": PERIOD, "line_items": []}, headers=auth(emp)
+    ).status_code == 422
+    # > 50 chars → 422
+    assert client.post(
+        "/sheets", json={"title": "x" * 51, "period": PERIOD, "line_items": []}, headers=auth(emp)
+    ).status_code == 422
+    # exactly 50 → ok
+    assert client.post(
+        "/sheets", json={"title": "y" * 50, "period": PERIOD, "line_items": []}, headers=auth(emp)
+    ).status_code == 201
+
+
 def test_draft_create_add_receipt_submit(client):
     emp = login(client, "employee@demo.local")
     sheet = _draft(client, emp)
@@ -143,6 +173,61 @@ def test_period_must_be_current_year(client):
         headers=auth(emp),
     )
     assert r.status_code == 422
+
+
+def test_sheet_out_enrichment_fields(client):
+    """Detail payload carries the UI's enrichment: names, totals, gating, timestamps, flags."""
+    from decimal import Decimal
+
+    emp = login(client, "employee@demo.local")
+    sheet = _draft(client, emp, line_items=[_line(amount="100.00", currency="USD")])
+    li_id = sheet["line_items"][0]["id"]
+
+    # display names resolved from the FK ids
+    assert isinstance(sheet["employee_name"], str) and sheet["employee_name"]
+    assert isinstance(sheet["agency_name"], str) and sheet["agency_name"]
+
+    # totals
+    assert Decimal(sheet["total"]) == Decimal("100.00")
+    assert sheet["currency"] == "USD"
+    assert {k: Decimal(v) for k, v in sheet["totals_by_currency"].items()} == {"USD": Decimal("100.00")}
+
+    # timestamps present for "updated N days ago" + the stepper
+    assert sheet["created_at"] and sheet["updated_at"]
+    assert sheet["submitted_at"] is None  # not submitted yet
+
+    # gating: a receipt is still missing → cannot submit, with a reason
+    assert sheet["missing_receipts"] == 1
+    assert sheet["can_submit"] is False
+    assert any("receipt" in b.lower() for b in sheet["submit_blockers"])
+
+    # after attaching the receipt the sheet becomes submittable
+    assert _receipt(client, emp, sheet["id"], li_id).status_code == 201
+    got = client.get(f"/sheets/{sheet['id']}", headers=auth(emp)).json()
+    assert got["missing_receipts"] == 0
+    assert got["can_submit"] is True
+    assert got["submit_blockers"] == []
+    # policy flags are computed on the detail route
+    assert set(got["policy_flags"]) == {"errors", "warnings"}
+
+
+def test_empty_draft_blocks_submit_with_reason(client):
+    from decimal import Decimal
+
+    emp = login(client, "employee@demo.local")
+    sheet = _draft(client, emp)  # no line items
+    assert sheet["can_submit"] is False
+    assert "Add a line item to submit." in sheet["submit_blockers"]
+    assert Decimal(sheet["total"]) == Decimal("0")
+    assert sheet["currency"] == "USD"  # default for an empty sheet
+
+
+def test_decision_trail_endpoint(client):
+    emp = login(client, "employee@demo.local")
+    sheet = _draft(client, emp)
+    r = client.get(f"/sheets/{sheet['id']}/decisions", headers=auth(emp))
+    assert r.status_code == 200, r.text
+    assert r.json() == []  # no manager/finance decisions on a fresh draft
 
 
 def test_disallowed_receipt_extension_rejected(client):
