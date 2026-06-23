@@ -3,7 +3,7 @@ items, view own/permitted sheets, submit and resubmit."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import current_principal, require
@@ -15,19 +15,21 @@ from app.models.expense_sheet import ExpenseSheet
 from app.principal import Principal
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
+from app.config import settings
 from app.schemas.dto import (
     AttachmentOut,
     DecisionOut,
     LineItemCreate,
     LineItemOut,
     LineItemUpdate,
+    ReceiptScanOut,
     SheetCreate,
     SheetOut,
     SheetUpdate,
 )
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
-from app.services import sheet_service
+from app.services import receipt_scan_service, sheet_service
 from expense_core.policy import BaselinePolicy
 
 router = APIRouter(
@@ -257,3 +259,29 @@ async def upload_receipt(
         file_type=file.content_type or "application/octet-stream",
     )
     return AttachmentOut.model_validate(att)
+
+
+@router.post(
+    "/{sheet_id}/line-items/{line_item_id}/scan",
+    response_model=ReceiptScanOut,
+    summary="Scan the line item's receipt (Document Intelligence) and reconcile",
+    responses={404: {"description": "Sheet, line item, or receipt not found"}},
+)
+async def scan_receipt(
+    sheet_id: str,
+    line_item_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> ReceiptScanOut:
+    """OCR + extract the most-recent receipt on a line item and reconcile against the entered
+    amount. Live with Azure Document Intelligence; offline it parses text receipts and returns
+    `source="unavailable"` for binary files with no OCR configured."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    attachments = session.exec(
+        select(Attachment).where(Attachment.line_item_id == item.id)
+    ).all()
+    if not attachments:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no receipt attached to scan")
+    return receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)

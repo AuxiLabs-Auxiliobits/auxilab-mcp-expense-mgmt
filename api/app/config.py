@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     # --- Azure (optional; workers/engine use these when wired) ------------- #
     foundry_endpoint: str = ""
     foundry_chat_deployment: str = "gpt-4o"
+    # Azure AI Document Intelligence — live receipt OCR/extraction for the scan endpoint.
+    # Empty → offline fallback (decode text-based receipts only).
+    doc_intel_endpoint: str = ""
+    # Azure AI Search — RAG retrieval of the agency's policy clauses (advisory note).
+    # Empty → no advisory (the deterministic policy check is unaffected).
+    search_endpoint: str = ""
+    search_index_name: str = "agency-policies"
     storage_account_url: str = ""
     servicebus_namespace: str = ""
 

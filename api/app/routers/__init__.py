@@ -1,4 +1,15 @@
-from app.routers import admin, auth, finance, health, manager, meta, policy, reports, sheets
+from app.routers import (
+    admin,
+    auth,
+    finance,
+    health,
+    intake,
+    manager,
+    meta,
+    policy,
+    reports,
+    sheets,
+)
 
 ALL_ROUTERS = [
     health.router,
@@ -10,4 +21,5 @@ ALL_ROUTERS = [
     admin.router,
     meta.router,
     reports.router,
+    intake.router,
 ]

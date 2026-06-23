@@ -6,7 +6,7 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
-import { uploadReceipt } from "@/data/api";
+import { uploadReceipt, scanReceipt } from "@/data/api";
 import { baselinePolicy } from "@/data/mock";
 import {
   EXPENSE_CATEGORIES,
@@ -15,7 +15,13 @@ import {
   type LineItem,
 } from "@/data/types";
 import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
-import { fileIssue, fileNote, validateLineItem } from "@/lib/intake";
+import { fileIssue, fileNote } from "@/lib/intake";
+import {
+  policyPreview,
+  policyAdvisory,
+  type PolicyPreviewResult,
+  type PolicyAdvisory,
+} from "@/data/api";
 import type { AttachmentInput } from "@/data/api";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -69,6 +75,8 @@ export function LineItemDialog({
   // absent for attachments already on the server (edit mode).
   const [files, setFiles] = useState<(AttachmentInput & { file?: File })[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [policy, setPolicy] = useState<PolicyPreviewResult | null>(null);
+  const [advisory, setAdvisory] = useState<PolicyAdvisory>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -124,22 +132,52 @@ export function LineItemDialog({
   }, [open, item, reset]);
 
   const v = watch();
-  const liveIssues = validateLineItem(
-    {
-      merchant: v.merchant ?? "",
-      description: v.description ?? "",
-      category: (v.category as ExpenseCategory) ?? "Other",
-      categoryOther: v.categoryOther,
-      amount: Number(v.amount) || 0,
-      currency: "USD" as Currency,
-      expenseDate: v.expenseDate ?? "",
-      receiptDatetime: v.receiptDatetime || undefined,
-      tax: v.tax != null ? Number(v.tax) : undefined,
-      attachments: files,
-    },
-    baselinePolicy,
-    siblings,
-  );
+
+  // Live, authoritative policy check from the backend (engine `check_policy`) — debounced as
+  // the user types. Offline it falls back to the client validator (see api.policyPreview).
+  useEffect(() => {
+    const amount = Number(v.amount);
+    if (!amount || amount <= 0) {
+      setPolicy(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      policyPreview({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        amount,
+        currency: "USD",
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+        expenseDate: v.expenseDate || undefined,
+        receiptDatetime: v.receiptDatetime || undefined,
+        hasReceipt: files.length > 0,
+      })
+        .then(setPolicy)
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [v.category, v.amount, v.merchant, v.description, v.expenseDate, v.receiptDatetime, files.length]);
+
+  // RAG advisory: the relevant agency policy clause (advisory only; empty offline).
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      policyAdvisory({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+      })
+        .then(setAdvisory)
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [v.category, v.merchant, v.description]);
+
+  const policyStatus = policy?.status ?? "pass";
+  const liveIssues = (policy?.violations ?? []).map((vi) => ({
+    level: policyStatus === "fail" ? ("error" as const) : ("warning" as const),
+    message: vi.message,
+    clauseRef: vi.code,
+  }));
 
   function acceptFiles(picked: File[]) {
     const accepted: (AttachmentInput & { file?: File })[] = [];
@@ -203,6 +241,24 @@ export function LineItemDialog({
             await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
           }
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
+
+          // Live invoice scan + reconciliation (advisory — never blocks).
+          try {
+            const scan = await scanReceipt({ sheetId, lineItemId: targetId });
+            if (scan && scan.total != null && scan.matchesEntered === false) {
+              toast.warning(
+                `Receipt total ${scan.total} doesn't match the entered ${input.amount}`,
+                {
+                  description:
+                    scan.reconciles === false
+                      ? "The receipt's line items + tax don't sum to its total."
+                      : "Review the amount against the receipt.",
+                },
+              );
+            }
+          } catch {
+            /* scan is best-effort; never block the save */
+          }
         }
       }
 
@@ -446,6 +502,17 @@ export function LineItemDialog({
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* RAG advisory — cited agency policy clause (advisory only, never blocks) */}
+          {advisory.clause && (
+            <div className="space-y-1 rounded border border-secondary/30 bg-secondary-container/20 p-3">
+              <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
+                <Icon name="smart_toy" className="text-[14px] text-secondary" />
+                AI note · {advisory.clause.source}
+              </p>
+              <p className="text-body-sm text-on-surface">{advisory.clause.text}</p>
             </div>
           )}
 

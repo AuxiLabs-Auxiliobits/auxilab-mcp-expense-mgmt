@@ -256,6 +256,78 @@ class PeriodsOut(BaseModel):
     periods: list[PeriodOption]
 
 
+# --- Live intake: policy preview + receipt scan (SCOPING §4, §6.1) ---------- #
+class PolicyPreviewRequest(BaseModel):
+    """A draft line item to dry-run against policy as the user types (no persistence)."""
+
+    category: Category | None = None
+    amount: Decimal = Field(gt=Decimal("0"))
+    currency: str = "USD"
+    merchant: str = ""
+    description: str = ""
+    expense_date: date | None = None
+    receipt_datetime: datetime | None = None
+    receipt_total: Decimal | None = None
+    has_receipt: bool = False
+
+
+class PolicyViolationOut(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
+class PolicyPreviewOut(BaseModel):
+    """Authoritative deterministic policy result for the line-item form (engine check_policy)."""
+
+    status: str  # pass | warn | fail
+    recommended_action: str
+    violations: list[PolicyViolationOut] = Field(default_factory=list)
+
+
+class PolicyAdvisoryRequest(BaseModel):
+    category: Category | None = None
+    merchant: str = ""
+    description: str = ""
+
+
+class PolicyAdvisoryClause(BaseModel):
+    source: str  # e.g. "Crispin policy v3"
+    text: str
+
+
+class PolicyAdvisoryOut(BaseModel):
+    """RAG advisory: the most relevant agency policy clause (LLM advises, never blocks).
+    `clause` is null offline / when AI Search isn't configured."""
+
+    clause: PolicyAdvisoryClause | None = None
+
+
+class ScanLineItem(BaseModel):
+    description: str
+    amount: Decimal
+
+
+class ReceiptScanOut(BaseModel):
+    """Result of scanning an uploaded receipt (Document Intelligence; offline fallback).
+
+    `source` is `document_intelligence` (live), `text` (offline text decode), or `unavailable`
+    (binary receipt with no OCR configured). Extracted numbers feed deterministic reconciliation
+    — the model never decides compliance (SCOPING §4)."""
+
+    source: str
+    merchant: str | None = None
+    total: Decimal | None = None
+    tax: Decimal | None = None
+    receipt_datetime: datetime | None = None
+    line_items: list[ScanLineItem] = Field(default_factory=list)
+    reconciles: bool | None = None  # Σ items + tax == receipt total
+    delta: Decimal | None = None
+    entered_amount: Decimal | None = None  # the line item's amount, for comparison
+    matches_entered: bool | None = None  # |receipt total − entered| ≤ tolerance
+    detail: str | None = None
+
+
 # --- Reports (finance/manager dashboard, SCOPING §4 report summariser) ------ #
 class CategoryTotal(BaseModel):
     category: str
