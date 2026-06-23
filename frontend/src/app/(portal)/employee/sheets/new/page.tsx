@@ -173,12 +173,19 @@ export default function NewSheetPage() {
                   done={titleValid}
                 >
                   <div className="space-y-2">
-                    <Label htmlFor="title">Sheet Title</Label>
+                    <Label htmlFor="title">
+                      Sheet Title
+                      <span className="ml-0.5 text-error" aria-hidden>
+                        *
+                      </span>
+                    </Label>
                     <Input
                       id="title"
                       placeholder="e.g. Q3 Engineering Offsite"
                       autoFocus
                       autoComplete="off"
+                      required
+                      maxLength={50}
                       {...register("title")}
                       aria-invalid={!!errors.title}
                       aria-describedby="title-help"

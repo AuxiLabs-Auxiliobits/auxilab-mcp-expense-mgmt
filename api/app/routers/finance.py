@@ -10,11 +10,16 @@ from app.auth.dependencies import require, require_role
 from app.db import get_session
 from app.models.audit import AuditLog
 from app.models.expense_sheet import ExpenseSheet
-from app.principal import Principal, Role
+from app.principal import Principal, Role, Scope
 from app.rbac.permissions import Capability
-from app.schemas.dto import FinanceHumanDecisionRequest, LlmDecisionRequest, SheetOut
+from app.schemas.dto import (
+    FinanceHumanDecisionRequest,
+    FinanceKpisOut,
+    LlmDecisionRequest,
+    SheetOut,
+)
 from app.serializers import sheet_to_out
-from app.services import finance_service, sheet_service
+from app.services import finance_service, reports_service, sheet_service
 from expense_core.schemas.enums import SheetStatus
 
 router = APIRouter(
@@ -37,6 +42,34 @@ async def manual_review_queue(
         select(ExpenseSheet).where(ExpenseSheet.status == SheetStatus.FINANCE_MANUAL_REVIEW)
     ).all()
     return [sheet_to_out(session, s) for s in rows]
+
+
+@router.get(
+    "/sheets",
+    response_model=list[SheetOut],
+    summary="All expense sheets (org-wide for Finance/Admin; own agency for Manager)",
+)
+async def all_sheets(
+    principal: Principal = Depends(require(Capability.VIEW_SHEETS)),
+    session: Session = Depends(get_session),
+) -> list[SheetOut]:
+    """Backs the Finance/Admin 'Expense Sheets' screen. Finance/Admin see every sheet; a
+    Manager is scoped to their own agency (SCOPING §3.2)."""
+    stmt = select(ExpenseSheet)
+    if principal.scope is Scope.AGENCY:
+        stmt = stmt.where(ExpenseSheet.agency_id == principal.agency_id)
+    rows = session.exec(stmt.order_by(ExpenseSheet.updated_at.desc())).all()
+    return [sheet_to_out(session, s) for s in rows]
+
+
+@router.get("/kpis", response_model=FinanceKpisOut, summary="Finance dashboard KPIs")
+async def finance_kpis(
+    principal: Principal = Depends(require(Capability.VIEW_REPORTS)),
+    session: Session = Depends(get_session),
+) -> FinanceKpisOut:
+    """Deterministically-computed finance KPIs (auto-approval rate, manual interventions,
+    policy citations, compliance) for the analytics strip (SCOPING §4)."""
+    return reports_service.build_finance_kpis(session, principal)
 
 
 @router.post(

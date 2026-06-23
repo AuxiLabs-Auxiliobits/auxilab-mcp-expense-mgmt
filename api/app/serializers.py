@@ -14,7 +14,7 @@ from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.models.user import User
-from app.schemas.dto import DecisionOut, LineItemOut, PolicyFlags, SheetOut
+from app.schemas.dto import AgencyOut, DecisionOut, LineItemOut, PolicyFlags, SheetOut
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 from expense_core.schemas.enums import PolicyCheckStatus, SheetStatus
@@ -116,6 +116,40 @@ def _to_tool_input(item: LineItem) -> LineItemInput:
         receipt_total=item.receipt_total,
         has_receipt=item.has_receipt,
     )
+
+
+def agency_to_out(session: Session, agency: Agency) -> AgencyOut:
+    """Serialize an agency with its live active-user count (the admin table column)."""
+    count = session.exec(
+        select(func.count(User.id)).where(
+            User.agency_id == agency.id,
+            User.is_active == True,  # noqa: E712 — SQL boolean comparison
+        )
+    ).one()
+    return AgencyOut(
+        id=agency.id, name=agency.name, status=str(agency.status),
+        created_by=agency.created_by, created_at=agency.created_at,
+        user_count=int(count or 0),
+    )
+
+
+def agencies_to_out(session: Session, agencies: list[Agency]) -> list[AgencyOut]:
+    """Batch serialize agencies with one grouped count query (avoids N per-agency queries)."""
+    counts = dict(
+        session.exec(
+            select(User.agency_id, func.count(User.id))
+            .where(User.is_active == True)  # noqa: E712
+            .group_by(User.agency_id)
+        ).all()
+    )
+    return [
+        AgencyOut(
+            id=a.id, name=a.name, status=str(a.status),
+            created_by=a.created_by, created_at=a.created_at,
+            user_count=int(counts.get(a.id, 0)),
+        )
+        for a in agencies
+    ]
 
 
 def decision_to_out(decision: Decision) -> DecisionOut:

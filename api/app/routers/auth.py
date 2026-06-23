@@ -7,11 +7,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import Session
 
 from app.auth.base import AuthError, AuthProvider
 from app.auth.dependencies import current_principal, get_auth_provider
+from app.db import get_session
+from app.models.agency import Agency
+from app.models.user import User
 from app.principal import Principal
-from app.schemas.dto import LoginRequest, TokenResponse
+from app.schemas.dto import LoginRequest, MeOut, TokenResponse
 
 router = APIRouter(
     prefix="/auth",
@@ -53,8 +57,22 @@ async def token(
     return TokenResponse(access_token=access)
 
 
-@router.get("/me", response_model=Principal, summary="Current authenticated principal")
-async def me(principal: Principal = Depends(current_principal)) -> Principal:
-    """Return the caller's normalized identity (id, email, role, agency, scope) decoded from
-    the bearer token. Handy first call to confirm Authorize worked and to see your role."""
-    return principal
+@router.get("/me", response_model=MeOut, summary="Current authenticated principal")
+async def me(
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> MeOut:
+    """Return the caller's identity for the UI: id, email, role, agency, scope — plus the
+    display `name` and `agency_name` resolved from the DB (the token carries only ids). Handy
+    first call to confirm Authorize worked and to see your role."""
+    user = session.get(User, principal.subject_id)
+    agency = session.get(Agency, principal.agency_id) if principal.agency_id else None
+    return MeOut(
+        subject_id=principal.subject_id,
+        email=principal.email,
+        role=str(principal.role),
+        agency_id=principal.agency_id,
+        agency_name=agency.name if agency else None,
+        name=user.name if user else None,
+        scope=str(principal.scope),
+    )

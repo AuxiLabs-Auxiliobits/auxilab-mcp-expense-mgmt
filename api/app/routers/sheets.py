@@ -3,7 +3,7 @@ items, view own/permitted sheets, submit and resubmit."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import current_principal, require
@@ -28,6 +28,7 @@ from app.schemas.dto import (
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
 from app.services import sheet_service
+from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 
 router = APIRouter(
@@ -130,6 +131,36 @@ async def submit_sheet(
     return _to_out(session, sheet, policy=policy)
 
 
+@router.post(
+    "/{sheet_id}/resubmit",
+    response_model=SheetOut,
+    summary="Resubmit a returned/rejected sheet",
+    responses={
+        404: {"description": "Sheet not found"},
+        409: {"description": "Sheet is not in a resubmittable state"},
+    },
+)
+async def resubmit_sheet(
+    sheet_id: str,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
+) -> SheetOut:
+    """Resubmit a sheet that was returned to the employee or rejected. Keeps the same ID,
+    bumps the version, and resets all prior manager/finance verdicts before re-running intake
+    (SCOPING §5.1). Use POST /sheets/{id}/submit for a first-time DRAFT submission."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    sheet_service._assert_owner(principal, sheet)
+    if sheet.status not in RESUBMITTABLE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"sheet in status {sheet.status} cannot be resubmitted "
+            "(only returned or rejected sheets); use /submit for a draft",
+        )
+    sheet = sheet_service.submit_sheet(session, sheet, principal, policy)
+    return _to_out(session, sheet, policy=policy)
+
+
 # --------------------------------------------------------------------------- #
 # Draft editing — owner only, while DRAFT (change req: editable until submission)
 # --------------------------------------------------------------------------- #
@@ -146,8 +177,27 @@ async def update_sheet(
     return _to_out(session, sheet, policy=policy)
 
 
-@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Withdraw a draft sheet")
+@router.post(
+    "/{sheet_id}/withdraw",
+    response_model=SheetOut,
+    summary="Withdraw a draft sheet (soft — moves it to WITHDRAWN, keeps the record)",
+    responses={404: {"description": "Sheet not found"}, 409: {"description": "Only DRAFT sheets can be withdrawn"}},
+)
 async def withdraw_sheet(
+    sheet_id: str,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
+) -> SheetOut:
+    """Withdraw an in-progress draft. The sheet and its line items are preserved (audit trail)
+    and the sheet moves to the terminal WITHDRAWN state. Use DELETE to hard-discard instead."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    sheet = sheet_service.withdraw_sheet(session, sheet, principal)
+    return _to_out(session, sheet, policy=policy)
+
+
+@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Discard a draft sheet (hard delete)")
+async def discard_sheet(
     sheet_id: str,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),

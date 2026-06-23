@@ -13,13 +13,11 @@ import {
 const OPTIONS = [
   { key: "light", label: "Light", icon: "light_mode" },
   { key: "dark", label: "Dark", icon: "dark_mode" },
-  { key: "high-contrast", label: "High contrast", icon: "contrast" },
 ] as const;
 
 const ICON: Record<string, string> = {
   light: "light_mode",
   dark: "dark_mode",
-  "high-contrast": "contrast",
 };
 
 export function ThemeToggle() {

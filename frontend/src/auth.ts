@@ -72,6 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
             let role: Role = "employee";
             let agencyId = "";
+            let agencyName = "";
             let name = email;
             let id = email;
             try {
@@ -82,13 +83,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 const me = await meRes.json();
                 role = String(me.role ?? "employee").toLowerCase() as Role;
                 agencyId = me.agency_id ?? me.agencyId ?? "";
+                agencyName = me.agency_name ?? me.agencyName ?? "";
                 name = me.name ?? me.full_name ?? me.email ?? email;
                 id = String(me.subject_id ?? me.id ?? email);
               }
             } catch {
               /* keep defaults if /auth/me is unavailable */
             }
-            return { id, name, email, role, agencyId, accessToken: token };
+            return { id, name, email, role, agencyId, agencyName, accessToken: token };
           } catch {
             return null;
           }
@@ -104,6 +106,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: u.email,
           role,
           agencyId: u.agencyId,
+          agencyName: u.agencyName ?? "Crispin",
         };
       },
     }),

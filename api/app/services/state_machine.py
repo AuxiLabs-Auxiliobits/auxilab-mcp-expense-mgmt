@@ -10,7 +10,7 @@ from expense_core.schemas.enums import SheetStatus as S
 
 # Allowed transitions. Source → set of legal destinations (SCOPING §5.1 diagram).
 _ALLOWED: dict[S, set[S]] = {
-    S.DRAFT: {S.SUBMITTED},
+    S.DRAFT: {S.SUBMITTED, S.WITHDRAWN},  # withdraw a draft before submission (soft)
     S.SUBMITTED: {S.IN_MANAGER_REVIEW},
     S.IN_MANAGER_REVIEW: {S.RETURNED_TO_EMPLOYEE, S.IN_FINANCE_REVIEW},
     S.RETURNED_TO_EMPLOYEE: {S.SUBMITTED},  # resubmit (new version)
@@ -21,6 +21,7 @@ _ALLOWED: dict[S, set[S]] = {
     S.APPROVED: {S.PAID},
     S.REJECTED: {S.SUBMITTED},  # resubmit after human reject
     S.PAID: set(),
+    S.WITHDRAWN: set(),  # terminal
 }
 
 
