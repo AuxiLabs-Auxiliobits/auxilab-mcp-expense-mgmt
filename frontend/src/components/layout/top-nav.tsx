@@ -68,6 +68,7 @@ export function TopNav({
   const user = session?.user;
   const signedInRole = (user?.role ?? role) as Role;
   const name = user?.name ?? "—";
+  const agencyName = user?.agencyName;
   const initials = name
     .split(" ")
     .map((p) => p[0])
@@ -126,6 +127,7 @@ export function TopNav({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>
+              {/* Row 1: name · Row 2: email · Row 3: role + agency */}
               <div className="font-sans text-body-sm font-semibold normal-case text-on-surface">
                 {name}
               </div>
@@ -134,6 +136,7 @@ export function TopNav({
               </div>
               <div className="mt-1 text-label-sm uppercase text-secondary">
                 {ROLE_LABELS[signedInRole]}
+                {agencyName ? ` · ${agencyName}` : ""}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

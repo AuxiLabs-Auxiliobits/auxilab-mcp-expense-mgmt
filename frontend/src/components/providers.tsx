@@ -38,7 +38,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider
       attribute="class"
       defaultTheme="light"
-      themes={["light", "dark", "high-contrast"]}
+      themes={["light", "dark"]}
       enableSystem
       disableTransitionOnChange
     >

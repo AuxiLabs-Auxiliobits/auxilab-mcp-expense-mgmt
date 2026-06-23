@@ -24,6 +24,7 @@ export const authConfig = {
       if (user) {
         token.role = user.role;
         token.agencyId = user.agencyId;
+        token.agencyName = user.agencyName;
         token.accessToken = user.accessToken;
       }
       return token;
@@ -31,6 +32,7 @@ export const authConfig = {
     session({ session, token }) {
       if (token.role) session.user.role = token.role as Role;
       if (token.agencyId) session.user.agencyId = token.agencyId as string;
+      if (token.agencyName) session.user.agencyName = token.agencyName as string;
       if (token.accessToken) session.accessToken = token.accessToken as string;
       return session;
     },
