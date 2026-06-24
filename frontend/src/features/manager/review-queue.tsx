@@ -160,7 +160,7 @@ export function ReviewQueue() {
           </h2>
           <div className="mt-1 flex items-center gap-2">
             <span className="rounded border border-outline-variant bg-surface-container-highest px-2 py-0.5 font-mono text-label-md text-on-surface-variant">
-              AGENCY: {user?.agencyId.replace("AGY-", "") ?? "—"}
+              AGENCY: {user?.agencyName || user?.agencyId?.replace("AGY-", "") || "—"}
             </span>
             <span className="text-body-sm text-on-surface-variant">
               {sheets.length} sheet{sheets.length === 1 ? "" : "s"} pending approval
