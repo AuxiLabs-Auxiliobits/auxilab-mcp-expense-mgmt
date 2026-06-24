@@ -236,7 +236,7 @@ export function ReviewQueue() {
                 <Button variant="ghost" size="sm" onClick={() => setCheckedIds(new Set())}>
                   Clear
                 </Button>
-                <Button size="sm" onClick={runBulkApprove} disabled={bulkApprove.isPending}>
+                <Button size="sm" onClick={runBulkApprove} loading={bulkApprove.isPending}>
                   <Icon name="done_all" /> Approve {checkedIds.size}
                 </Button>
               </div>
@@ -462,6 +462,9 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
             key={item.id}
             item={item}
             disabled={isOwnSheet || lineItemAction.isPending}
+            approving={
+              lineItemAction.isPending && lineItemAction.variables?.lineItemId === item.id
+            }
             onApprove={() => approve(item)}
             onReject={() => setPending({ action: "reject", item })}
             onRequestInfo={() => setPending({ action: "request_info", item })}
@@ -473,7 +476,8 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
       <div className="flex justify-end gap-3 border-t border-outline-variant bg-surface-bright p-4">
         <Button variant="outline">Return to Queue</Button>
         <Button
-          disabled={!allApproved || isOwnSheet || approveSheet.isPending}
+          disabled={!allApproved || isOwnSheet}
+          loading={approveSheet.isPending}
           onClick={approveEntireSheet}
           title={allApproved ? undefined : "Complete line item reviews first"}
         >
@@ -514,7 +518,8 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
             </Button>
             <Button
               variant={pending?.action === "reject" ? "destructive" : "default"}
-              disabled={reason.trim().length < 3 || lineItemAction.isPending}
+              disabled={reason.trim().length < 3}
+              loading={lineItemAction.isPending}
               onClick={confirmPending}
             >
               {pending?.action === "reject" ? "Reject" : "Request Info"}
@@ -529,12 +534,14 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
 function LineItemReviewCard({
   item,
   disabled,
+  approving = false,
   onApprove,
   onReject,
   onRequestInfo,
 }: {
   item: LineItem;
   disabled: boolean;
+  approving?: boolean;
   onApprove: () => void;
   onReject: () => void;
   onRequestInfo: () => void;
@@ -607,7 +614,7 @@ function LineItemReviewCard({
             <Button variant="destructive" size="sm" disabled={disabled} onClick={onReject}>
               <Icon name="close" /> Reject
             </Button>
-            <Button variant="secondary" size="sm" disabled={disabled} onClick={onApprove}>
+            <Button variant="secondary" size="sm" disabled={disabled} loading={approving} onClick={onApprove}>
               <Icon name="check" /> Approve
             </Button>
           </div>

@@ -24,8 +24,8 @@ export function PolicyDocuments() {
     try {
       const doc = await publish.mutateAsync({ id, publishedBy: "alex.rivera" });
       toast.success(`${doc.name} ${doc.version} published`, { description: "Re-indexed for RAG." });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Publish failed");
+    } catch {
+      /* error toast handled globally (QueryClient mutationCache) */
     }
   }
 
@@ -74,7 +74,12 @@ export function PolicyDocuments() {
                     }
                   />
                   {doc.status === "draft" && (
-                    <Button size="sm" disabled={publish.isPending} onClick={() => onPublish(doc.id)}>
+                    <Button
+                      size="sm"
+                      loading={publish.isPending && publish.variables?.id === doc.id}
+                      disabled={publish.isPending}
+                      onClick={() => onPublish(doc.id)}
+                    >
                       Publish
                     </Button>
                   )}

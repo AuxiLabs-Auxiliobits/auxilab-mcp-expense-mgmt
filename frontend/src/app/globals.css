@@ -372,6 +372,20 @@
   }
 }
 
+/* Indeterminate sliding bar for the global request indicator (GlobalProgress). */
+@keyframes global-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.global-progress-bar {
+  animation: global-progress-slide 1.1s ease-in-out infinite;
+}
+
 /* Material-style ripple emitted from the click point (see Button). */
 @layer utilities {
   .ripple {

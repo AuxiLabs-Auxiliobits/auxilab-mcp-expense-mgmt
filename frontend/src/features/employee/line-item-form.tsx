@@ -77,7 +77,7 @@ export function LineItemDialog({
     reset,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<LineItemValues>({
     // Cast: the schema coerces number inputs (z.coerce / preprocess), so its
     // input type differs from the inferred output type — runtime is correct.
@@ -453,7 +453,7 @@ export function LineItemDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!blockingError || addLineItem.isPending || updateLineItem.isPending}>
+            <Button type="submit" disabled={!!blockingError} loading={isSubmitting}>
               {item ? "Save changes" : "Add line item"}
             </Button>
           </DialogFooter>

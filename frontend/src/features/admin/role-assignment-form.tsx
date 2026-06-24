@@ -72,8 +72,8 @@ export function RoleAssignmentForm() {
             </SelectContent>
           </Select>
         </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? "Granting…" : "Grant Access"}
+        <Button type="submit" className="w-full" loading={isSubmitting || assignRole.isPending}>
+          Grant Access
         </Button>
       </form>
     </Card>

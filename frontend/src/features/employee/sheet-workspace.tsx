@@ -333,7 +333,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={withdrawSheet.isPending}
+                    loading={withdrawSheet.isPending}
                     onClick={withdraw}
                   >
                     <Icon name="cancel_presentation" /> Withdraw
@@ -343,7 +343,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   isResubmit ? (
                     <Button
                       onClick={resubmit}
-                      disabled={blocked || primaryPending}
+                      disabled={blocked}
+                      loading={primaryPending}
                       aria-label="Resubmit sheet for review"
                     >
                       <Icon name="restart_alt" /> Resubmit Sheet
@@ -351,7 +352,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   ) : (
                     <Button
                       onClick={submit}
-                      disabled={blocked || primaryPending}
+                      disabled={blocked}
+                      loading={primaryPending}
                       aria-label="Submit sheet for review"
                     >
                       <Icon name="send" /> Submit for Review
@@ -479,6 +481,10 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                     editable={editable}
                     onEdit={() => openEdit(item)}
                     onRemove={() => remove(item)}
+                    removing={
+                      removeLineItem.isPending &&
+                      removeLineItem.variables?.lineItemId === item.id
+                    }
                   />
                 </Reveal>
               ))}
@@ -500,11 +506,11 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 )}
               </div>
               {isResubmit ? (
-                <Button onClick={resubmit} disabled={blocked || resubmitSheet.isPending}>
+                <Button onClick={resubmit} disabled={blocked} loading={resubmitSheet.isPending}>
                   <Icon name="restart_alt" /> Resubmit Sheet
                 </Button>
               ) : (
-                <Button onClick={submit} disabled={blocked || submitSheet.isPending}>
+                <Button onClick={submit} disabled={blocked} loading={submitSheet.isPending}>
                   <Icon name="send" /> Submit for Review
                 </Button>
               )}
@@ -633,7 +639,7 @@ function EditableTitle({ sheet, editable }: { sheet: ExpenseSheet; editable: boo
           }
         }}
       />
-      <Button size="sm" onClick={save} disabled={!valid || updateSheet.isPending}>
+      <Button size="sm" onClick={save} disabled={!valid} loading={updateSheet.isPending}>
         <Icon name="check" /> Save
       </Button>
       <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -813,11 +819,13 @@ function LineItemRow({
   editable,
   onEdit,
   onRemove,
+  removing = false,
 }: {
   item: LineItem;
   editable: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  removing?: boolean;
 }) {
   const needsFix =
     editable &&
@@ -863,10 +871,12 @@ function LineItemRow({
                 </Button>
                 <button
                   onClick={onRemove}
-                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error"
+                  disabled={removing}
+                  aria-busy={removing || undefined}
+                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:opacity-50"
                   aria-label={`Remove ${item.merchant}`}
                 >
-                  <Icon name="delete" className="text-[18px]" />
+                  <Icon name={removing ? "progress_activity" : "delete"} className={cn("text-[18px]", removing && "animate-spin")} />
                 </button>
               </div>
             )}

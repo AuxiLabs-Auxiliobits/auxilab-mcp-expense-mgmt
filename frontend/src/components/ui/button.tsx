@@ -2,6 +2,7 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/icon";
 
 const buttonVariants = cva(
   "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_.material-symbols-outlined]:text-[18px]",
@@ -31,13 +32,36 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * Show a spinner and disable the button while a request is in flight. Wire this to a
+   * mutation's `isPending` to get progress feedback + duplicate-submit prevention for free.
+   * Ignored when `asChild` (Slot requires a single child).
+   */
+  loading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+    // asChild forwards to a single child (e.g. <Link>) — can't inject a spinner there.
+    if (asChild) {
+      return (
+        <Comp ref={ref} className={cn(buttonVariants({ variant, size, className }))} {...props}>
+          {children}
+        </Comp>
+      );
+    }
     return (
-      <Comp ref={ref} className={cn(buttonVariants({ variant, size, className }))} {...props} />
+      <button
+        ref={ref}
+        className={cn(buttonVariants({ variant, size, className }))}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
+        {...props}
+      >
+        {loading && <Icon name="progress_activity" className="animate-spin text-[18px]" />}
+        {children}
+      </button>
     );
   },
 );

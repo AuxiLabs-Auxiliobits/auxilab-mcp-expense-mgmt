@@ -57,10 +57,16 @@ export function useCreateSheet() {
   });
 }
 
-function useSheetMutation<TArgs>(fn: (args: TArgs) => Promise<import("./types").ExpenseSheet>) {
+function useSheetMutation<TArgs>(
+  fn: (args: TArgs) => Promise<import("./types").ExpenseSheet>,
+  // Opt out of the global error toast for call sites that show their own (and that may
+  // also do non-mutation work, e.g. receipt uploads, in the same handler).
+  suppressErrorToast = false,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
+    meta: suppressErrorToast ? { suppressErrorToast: true } : undefined,
     onSuccess: (sheet) => {
       qc.setQueryData(queryKeys.sheet(sheet.id), sheet);
       qc.invalidateQueries({ queryKey: queryKeys.employeeSheets(sheet.employeeId) });
@@ -72,9 +78,11 @@ function useSheetMutation<TArgs>(fn: (args: TArgs) => Promise<import("./types").
   });
 }
 
-export const useUpdateSheet = () => useSheetMutation(api.updateSheet);
-export const useAddLineItem = () => useSheetMutation(api.addLineItem);
-export const useUpdateLineItem = () => useSheetMutation(api.updateLineItem);
+// These call sites toast their own error (and update/add also upload receipts) → opt out.
+export const useUpdateSheet = () => useSheetMutation(api.updateSheet, true);
+export const useAddLineItem = () => useSheetMutation(api.addLineItem, true);
+export const useUpdateLineItem = () => useSheetMutation(api.updateLineItem, true);
+// These rely on the global error toast.
 export const useRemoveLineItem = () => useSheetMutation(api.removeLineItem);
 export const useSubmitSheet = () => useSheetMutation(api.submitSheet);
 export const useResubmitSheet = () => useSheetMutation(api.resubmitSheet);
@@ -175,8 +183,10 @@ export function useFinanceOverride() {
 }
 
 // ── Admin ──
-export const useAgencies = () =>
-  useQuery({ queryKey: queryKeys.agencies, queryFn: api.getAgencies });
+// Listing all agencies is admin-only server-side; pass enabled=false for non-admins
+// (e.g. Finance) so the UI never fires a guaranteed-403 request.
+export const useAgencies = (enabled = true) =>
+  useQuery({ queryKey: queryKeys.agencies, queryFn: api.getAgencies, enabled });
 
 export const useBaselinePolicy = () =>
   useQuery({ queryKey: queryKeys.baselinePolicy, queryFn: api.getBaselinePolicy });
