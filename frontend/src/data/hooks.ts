@@ -46,6 +46,21 @@ export const useActiveDraft = (employeeId: string) =>
 export const useSheet = (id: string | undefined) =>
   useQuery({ queryKey: queryKeys.sheet(id ?? ""), queryFn: () => api.getSheet(id as string), enabled: !!id });
 
+// ── Receipts & approval history (manager/finance review) ──
+export const useSheetReceipts = (sheetId: string | undefined) =>
+  useQuery({
+    queryKey: ["sheet-receipts", sheetId ?? ""],
+    queryFn: () => api.getSheetReceipts(sheetId as string),
+    enabled: !!sheetId,
+  });
+
+export const useSheetDecisions = (sheetId: string | undefined) =>
+  useQuery({
+    queryKey: ["sheet-decisions", sheetId ?? ""],
+    queryFn: () => api.getSheetDecisions(sheetId as string),
+    enabled: !!sheetId,
+  });
+
 export function useCreateSheet() {
   const qc = useQueryClient();
   return useMutation({

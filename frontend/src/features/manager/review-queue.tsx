@@ -8,6 +8,7 @@ import {
   useLineItemAction,
   useManagerBulkApprove,
   useManagerQueue,
+  useSheetReceipts,
 } from "@/data/hooks";
 import { AGING_CLASS, agingLevel } from "@/lib/aging";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ReceiptViewer, ReceiptsLoading } from "@/components/shared/receipt-viewer";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExpenseSheet, LineItem } from "@/data/types";
@@ -89,13 +91,26 @@ export function ReviewQueue() {
   const agencyId = user?.agencyId ?? "";
   const { data: queue, isLoading } = useManagerQueue(agencyId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // True after the user explicitly returns to the queue, so the auto-select effect
+  // below doesn't immediately re-open the first sheet (that defeated "Return to Queue").
+  const [manualClear, setManualClear] = useState(false);
 
   const sheets = queue ?? [];
   useEffect(() => {
+    if (manualClear) return;
     if (sheets.length && (!selectedId || !sheets.some((s) => s.id === selectedId))) {
       setSelectedId(sheets[0].id);
     }
-  }, [sheets, selectedId]);
+  }, [sheets, selectedId, manualClear]);
+
+  const selectSheet = (id: string) => {
+    setManualClear(false);
+    setSelectedId(id);
+  };
+  const returnToQueue = () => {
+    setManualClear(true);
+    setSelectedId(null);
+  };
 
   const selected = sheets.find((s) => s.id === selectedId) ?? null;
 
@@ -263,7 +278,7 @@ export function ReviewQueue() {
                   active={sheet.id === selectedId}
                   checked={checkedIds.has(sheet.id)}
                   onToggle={() => toggleChecked(sheet.id)}
-                  onSelect={() => setSelectedId(sheet.id)}
+                  onSelect={() => selectSheet(sheet.id)}
                 />
               ))
             )}
@@ -273,7 +288,7 @@ export function ReviewQueue() {
         {/* Detail */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest lg:h-full">
           {selected ? (
-            <SheetDetail sheet={selected} />
+            <SheetDetail sheet={selected} onReturn={returnToQueue} />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState icon="fact_check" title="Select a sheet" description="Choose a pending sheet to review its line items." />
@@ -356,10 +371,11 @@ function SheetListItem({
   );
 }
 
-function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
+function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () => void }) {
   const { data: user } = useCurrentUser("manager");
   const lineItemAction = useLineItemAction();
   const approveSheet = useApproveSheet();
+  const { data: receipts, isLoading: receiptsLoading } = useSheetReceipts(sheet.id);
   const [pending, setPending] = useState<PendingAction>(null);
   const [reason, setReason] = useState("");
 
@@ -470,11 +486,25 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
             onRequestInfo={() => setPending({ action: "request_info", item })}
           />
         ))}
+
+        {/* Supporting receipts — managers can preview + download what the employee uploaded. */}
+        <div className="rounded-lg border border-outline-variant bg-surface-bright p-4">
+          <h4 className="mb-3 flex items-center gap-2 text-body-md font-semibold text-on-surface">
+            <Icon name="receipt_long" className="text-secondary" /> Supporting Receipts
+          </h4>
+          {receiptsLoading ? (
+            <ReceiptsLoading />
+          ) : (
+            <ReceiptViewer attachments={receipts ?? []} emptyHint="No receipts were attached to this sheet." />
+          )}
+        </div>
       </div>
 
       {/* Footer */}
       <div className="flex justify-end gap-3 border-t border-outline-variant bg-surface-bright p-4">
-        <Button variant="outline">Return to Queue</Button>
+        <Button variant="outline" onClick={onReturn}>
+          <Icon name="arrow_back" /> Return to Queue
+        </Button>
         <Button
           disabled={!allApproved || isOwnSheet}
           loading={approveSheet.isPending}

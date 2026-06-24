@@ -162,10 +162,13 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
+    filename: str | None = None
     file_type: str
     size: int
     blob_uri: str
     scan_status: str
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

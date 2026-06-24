@@ -214,7 +214,9 @@ def attach_receipt(
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
-    att = Attachment(line_item_id=item.id, blob_uri="", file_type=file_type, size=len(data))
+    att = Attachment(
+        line_item_id=item.id, blob_uri="", filename=filename, file_type=file_type, size=len(data)
+    )
     session.add(att)
     session.flush()  # assign att.id for a collision-safe blob name
     att.blob_uri = upload_receipt_blob(sheet.employee_id, f"{att.id}-{filename}", data)

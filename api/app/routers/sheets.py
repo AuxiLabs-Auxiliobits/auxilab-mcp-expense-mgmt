@@ -12,6 +12,7 @@ from app.deps import get_policy
 from app.models.attachment import Attachment
 from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
+from app.models.line_item import LineItem
 from app.principal import Principal
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
@@ -260,6 +261,32 @@ async def delete_line_item(
     item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
     sheet_service.delete_line_item(session, sheet, item, principal)
     return _to_out(session, sheet, policy=policy)
+
+
+@router.get(
+    "/{sheet_id}/receipts",
+    response_model=list[AttachmentOut],
+    summary="All receipts on a sheet (scope-checked) — for manager/finance review",
+    responses={404: {"description": "Sheet not found"}},
+)
+async def list_sheet_receipts(
+    sheet_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> list[AttachmentOut]:
+    """Every receipt across the sheet's line items, so a reviewer (manager in-agency, or
+    Finance/Admin org-wide) can see all supporting documents in one call."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item_ids = list(
+        session.exec(select(LineItem.id).where(LineItem.sheet_id == sheet.id)).all()
+    )
+    if not item_ids:
+        return []
+    rows = session.exec(
+        select(Attachment).where(Attachment.line_item_id.in_(item_ids))  # type: ignore[attr-defined]
+    ).all()
+    return [AttachmentOut.model_validate(a) for a in rows]
 
 
 @router.get(

@@ -17,6 +17,7 @@ import {
 } from "./mock";
 import { toAiFlag, validateLineItem, type IntakeIssue } from "@/lib/intake";
 import {
+  apiBlob,
   apiDelete,
   apiGet,
   apiPatch,
@@ -26,7 +27,9 @@ import {
 } from "./http";
 import {
   mapAgency,
+  mapAttachment,
   mapAudit,
+  mapDecision,
   mapNotification,
   mapPolicy,
   mapSheet,
@@ -63,8 +66,10 @@ import type {
   AgencyPolicyDocument,
   AgencyTier,
   AppNotification,
+  Attachment,
   AuditLogEntry,
   Currency,
+  DecisionEntry,
   EmployeeKpis,
   ExpenseCategory,
   ExpenseSheet,
@@ -219,6 +224,36 @@ export function getSheet(id: string): Promise<ExpenseSheet> {
   return backend(
     () => apiGet<Raw>(`/sheets/${id}`).then(mapSheet),
     () => delay(clone(findSheet(id))),
+  );
+}
+
+// ── Receipts & approval history (manager + finance review) ───────────────────
+
+/** All receipts on a sheet (scope-checked server-side). */
+export function getSheetReceipts(sheetId: string): Promise<Attachment[]> {
+  return backend(
+    () => apiGet<Raw[]>(`/sheets/${sheetId}/receipts`).then((rows) => rows.map(mapAttachment)),
+    () => {
+      const sheet = sheetStore.find((s) => s.id === sheetId);
+      const atts = (sheet?.lineItems ?? []).flatMap((li) => li.attachments ?? []);
+      return delay(clone(atts));
+    },
+  );
+}
+
+/** Fetch a receipt's bytes (authenticated) for inline preview or download. */
+export function fetchReceiptBlob(
+  attachmentId: string,
+  download = false,
+): Promise<{ blob: Blob; filename: string; contentType: string }> {
+  return apiBlob(`/attachments/${attachmentId}/content${download ? "?download=true" : ""}`);
+}
+
+/** A sheet's approval/decision history (manager → finance → LLM actions), oldest first. */
+export function getSheetDecisions(sheetId: string): Promise<DecisionEntry[]> {
+  return backend(
+    () => apiGet<Raw[]>(`/sheets/${sheetId}/decisions`).then((rows) => rows.map(mapDecision)),
+    () => delay([]),
   );
 }
 

@@ -143,6 +143,39 @@ export async function apiUpload<T>(path: string, form: FormData, signal?: AbortS
   return send<T>("POST", path, form, true, signal);
 }
 
+/**
+ * Authenticated binary fetch for receipt preview/download. Returns the bytes as a Blob plus
+ * the server-suggested filename (from Content-Disposition) — used to build an object URL for
+ * inline preview or to trigger a download. Goes through the same timeout/abort/error path.
+ */
+export async function apiBlob(
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string; contentType: string }> {
+  const { signal: composed, done } = withTimeout(signal);
+  try {
+    const headers = { ...(await authHeader()) };
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${path}`, { headers, signal: composed });
+    } catch {
+      if (composed.aborted && (composed.reason as Error)?.name === "TimeoutError") {
+        throw new ApiError(friendlyMessage(408), 408, "timeout");
+      }
+      if (composed.aborted) throw new ApiError("Request cancelled.", 0, "aborted");
+      throw new ApiError(friendlyMessage(0), 0, "network");
+    }
+    if (!res.ok) throw new ApiError(friendlyMessage(res.status), res.status, "http");
+    const blob = await res.blob();
+    const cd = res.headers.get("content-disposition") ?? "";
+    const m = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+    const filename = m ? decodeURIComponent(m[1]) : "receipt";
+    return { blob, filename, contentType: res.headers.get("content-type") ?? blob.type };
+  } finally {
+    done();
+  }
+}
+
 export const apiGet = <T>(path: string, signal?: AbortSignal) => send<T>("GET", path, undefined, false, signal);
 export const apiPost = <T>(path: string, body?: unknown, signal?: AbortSignal) =>
   send<T>("POST", path, body, false, signal);
