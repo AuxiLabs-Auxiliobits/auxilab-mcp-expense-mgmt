@@ -49,3 +49,22 @@ def test_admin_can_list_agencies(client):
 
 def test_no_token_rejected(client):
     assert client.get("/auth/me").status_code == 401  # HTTPBearer: no credentials
+
+
+def test_deactivated_account_token_rejected(client):
+    """A still-valid token stops working the moment the account is deactivated (§ session)."""
+    admin = login(client, "admin@demo.local")
+    # Create a user, log in to get a live token, then deactivate them.
+    email = "deact-test@demo.local"
+    created = client.post(
+        "/admin/users",
+        json={"name": "Deact", "email": email, "role": "employee", "password": "demo"},
+        headers=auth(admin),
+    ).json()
+    token = login(client, email)
+    assert client.get("/auth/me", headers=auth(token)).status_code == 200  # works while active
+
+    client.delete(f"/admin/users/{created['id']}", headers=auth(admin))  # soft-delete (is_active=false)
+    # The previously-issued token is now rejected on the very next request.
+    assert client.get("/auth/me", headers=auth(token)).status_code == 401
+    assert client.get("/sheets", headers=auth(token)).status_code == 401

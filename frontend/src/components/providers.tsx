@@ -15,6 +15,7 @@ import { SessionProvider } from "next-auth/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalProgress } from "@/components/layout/global-progress";
 import { ApiError } from "@/data/http";
+import { triggerSessionExpired } from "@/lib/session";
 
 function ThemedToaster() {
   const { resolvedTheme } = useTheme();
@@ -45,14 +46,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
         queryCache: new QueryCache({
           onError: (error) => {
             if (error instanceof ApiError && error.kind === "aborted") return;
-            // 401s are handled by the auth layer (redirect to /login); don't double-toast.
-            if (error instanceof ApiError && error.status === 401) return;
+            // 401 = expired/revoked session → auto logout (handled by SessionManager).
+            if (error instanceof ApiError && error.status === 401) {
+              triggerSessionExpired("expired");
+              return;
+            }
             toast.error(messageFor(error));
           },
         }),
         mutationCache: new MutationCache({
           onError: (error, _vars, _ctx, mutation) => {
             if (error instanceof ApiError && error.kind === "aborted") return;
+            if (error instanceof ApiError && error.status === 401) {
+              triggerSessionExpired("expired");
+              return;
+            }
             // Opt-out for hooks whose call sites already show a tailored error (e.g. flows
             // that also do non-mutation work like receipt uploads in the same try/catch).
             if (mutation.options.meta?.suppressErrorToast) return;

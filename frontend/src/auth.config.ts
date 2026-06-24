@@ -18,6 +18,9 @@ function targetPortal(path: string): Role {
 export const authConfig = {
   trustHost: true,
   pages: { signIn: "/login" },
+  // Absolute session cap (8h) mirroring the backend access-token lifetime; the client
+  // SessionManager additionally enforces a 30-minute idle timeout.
+  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   providers: [],
   callbacks: {
     jwt({ token, user }) {

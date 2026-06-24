@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     auth_provider: Literal["db", "entra"] = "db"
     jwt_secret: str = "dev-only-change-me"  # noqa: S105 — overridden via env/Key Vault
     jwt_algorithm: str = "HS256"
-    jwt_ttl_seconds: int = 3600
+    # Access-token lifetime == the absolute session cap (8h). The client also enforces a
+    # 30-min idle timeout, so an inactive session is logged out well before the token expires.
+    jwt_ttl_seconds: int = 28800
     entra_tenant_id: str = ""
     entra_audience: str = ""
     entra_jwks_url: str = ""
@@ -42,10 +44,26 @@ class Settings(BaseSettings):
     seed_demo_data: bool = True  # seed agencies/users on startup in dev
 
     # --- Azure (optional; workers/engine use these when wired) ------------- #
+    # Azure AI Foundry (chat) — empty endpoint → offline deterministic answers.
     foundry_endpoint: str = ""
     foundry_chat_deployment: str = "gpt-4o"
+    foundry_api_key: str = ""  # prefer Managed Identity; key only for local dev
+    foundry_api_version: str = "2024-10-21"
+    # Azure AI Search (per-agency policy RAG index) — empty → offline retrieval from the
+    # agency's stored policy doc / baseline ruleset.
+    search_endpoint: str = ""
+    search_index_name: str = "agency-policies"
+    search_api_key: str = ""  # prefer Managed Identity; key only for local dev
     storage_account_url: str = ""
     servicebus_namespace: str = ""
+
+    @property
+    def azure_foundry_enabled(self) -> bool:
+        return bool(self.foundry_endpoint)
+
+    @property
+    def azure_search_enabled(self) -> bool:
+        return bool(self.search_endpoint)
 
     # --- Agency policy documents (RAG ingestion, SCOPING §7) --------------- #
     # Blob container for uploaded policy docs. With no storage_account_url configured the

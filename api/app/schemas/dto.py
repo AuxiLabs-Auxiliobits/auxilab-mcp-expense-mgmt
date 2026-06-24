@@ -476,6 +476,30 @@ class FinanceKpisOut(BaseModel):
     finance_reached: int  # denominator: sheets that reached a finance outcome
 
 
+# --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #
+class AssistantQuery(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+
+    model_config = {
+        "json_schema_extra": {"example": {"query": "What's the per-meal limit?"}}
+    }
+
+
+class AssistantCitation(BaseModel):
+    id: str
+    title: str
+    text: str
+    source: str
+
+
+class AssistantAnswerOut(BaseModel):
+    answer: str
+    citations: list[AssistantCitation] = Field(default_factory=list)
+    policy_version: str
+    routed_to_human: bool = False
+    model_version: str = "offline"
+
+
 # --- Notifications --------------------------------------------------------- #
 class NotificationOut(BaseModel):
     id: str

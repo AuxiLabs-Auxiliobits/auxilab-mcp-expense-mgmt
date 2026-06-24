@@ -249,6 +249,32 @@ export function fetchReceiptBlob(
   return apiBlob(`/attachments/${attachmentId}/content${download ? "?download=true" : ""}`);
 }
 
+// ── Policy Assistant (agency RAG over Azure Foundry, backend-resolved) ────────
+export interface AssistantAnswer {
+  answer: string;
+  citations: import("./policy-kb").PolicyClause[];
+  routedToHuman: boolean;
+}
+
+/** Ask the backend Policy Assistant (RAG over the caller's agency policy via Azure Foundry,
+ *  offline composer when Azure isn't configured). Agency is taken from the auth token. */
+export function queryPolicyAssistant(query: string): Promise<AssistantAnswer> {
+  return apiPost<Raw>("/assistant/policy", { query }).then((r) => ({
+    answer: String(r.answer ?? ""),
+    routedToHuman: Boolean(r.routed_to_human),
+    citations: Array.isArray(r.citations)
+      ? r.citations.map((c: Raw) => ({
+          id: String(c.id ?? ""),
+          agencyId: "",
+          keywords: [],
+          title: String(c.title ?? "Policy clause"),
+          text: String(c.text ?? ""),
+          source: String(c.source ?? ""),
+        }))
+      : [],
+  }));
+}
+
 /** A sheet's approval/decision history (manager → finance → LLM actions), oldest first. */
 export function getSheetDecisions(sheetId: string): Promise<DecisionEntry[]> {
   return backend(
