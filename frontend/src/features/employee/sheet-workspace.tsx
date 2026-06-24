@@ -31,7 +31,14 @@ import {
 } from "@/lib/status";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { LineItemDialog } from "./line-item-form";
+
+function fmtBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
 
 const EDITABLE: SheetStatus[] = [
   "DRAFT",
@@ -554,6 +561,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         sheetId={sheet.id}
+        period={sheet.period}
         item={editing}
         siblings={sheet.lineItems.filter((l) => l.id !== editing?.id)}
       />
@@ -893,14 +901,27 @@ function LineItemRow({
           {!editable && item.policyStatus && (
             <StatusBadge meta={LINE_ITEM_STATUS_META[item.policyStatus]} className="rounded-md" />
           )}
+          {!editable && item.needsHumanReview && (
+            <span
+              title={item.reviewReason ?? "Receipt scan flagged for review"}
+              className="inline-flex items-center gap-1 rounded border border-tertiary/40 bg-tertiary/10 px-2 py-0.5 font-mono text-label-sm text-tertiary"
+            >
+              <Icon name="flag" className="text-[12px]" /> Needs finance review
+            </span>
+          )}
           {hasReceipt ? (
             item.attachments.map((a) => (
               <span
                 key={a.id}
-                className="inline-flex items-center gap-1 rounded border border-outline-variant px-2 py-0.5 font-mono text-label-sm text-on-surface-variant"
+                className="inline-flex items-center gap-1.5 rounded border border-outline-variant p-1 pr-2 font-mono text-label-sm text-on-surface-variant"
               >
-                <Icon name="attachment" className="text-[12px]" />
-                {a.fileName}
+                <ReceiptPreview
+                  downloadUrl={a.downloadUrl}
+                  fileName={a.fileName}
+                  fileType={a.fileType}
+                />
+                <span className="max-w-[14rem] truncate">{a.fileName}</span>
+                {a.sizeBytes > 0 && <span className="text-on-surface-variant/70">{fmtBytes(a.sizeBytes)}</span>}
               </span>
             ))
           ) : (

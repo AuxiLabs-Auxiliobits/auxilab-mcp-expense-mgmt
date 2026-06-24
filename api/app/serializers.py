@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from urllib.parse import unquote, urlparse
 
-from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models.agency import Agency
@@ -14,7 +14,7 @@ from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.models.user import User
-from app.schemas.dto import DecisionOut, LineItemOut, PolicyFlags, SheetOut
+from app.schemas.dto import AttachmentOut, DecisionOut, LineItemOut, PolicyFlags, SheetOut
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 from expense_core.schemas.enums import PolicyCheckStatus, SheetStatus
@@ -23,6 +23,25 @@ from expense_core.tools import check_policy
 
 # A sheet's "Submit for Review" is only offered while drafting or after being sent back.
 _SUBMITTABLE_STATES = {SheetStatus.DRAFT} | RESUBMITTABLE
+
+
+def _attachment_out(sheet_id: str, line_item_id: str, a: Attachment) -> AttachmentOut:
+    """Build the read DTO for a stored receipt: real size/type + the original filename
+    (the blob name is `{attachment_id}-{original}`) + an auth'd download path."""
+    name = unquote(urlparse(a.blob_uri).path).rsplit("/", 1)[-1]
+    prefix = f"{a.id}-"
+    if name.startswith(prefix):
+        name = name[len(prefix):]
+    return AttachmentOut(
+        id=a.id,
+        line_item_id=a.line_item_id,
+        file_name=name or "receipt",
+        file_type=a.file_type,
+        size=a.size,
+        blob_uri=a.blob_uri,
+        scan_status=str(a.scan_status),
+        download_url=f"/sheets/{sheet_id}/line-items/{line_item_id}/receipts/{a.id}/file",
+    )
 
 
 def sheet_to_out(
@@ -34,19 +53,26 @@ def sheet_to_out(
     at zero (everything else is still computed). Names, totals, receipt and submit-gating
     fields are resolved here so the client doesn't re-implement them."""
     items = list(session.exec(select(LineItem).where(LineItem.sheet_id == sheet.id)).all())
-    # One grouped query for attachment counts rather than N per-item queries.
-    counts = dict(
+    # Fetch the attachment rows once and group by line item (real size/name, not synthetic).
+    att_rows = list(
         session.exec(
-            select(Attachment.line_item_id, func.count(Attachment.id))
-            .where(Attachment.line_item_id.in_([i.id for i in items] or [""]))  # type: ignore[attr-defined]
-            .group_by(Attachment.line_item_id)
+            select(Attachment).where(
+                Attachment.line_item_id.in_([i.id for i in items] or [""])  # type: ignore[attr-defined]
+            )
         ).all()
     )
+    by_item: dict[str, list[Attachment]] = {}
+    for a in att_rows:
+        by_item.setdefault(a.line_item_id, []).append(a)
+    counts = {iid: len(atts) for iid, atts in by_item.items()}
+
     out = SheetOut.model_validate(sheet)  # pulls id/status/version/period/timestamps directly
     line_outs: list[LineItemOut] = []
     for i in items:
         li = LineItemOut.model_validate(i)
-        li.receipt_count = counts.get(i.id, 0)
+        atts = by_item.get(i.id, [])
+        li.receipt_count = len(atts)
+        li.attachments = [_attachment_out(sheet.id, i.id, a) for a in atts]
         line_outs.append(li)
     out.line_items = line_outs
 

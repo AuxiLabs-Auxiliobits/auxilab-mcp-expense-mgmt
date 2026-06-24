@@ -55,20 +55,35 @@ export function mapLineItem(r: Raw, sheetId = ""): LineItem {
     managerReason: r.manager_reason ?? r.managerReason ?? undefined,
     policyStatus: r.policy_status ?? r.policyStatus ?? undefined,
     policyClauseRef: r.policy_clause_ref ?? r.policyClauseRef ?? undefined,
+    needsHumanReview: Boolean(r.needs_human_review ?? r.needsHumanReview ?? false),
+    reviewReason: r.review_reason ?? r.reviewReason ?? undefined,
     aiFlag: r.ai_flag ?? r.aiFlag ?? undefined,
-    attachments: r.has_receipt
-      ? [
-          {
-            id: `${r.id}-receipt`,
-            lineItemId: String(r.id ?? ""),
-            fileName: "receipt",
-            fileType: "application/octet-stream",
-            sizeBytes: 0,
-            scanStatus: "clean",
-            ocrStatus: "done",
-          },
-        ]
-      : [],
+    attachments: Array.isArray(r.attachments)
+      ? r.attachments.map(
+          (a: Raw): import("./types").Attachment => ({
+            id: String(a.id ?? ""),
+            lineItemId: String(a.line_item_id ?? r.id ?? ""),
+            fileName: a.file_name ?? a.fileName ?? "receipt",
+            fileType: a.file_type ?? a.fileType ?? "application/octet-stream",
+            sizeBytes: num(a.size ?? a.sizeBytes ?? 0),
+            scanStatus: (a.scan_status ?? "clean") as import("./types").ScanStatus,
+            ocrStatus: (a.ocr_status ?? "done") as import("./types").OcrStatus,
+            downloadUrl: a.download_url ?? a.downloadUrl ?? undefined,
+          }),
+        )
+      : r.has_receipt
+        ? [
+            {
+              id: `${r.id}-receipt`,
+              lineItemId: String(r.id ?? ""),
+              fileName: "receipt",
+              fileType: "application/octet-stream",
+              sizeBytes: 0,
+              scanStatus: "clean" as import("./types").ScanStatus,
+              ocrStatus: "done" as import("./types").OcrStatus,
+            },
+          ]
+        : [],
   };
 }
 

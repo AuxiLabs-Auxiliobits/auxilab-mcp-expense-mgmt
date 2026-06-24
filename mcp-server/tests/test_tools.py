@@ -17,8 +17,8 @@ from expense_core.tools.report_summariser import SummaryLineItem
 from expense_mcp import server
 
 
-# §20.E row 1 — meal over per-meal limit → policy fails.
-def test_policy_checker_meal_over_limit():
+# Per-category caps were removed from intake — a large meal now clears the policy check.
+def test_policy_checker_meal_no_cap():
     out = server.policy_checker(
         employee_id="e1",
         amount=Decimal("187"),
@@ -29,9 +29,8 @@ def test_policy_checker_meal_over_limit():
         today=date(2026, 6, 14),
     )
     assert isinstance(out, dict)
-    assert out["status"] == "fail"
-    assert any(v["code"] == "OVER_MEAL_LIMIT" for v in out["violations"])
-    assert out["recommended_action"] == "return_to_employee"
+    assert out["status"] == "pass"
+    assert not any(v["code"] == "OVER_MEAL_LIMIT" for v in out["violations"])
 
 
 # Clean item passes intake.

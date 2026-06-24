@@ -149,10 +149,12 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
+    file_name: str | None = None  # original name, derived from the blob path
     file_type: str
     size: int
     blob_uri: str
     scan_status: str
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
 
     model_config = {"from_attributes": True}
 
@@ -171,6 +173,9 @@ class LineItemOut(BaseModel):
     tax: Decimal | None = None
     has_receipt: bool = False
     receipt_count: int = 0  # set by the serializer from attachments
+    needs_human_review: bool = False  # receipt scan flagged for Finance
+    review_reason: str | None = None
+    attachments: list["AttachmentOut"] = Field(default_factory=list)
     manager_status: LineItemStatus
     policy_status: LineItemStatus | None
 
@@ -321,10 +326,12 @@ class ReceiptScanOut(BaseModel):
     tax: Decimal | None = None
     receipt_datetime: datetime | None = None
     line_items: list[ScanLineItem] = Field(default_factory=list)
+    subtotal: Decimal | None = None
     reconciles: bool | None = None  # Σ items + tax == receipt total
     delta: Decimal | None = None
     entered_amount: Decimal | None = None  # the line item's amount, for comparison
     matches_entered: bool | None = None  # |receipt total − entered| ≤ tolerance
+    human_intervention_required: bool = False  # mismatch / unreadable → Finance reviews
     detail: str | None = None
 
 

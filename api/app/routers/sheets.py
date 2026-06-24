@@ -3,7 +3,7 @@ items, view own/permitted sheets, submit and resubmit."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import current_principal, require
@@ -30,6 +30,7 @@ from app.schemas.dto import (
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
 from app.services import receipt_scan_service, sheet_service
+from app.storage import read_receipt_blob
 from expense_core.policy import BaselinePolicy
 
 router = APIRouter(
@@ -284,4 +285,37 @@ async def scan_receipt(
     ).all()
     if not attachments:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no receipt attached to scan")
-    return receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)
+    result = receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)
+    # Persist the review flag for Finance (employee UI shows nothing).
+    item.needs_human_review = result.human_intervention_required
+    item.review_reason = result.detail if result.human_intervention_required else None
+    session.add(item)
+    session.commit()
+    return result
+
+
+@router.get(
+    "/{sheet_id}/line-items/{line_item_id}/receipts/{attachment_id}/file",
+    summary="Download/preview a receipt's bytes (scope-checked)",
+    responses={404: {"description": "Sheet, line item, or attachment not found"}},
+)
+async def download_receipt(
+    sheet_id: str,
+    line_item_id: str,
+    attachment_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Stream a receipt back for inline preview/download. The browser can't send the bearer
+    token on a plain navigation, so the client fetches this with auth and renders a blob."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    att = session.get(Attachment, attachment_id)
+    if att is None or att.line_item_id != item.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="attachment not found")
+    try:
+        data = read_receipt_blob(att.blob_uri)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"receipt unavailable: {exc}") from exc
+    return Response(content=data, media_type=att.file_type or "application/octet-stream")

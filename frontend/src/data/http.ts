@@ -52,6 +52,15 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Fetch binary content (e.g. a receipt) with the bearer token, as a Blob. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { ...(await authHeader()) } });
+  if (!res.ok) {
+    throw new Error(`GET ${path} → ${res.status} ${res.statusText}`);
+  }
+  return res.blob();
+}
+
 export const apiGet = <T>(path: string) => request<T>("GET", path);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>("POST", path, body);
 export const apiPatch = <T>(path: string, body?: unknown) => request<T>("PATCH", path, body);

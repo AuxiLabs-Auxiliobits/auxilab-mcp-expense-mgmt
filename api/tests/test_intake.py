@@ -11,9 +11,9 @@ PERIOD = THIS_MONTH[:7]
 _counter = iter(range(9000, 9999))
 
 
-def test_policy_check_flags_over_meal_limit(client):
+def test_policy_check_no_meal_cap(client):
     emp = login(client, "employee@demo.local")
-    # Baseline per-meal limit is 75 → a 500 meal must produce violation(s).
+    # Per-category caps were removed — a large meal now passes intake.
     over = client.post(
         "/intake/policy-check",
         json={
@@ -28,8 +28,27 @@ def test_policy_check_flags_over_meal_limit(client):
         headers=auth(emp),
     )
     assert over.status_code == 200, over.text
-    assert over.json()["status"] in {"fail", "warn"}
-    assert len(over.json()["violations"]) >= 1
+    assert over.json()["status"] == "pass"
+
+
+def test_policy_check_flags_future_date(client):
+    emp = login(client, "employee@demo.local")
+    future = client.post(
+        "/intake/policy-check",
+        json={
+            "category": "Meals & Entertainment",
+            "amount": "20.00",
+            "currency": "USD",
+            "merchant": "Cafe",
+            "description": "lunch",
+            "expense_date": "2099-01-01",
+            "has_receipt": True,
+        },
+        headers=auth(emp),
+    )
+    assert future.status_code == 200, future.text
+    assert future.json()["status"] == "fail"
+    assert any(v["code"] == "FUTURE_DATE" for v in future.json()["violations"])
 
 
 def test_policy_check_clean_item_passes(client):
@@ -124,3 +143,8 @@ def test_scan_text_receipt_offline(client):
     # Offline path extracts text (no Doc Intelligence configured in tests).
     assert body["source"] in {"text", "unavailable", "document_intelligence"}
     assert "entered_amount" in body
+    assert "human_intervention_required" in body
+    # The flag is persisted on the line item for Finance.
+    got = client.get(f"/sheets/{sheet['id']}", headers=auth(emp)).json()
+    item = got["line_items"][0]
+    assert item["needs_human_review"] == body["human_intervention_required"]

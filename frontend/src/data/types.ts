@@ -115,6 +115,8 @@ export interface Attachment {
   sizeBytes: number;
   scanStatus: ScanStatus;
   ocrStatus: OcrStatus;
+  /** API path to fetch the bytes (auth required) — present for stored attachments. */
+  downloadUrl?: string;
 }
 
 /** Deterministic intake-tier check results (SCOPING.md §6.1). */
@@ -144,6 +146,9 @@ export interface LineItem {
   managerReason?: string;
   policyStatus?: LineItemStatus;
   policyClauseRef?: string;
+  /** Receipt-scan flag for Finance: total unreadable or ≠ entered amount. */
+  needsHumanReview?: boolean;
+  reviewReason?: string;
   /** AI-surfaced intake/finance flag shown inline in the grids. */
   aiFlag?: {
     message: string;

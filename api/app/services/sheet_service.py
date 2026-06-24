@@ -61,6 +61,19 @@ def _assert_editable(sheet: ExpenseSheet) -> None:
         )
 
 
+def _assert_in_period(sheet: ExpenseSheet, expense_date) -> None:
+    """A line item's expense date must fall within the sheet's expense-period month
+    ('YYYY-MM'); otherwise it's rejected (change req)."""
+    if sheet.period and expense_date and expense_date.strftime("%Y-%m") != sheet.period:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"expense date {expense_date.isoformat()} is outside the sheet period "
+                f"{sheet.period} — line items must be in the sheet's month"
+            ),
+        )
+
+
 def _build_line_item(sheet: ExpenseSheet, data: LineItemCreate) -> LineItem:
     return LineItem(
         sheet_id=sheet.id, employee_id=sheet.employee_id,
@@ -85,6 +98,7 @@ def create_draft(session: Session, actor: Principal, data: SheetCreate) -> Expen
     session.add(sheet)
     session.flush()  # assign sheet.id
     for li in data.line_items:
+        _assert_in_period(sheet, li.expense_date)
         session.add(_build_line_item(sheet, li))
     audit_service.record(
         session, actor=actor, action="SHEET_DRAFTED", entity=f"expense_sheet:{sheet.id}",
@@ -136,6 +150,7 @@ def add_line_item(
 ) -> LineItem:
     _assert_owner(actor, sheet)
     _assert_editable(sheet)
+    _assert_in_period(sheet, data.expense_date)
     item = _build_line_item(sheet, data)
     session.add(item)
     session.commit()
@@ -155,6 +170,8 @@ def update_line_item(
 ) -> LineItem:
     _assert_owner(actor, sheet)
     _assert_editable(sheet)
+    if data.expense_date is not None:
+        _assert_in_period(sheet, data.expense_date)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     session.add(item)
