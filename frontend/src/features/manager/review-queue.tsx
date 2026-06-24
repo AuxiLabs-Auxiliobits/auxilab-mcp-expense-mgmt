@@ -336,9 +336,9 @@ function SheetListItem({
             onClick={(e) => e.stopPropagation()}
             onChange={onToggle}
             className="h-4 w-4 rounded border-outline-variant text-secondary focus:ring-secondary"
-            aria-label={`Select ${sheet.id}`}
+            aria-label={`Select ${sheet.title}`}
           />
-          <span className="font-mono text-label-md text-on-surface-variant">{sheet.id}</span>
+          <span className="font-mono text-label-md text-on-surface-variant">{sheet.period}</span>
         </div>
         <span className="text-body-sm font-semibold text-on-surface">
           {formatCurrency(sheet.total, sheet.currency)}
@@ -413,15 +413,15 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
   async function approveEntireSheet() {
     const updated = await approveSheet.mutateAsync({ sheetId: sheet.id, actor });
     if (updated.status === "FINANCE_MANUAL_REVIEW") {
-      toast.warning(`${sheet.id} routed to Finance for manual review`, {
+      toast.warning(`"${sheet.title}" routed to Finance for manual review`, {
         description: updated.routeReasonDetail,
       });
     } else if (updated.status === "FINANCE_APPROVED") {
-      toast.success(`${sheet.id} auto-approved by the AI Finance Approver`, {
+      toast.success(`"${sheet.title}" auto-approved by the AI Finance Approver`, {
         description: `Confidence ${Math.round((updated.llmConfidence ?? 0) * 100)}%.`,
       });
     } else {
-      toast.success(`${sheet.id} sent to Finance`);
+      toast.success(`"${sheet.title}" sent to Finance`);
     }
   }
 
@@ -433,7 +433,7 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
           <div>
             <h3 className="text-headline-md text-on-surface">{sheet.title}</h3>
             <div className="mt-1 flex items-center gap-3">
-              <span className="font-mono text-label-md text-on-surface-variant">{sheet.id}</span>
+              <span className="font-mono text-label-md text-on-surface-variant">{sheet.period}</span>
               <span className="text-outline-variant">|</span>
               <span className="text-body-sm text-on-surface-variant">
                 Submitted by {sheet.employeeName}

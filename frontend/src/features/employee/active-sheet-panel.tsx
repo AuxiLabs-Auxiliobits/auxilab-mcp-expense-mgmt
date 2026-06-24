@@ -65,7 +65,7 @@ export function ActiveSheetPanel({ employeeId }: { employeeId: string }) {
             Draft
           </span>
         </div>
-        <span className="font-mono text-label-md text-on-surface-variant">{sheet.id}</span>
+        <span className="font-mono text-label-md text-on-surface-variant">{sheet.period}</span>
       </div>
 
       {/* Grid */}

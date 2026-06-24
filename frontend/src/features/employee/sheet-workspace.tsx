@@ -246,19 +246,19 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
   async function submit() {
     await submitSheet.mutateAsync(sheetId);
-    toast.success(`${sheet!.id} submitted for manager review`);
+    toast.success("Submitted for manager review");
     router.push("/employee");
   }
   async function resubmit() {
-    const result = await resubmitSheet.mutateAsync(sheetId);
-    toast.success(`${result.id} resubmitted (v${result.version})`, {
-      description: "Restarted from manager review.",
+    await resubmitSheet.mutateAsync(sheetId);
+    toast.success("Resubmitted for review", {
+      description: "Your sheet is back with your manager.",
     });
     router.push("/employee");
   }
   async function withdraw() {
     await withdrawSheet.mutateAsync(sheetId);
-    toast("Sheet withdrawn", { description: `${sheet!.id} pulled from the workflow.` });
+    toast("Sheet withdrawn", { description: "It's been pulled from review." });
     router.push("/employee");
   }
 
@@ -289,10 +289,6 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 )}
               </div>
               <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-label-md text-on-surface-variant">
-                <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-on-surface">{sheet.id}</span>
-                <span aria-hidden className="text-outline-variant">/</span>
-                <span>v{sheet.version}</span>
-                <span aria-hidden className="text-outline-variant">/</span>
                 <span className="inline-flex items-center gap-1">
                   <Icon name="apartment" className="text-[14px]" />
                   {sheet.agencyName}
@@ -402,9 +398,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 </h2>
               </div>
               <p className="text-body-sm text-on-surface-variant">
-                Address the feedback below, then resubmit. The sheet keeps the same ID
-                ({sheet.id}); resubmitting increments the version and restarts review from
-                your manager.
+                Address the feedback below, then resubmit. Resubmitting sends your sheet back
+                to your manager for review.
               </p>
 
               {sheet.citedClause && (
@@ -765,13 +760,6 @@ function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
 
         {sheet.citedClause && (
           <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
-        )}
-
-        {sheet.policyVersionUsed && (
-          <div className="flex items-center justify-between text-body-sm">
-            <span className="text-on-surface-variant">Policy version</span>
-            <span className="font-mono text-label-md text-on-surface">{sheet.policyVersionUsed}</span>
-          </div>
         )}
       </div>
     </Card>

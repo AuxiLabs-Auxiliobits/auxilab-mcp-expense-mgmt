@@ -213,6 +213,7 @@ class SheetOut(BaseModel):
     status: SheetStatus
     period: str | None
     finance_decision: FinanceDecision | None
+    finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
