@@ -52,7 +52,6 @@ const NAV: Record<Role, NavGroup[]> = {
       title: "Policy",
       items: [
         { label: "Policy Assistant", href: "/manager/assistant", icon: "smart_toy" },
-        { label: "Agency Policy", href: "/manager/policy", icon: "gavel" },
       ],
     },
     {

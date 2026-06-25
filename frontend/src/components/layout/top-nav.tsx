@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { broadcastLogout, setRememberMe } from "@/lib/session";
 import { OPEN_COMMAND_EVENT } from "@/components/command-palette";
 import { RoleSwitcher } from "./role-switcher";
 import { NotificationBell } from "./notification-bell";
@@ -154,7 +155,11 @@ export function TopNav({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => signOut({ redirectTo: "/login" })}
+              onClick={() => {
+                setRememberMe(false);
+                broadcastLogout("manual"); // sign out every tab
+                signOut({ redirectTo: "/login" });
+              }}
               className="text-error focus:bg-error-container"
             >
               <Icon name="logout" /> Sign Out

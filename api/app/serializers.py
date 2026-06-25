@@ -56,6 +56,11 @@ def sheet_to_out(
     out.employee_name = employee.name if employee else None
     out.agency_name = agency.name if agency else None
 
+    # Resolve the finance decider's id → display name so the UI never shows a raw user id.
+    if sheet.finance_decided_by:
+        decider = session.get(User, sheet.finance_decided_by)
+        out.finance_decided_by = decider.name if decider else "Finance"
+
     # Totals. Keep a per-currency breakdown (always correct) plus a flat total/currency for
     # the single-currency common case the summary panel renders.
     totals: dict[str, Decimal] = {}

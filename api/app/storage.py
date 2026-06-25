@@ -76,9 +76,13 @@ def upload_receipt_blob(employee_id: str, filename: str, data: bytes) -> str:
     return f"{settings.storage_account_url.rstrip('/')}/{settings.receipt_container}/{blob_name}"
 
 
-def read_policy_blob(uri: str) -> bytes:
-    """Read a policy document back (used by tests / local tooling). Offline only resolves
-    `file://` URIs; Azure URIs require the worker's Blob reader role."""
+def read_blob(uri: str) -> bytes:
+    """Read a stored blob (policy or receipt) back by its URI.
+
+    Offline resolves `file://` URIs from disk. In Azure the API reads the receipt/policy
+    container with its Managed Identity (Blob Data Reader) and streams the bytes to the
+    authorized caller — the scope/RBAC check happens in the router before this is called.
+    """
     if uri.startswith("file:"):
         from urllib.parse import urlparse, unquote  # noqa: PLC0415
 
@@ -86,4 +90,17 @@ def read_policy_blob(uri: str) -> bytes:
         if os.name == "nt" and path.startswith("/"):
             path = path[1:]
         return Path(path).read_bytes()
-    raise NotImplementedError("Reading Azure blobs from the API is not supported; the worker reads them.")
+
+    # Azure: parse "{account_url}/{container}/{blob_name}" and download.
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+    from azure.storage.blob import BlobServiceClient  # noqa: PLC0415
+
+    account = settings.storage_account_url.rstrip("/")
+    rest = uri[len(account) + 1 :]
+    container, _, blob_name = rest.partition("/")
+    client = BlobServiceClient(account_url=account, credential=DefaultAzureCredential())
+    return client.get_container_client(container).download_blob(blob_name).readall()
+
+
+# Back-compat alias (policy docs read the same way).
+read_policy_blob = read_blob

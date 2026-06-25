@@ -47,8 +47,13 @@ export function NotificationBell() {
           {unread > 0 && (
             <button
               onClick={() => markRead.mutate()}
-              className="font-mono text-label-md text-secondary hover:underline"
+              disabled={markRead.isPending}
+              aria-busy={markRead.isPending || undefined}
+              className="flex items-center gap-1 font-mono text-label-md text-secondary hover:underline disabled:opacity-50"
             >
+              {markRead.isPending && (
+                <Icon name="progress_activity" className="animate-spin text-[14px]" />
+              )}
               Mark all read
             </button>
           )}

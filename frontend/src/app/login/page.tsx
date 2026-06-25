@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { signIn } from "next-auth/react";
 import { loginSchema, type LoginValues } from "@/lib/schemas";
+import { setRememberMe } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
+  const [remember, setRemember] = useState(false);
+
+  // Show a friendly message when redirected here by an expired/ended session.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("reason");
+    if (reason === "expired") {
+      setError("Your session has expired. Please sign in again.");
+    }
+  }, []);
 
   const {
     register,
@@ -37,6 +47,7 @@ export default function LoginPage() {
   async function doLogin(email: string, password: string, tag: string) {
     setError(null);
     setLoading(tag);
+    setRememberMe(remember); // relaxes the idle timeout for this session
     const res = await signIn("credentials", { email, password, redirect: false });
     if (res?.error) {
       setError("Invalid email or password. Please try again.");
@@ -154,6 +165,16 @@ export default function LoginPage() {
               <p className="text-label-md text-error">{errors.password.message}</p>
             )}
           </div>
+
+          <label className="flex select-none items-center gap-2 text-body-sm text-on-surface-variant">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-4 w-4 rounded border-outline-variant text-secondary focus:ring-secondary"
+            />
+            Keep me signed in
+          </label>
 
           <Button type="submit" className="w-full" disabled={loading !== null}>
             {loading === "form" ? "Signing in…" : "Sign in"}

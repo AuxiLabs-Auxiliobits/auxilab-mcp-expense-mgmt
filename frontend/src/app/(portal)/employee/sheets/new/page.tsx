@@ -116,10 +116,8 @@ export default function NewSheetPage() {
         description: "Now add line items and attachments.",
       });
       router.push(`/employee/sheets/${sheet.id}`);
-    } catch (err) {
-      toast.error("Couldn't create the draft", {
-        description: err instanceof Error ? err.message : "Please try again.",
-      });
+    } catch {
+      /* error toast handled globally (QueryClient mutationCache); stay on the form */
     }
   }
 

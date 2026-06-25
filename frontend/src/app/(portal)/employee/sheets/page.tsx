@@ -88,13 +88,6 @@ export default function EmployeeSheetsPage() {
 
   const columns: Column<ExpenseSheet>[] = [
     {
-      key: "id",
-      header: "Sheet ID",
-      width: "140px",
-      sortAccessor: (s) => s.id,
-      render: (s) => <span className="font-mono text-label-md font-medium text-primary">{s.id}</span>,
-    },
-    {
       key: "title",
       header: "Title",
       sortAccessor: (s) => s.title.toLowerCase(),
@@ -102,7 +95,7 @@ export default function EmployeeSheetsPage() {
         <div>
           <div className="font-medium text-on-surface">{s.title}</div>
           <div className="font-mono text-label-sm text-on-surface-variant">
-            {s.lineItems.length} line item{s.lineItems.length === 1 ? "" : "s"} · v{s.version}
+            {s.lineItems.length} line item{s.lineItems.length === 1 ? "" : "s"}
           </div>
         </div>
       ),
@@ -125,7 +118,7 @@ export default function EmployeeSheetsPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="My Expense Sheets" description="Every sheet you've created, across all versions." tone="primary">
+      <PageHeader title="My Expense Sheets" description="Every expense sheet you've created." tone="primary">
         <Button asChild>
           <Link href="/employee/sheets/new">
             <Icon name="add" /> New Sheet
@@ -202,10 +195,8 @@ export default function EmployeeSheetsPage() {
                   downloadCsv(
                     "my-expense-sheets.csv",
                     selected.map((s) => ({
-                      id: s.id,
                       title: s.title,
                       period: s.period,
-                      version: s.version,
                       status: s.status,
                       total: s.total,
                       currency: s.currency,
@@ -234,7 +225,7 @@ export default function EmployeeSheetsPage() {
             <>
               <DrawerHeader>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-label-md font-medium text-primary">{preview.id}</span>
+                  <span className="font-mono text-label-md font-medium text-primary">{preview.period}</span>
                   <StatusBadge meta={SHEET_STATUS_META[preview.status]} className="rounded" />
                 </div>
                 <DrawerTitle className="mt-1">{preview.title}</DrawerTitle>

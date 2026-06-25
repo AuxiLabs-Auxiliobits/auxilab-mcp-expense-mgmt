@@ -162,10 +162,13 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
+    filename: str | None = None
     file_type: str
     size: int
     blob_uri: str
     scan_status: str
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -210,6 +213,7 @@ class SheetOut(BaseModel):
     status: SheetStatus
     period: str | None
     finance_decision: FinanceDecision | None
+    finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
@@ -470,6 +474,30 @@ class FinanceKpisOut(BaseModel):
     policy_citations: int  # decisions that cited at least one policy clause
     policy_compliance_rate: float  # % of line items with no rejection / policy failure
     finance_reached: int  # denominator: sheets that reached a finance outcome
+
+
+# --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #
+class AssistantQuery(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+
+    model_config = {
+        "json_schema_extra": {"example": {"query": "What's the per-meal limit?"}}
+    }
+
+
+class AssistantCitation(BaseModel):
+    id: str
+    title: str
+    text: str
+    source: str
+
+
+class AssistantAnswerOut(BaseModel):
+    answer: str
+    citations: list[AssistantCitation] = Field(default_factory=list)
+    policy_version: str
+    routed_to_human: bool = False
+    model_version: str = "offline"
 
 
 # --- Notifications --------------------------------------------------------- #

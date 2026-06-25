@@ -246,19 +246,19 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
   async function submit() {
     await submitSheet.mutateAsync(sheetId);
-    toast.success(`${sheet!.id} submitted for manager review`);
+    toast.success("Submitted for manager review");
     router.push("/employee");
   }
   async function resubmit() {
-    const result = await resubmitSheet.mutateAsync(sheetId);
-    toast.success(`${result.id} resubmitted (v${result.version})`, {
-      description: "Restarted from manager review.",
+    await resubmitSheet.mutateAsync(sheetId);
+    toast.success("Resubmitted for review", {
+      description: "Your sheet is back with your manager.",
     });
     router.push("/employee");
   }
   async function withdraw() {
     await withdrawSheet.mutateAsync(sheetId);
-    toast("Sheet withdrawn", { description: `${sheet!.id} pulled from the workflow.` });
+    toast("Sheet withdrawn", { description: "It's been pulled from review." });
     router.push("/employee");
   }
 
@@ -289,10 +289,6 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 )}
               </div>
               <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-label-md text-on-surface-variant">
-                <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-on-surface">{sheet.id}</span>
-                <span aria-hidden className="text-outline-variant">/</span>
-                <span>v{sheet.version}</span>
-                <span aria-hidden className="text-outline-variant">/</span>
                 <span className="inline-flex items-center gap-1">
                   <Icon name="apartment" className="text-[14px]" />
                   {sheet.agencyName}
@@ -333,7 +329,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={withdrawSheet.isPending}
+                    loading={withdrawSheet.isPending}
                     onClick={withdraw}
                   >
                     <Icon name="cancel_presentation" /> Withdraw
@@ -343,7 +339,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   isResubmit ? (
                     <Button
                       onClick={resubmit}
-                      disabled={blocked || primaryPending}
+                      disabled={blocked}
+                      loading={primaryPending}
                       aria-label="Resubmit sheet for review"
                     >
                       <Icon name="restart_alt" /> Resubmit Sheet
@@ -351,7 +348,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   ) : (
                     <Button
                       onClick={submit}
-                      disabled={blocked || primaryPending}
+                      disabled={blocked}
+                      loading={primaryPending}
                       aria-label="Submit sheet for review"
                     >
                       <Icon name="send" /> Submit for Review
@@ -400,9 +398,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 </h2>
               </div>
               <p className="text-body-sm text-on-surface-variant">
-                Address the feedback below, then resubmit. The sheet keeps the same ID
-                ({sheet.id}); resubmitting increments the version and restarts review from
-                your manager.
+                Address the feedback below, then resubmit. Resubmitting sends your sheet back
+                to your manager for review.
               </p>
 
               {sheet.citedClause && (
@@ -479,6 +476,10 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                     editable={editable}
                     onEdit={() => openEdit(item)}
                     onRemove={() => remove(item)}
+                    removing={
+                      removeLineItem.isPending &&
+                      removeLineItem.variables?.lineItemId === item.id
+                    }
                   />
                 </Reveal>
               ))}
@@ -500,11 +501,11 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                 )}
               </div>
               {isResubmit ? (
-                <Button onClick={resubmit} disabled={blocked || resubmitSheet.isPending}>
+                <Button onClick={resubmit} disabled={blocked} loading={resubmitSheet.isPending}>
                   <Icon name="restart_alt" /> Resubmit Sheet
                 </Button>
               ) : (
-                <Button onClick={submit} disabled={blocked || submitSheet.isPending}>
+                <Button onClick={submit} disabled={blocked} loading={submitSheet.isPending}>
                   <Icon name="send" /> Submit for Review
                 </Button>
               )}
@@ -633,7 +634,7 @@ function EditableTitle({ sheet, editable }: { sheet: ExpenseSheet; editable: boo
           }
         }}
       />
-      <Button size="sm" onClick={save} disabled={!valid || updateSheet.isPending}>
+      <Button size="sm" onClick={save} disabled={!valid} loading={updateSheet.isPending}>
         <Icon name="check" /> Save
       </Button>
       <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -760,13 +761,6 @@ function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
         {sheet.citedClause && (
           <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
         )}
-
-        {sheet.policyVersionUsed && (
-          <div className="flex items-center justify-between text-body-sm">
-            <span className="text-on-surface-variant">Policy version</span>
-            <span className="font-mono text-label-md text-on-surface">{sheet.policyVersionUsed}</span>
-          </div>
-        )}
       </div>
     </Card>
   );
@@ -813,11 +807,13 @@ function LineItemRow({
   editable,
   onEdit,
   onRemove,
+  removing = false,
 }: {
   item: LineItem;
   editable: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  removing?: boolean;
 }) {
   const needsFix =
     editable &&
@@ -863,10 +859,12 @@ function LineItemRow({
                 </Button>
                 <button
                   onClick={onRemove}
-                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error"
+                  disabled={removing}
+                  aria-busy={removing || undefined}
+                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:opacity-50"
                   aria-label={`Remove ${item.merchant}`}
                 >
-                  <Icon name="delete" className="text-[18px]" />
+                  <Icon name={removing ? "progress_activity" : "delete"} className={cn("text-[18px]", removing && "animate-spin")} />
                 </button>
               </div>
             )}
