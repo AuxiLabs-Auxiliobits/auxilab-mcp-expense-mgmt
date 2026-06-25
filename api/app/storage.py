@@ -103,4 +103,17 @@ def read_policy_blob(uri: str) -> bytes:
         if os.name == "nt" and path.startswith("/"):
             path = path[1:]
         return Path(path).read_bytes()
-    raise NotImplementedError("Reading Azure blobs from the API is not supported; the worker reads them.")
+
+    # Azure: parse "{account_url}/{container}/{blob_name}" and download.
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+    from azure.storage.blob import BlobServiceClient  # noqa: PLC0415
+
+    account = settings.storage_account_url.rstrip("/")
+    rest = uri[len(account) + 1 :]
+    container, _, blob_name = rest.partition("/")
+    client = BlobServiceClient(account_url=account, credential=DefaultAzureCredential())
+    return client.get_container_client(container).download_blob(blob_name).readall()
+
+
+# Back-compat alias (policy docs read the same way).
+read_policy_blob = read_blob

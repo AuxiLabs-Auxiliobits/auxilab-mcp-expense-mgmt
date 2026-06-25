@@ -62,6 +62,9 @@ _TAGS_METADATA = [
     {"name": "finance", "description": "Finance: manual-review queue, human decisions, override the LLM, audit log, + the LLM-approver webhook."},
     {"name": "policy", "description": "Finance/Admin: upload + maker-checker publish of agency policy docs (feeds RAG); ingestion-worker callback."},
     {"name": "admin", "description": "Admin: manage agencies and users/roles."},
+    {"name": "reports", "description": "Dashboard KPIs, spend-by-category, and compliance — role-scoped."},
+    {"name": "audit", "description": "Self-service: a user's own activity trail (org-wide log stays on /finance/audit)."},
+    {"name": "notifications", "description": "Per-recipient in-app notifications generated at workflow transitions."},
     {"name": "health", "description": "Liveness probe."},
 ]
 

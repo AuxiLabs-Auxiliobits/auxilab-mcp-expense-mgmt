@@ -15,6 +15,8 @@ export type LoginValues = z.infer<typeof loginSchema>;
 export const newSheetSchema = z.object({
   title: z
     .string()
+    .trim()
+    .min(1, "Sheet title is required")
     .min(3, "Give the sheet a descriptive title (min 3 characters)")
     .max(50, "Keep the title under 50 characters"),
   period: z.string().min(1, "Select the expense period"),
@@ -37,7 +39,7 @@ export const lineItemSchema = z
       .positive("Amount must be greater than 0"),
     currency: z.enum(CURRENCIES),
     expenseDate: z.string().min(1, "Expense date is required"),
-    receiptDatetime: z.string().min(1, "Receipt date is required"),
+    receiptDatetime: z.string().min(1, "Receipt date & time is required"),
     receiptTotal: optionalNumber,
     tax: optionalNumber,
   })

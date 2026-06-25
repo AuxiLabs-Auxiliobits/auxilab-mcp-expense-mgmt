@@ -82,6 +82,11 @@ def sheet_to_out(
     out.employee_name = employee.name if employee else None
     out.agency_name = agency.name if agency else None
 
+    # Resolve the finance decider's id → display name so the UI never shows a raw user id.
+    if sheet.finance_decided_by:
+        decider = session.get(User, sheet.finance_decided_by)
+        out.finance_decided_by = decider.name if decider else "Finance"
+
     # Totals. Keep a per-currency breakdown (always correct) plus a flat total/currency for
     # the single-currency common case the summary panel renders.
     totals: dict[str, Decimal] = {}
@@ -142,6 +147,40 @@ def _to_tool_input(item: LineItem) -> LineItemInput:
         receipt_total=item.receipt_total,
         has_receipt=item.has_receipt,
     )
+
+
+def agency_to_out(session: Session, agency: Agency) -> AgencyOut:
+    """Serialize an agency with its live active-user count (the admin table column)."""
+    count = session.exec(
+        select(func.count(User.id)).where(
+            User.agency_id == agency.id,
+            User.is_active == True,  # noqa: E712 — SQL boolean comparison
+        )
+    ).one()
+    return AgencyOut(
+        id=agency.id, name=agency.name, status=str(agency.status),
+        created_by=agency.created_by, created_at=agency.created_at,
+        user_count=int(count or 0),
+    )
+
+
+def agencies_to_out(session: Session, agencies: list[Agency]) -> list[AgencyOut]:
+    """Batch serialize agencies with one grouped count query (avoids N per-agency queries)."""
+    counts = dict(
+        session.exec(
+            select(User.agency_id, func.count(User.id))
+            .where(User.is_active == True)  # noqa: E712
+            .group_by(User.agency_id)
+        ).all()
+    )
+    return [
+        AgencyOut(
+            id=a.id, name=a.name, status=str(a.status),
+            created_by=a.created_by, created_at=a.created_at,
+            user_count=int(counts.get(a.id, 0)),
+        )
+        for a in agencies
+    ]
 
 
 def decision_to_out(decision: Decision) -> DecisionOut:

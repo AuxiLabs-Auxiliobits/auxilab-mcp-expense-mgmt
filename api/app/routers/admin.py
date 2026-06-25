@@ -16,7 +16,16 @@ from app.models.expense_sheet import ExpenseSheet
 from app.models.user import User
 from app.principal import Principal, Role
 from app.rbac.permissions import Capability
-from app.schemas.dto import AgencyCreate, AgencyUpdate, UserCreate, UserOut, UserUpdate
+from app.schemas.dto import (
+    AgencyCreate,
+    AgencyOut,
+    AgencyUpdate,
+    AssignRoleRequest,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
+from app.serializers import agencies_to_out, agency_to_out
 from app.services import audit_service
 from expense_core.schemas.enums import SheetStatus
 
@@ -46,17 +55,17 @@ def _parse_role(value: str) -> Role:
         ) from e
 
 
-@router.get("/agencies", response_model=list[Agency], summary="List agencies")
+@router.get("/agencies", response_model=list[AgencyOut], summary="List agencies (with user counts)")
 async def list_agencies(
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
-) -> list[Agency]:
-    return list(session.exec(select(Agency)).all())
+) -> list[AgencyOut]:
+    return agencies_to_out(session, list(session.exec(select(Agency)).all()))
 
 
 @router.post(
     "/agencies",
-    response_model=Agency,
+    response_model=AgencyOut,
     status_code=status.HTTP_201_CREATED,
     summary="Create an agency",
 )
@@ -64,19 +73,19 @@ async def create_agency(
     body: AgencyCreate,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
-) -> Agency:
+) -> AgencyOut:
     agency = Agency(name=body.name, created_by=principal.subject_id)
     session.add(agency)
     audit_service.record(session, actor=principal, action="AGENCY_ONBOARDED",
                          entity=f"agency:{agency.id}", after={"name": body.name})
     session.commit()
     session.refresh(agency)
-    return agency
+    return agency_to_out(session, agency)
 
 
 @router.get(
     "/agencies/{agency_id}",
-    response_model=Agency,
+    response_model=AgencyOut,
     summary="Get one agency",
     responses={404: {"description": "Agency not found"}},
 )
@@ -84,16 +93,16 @@ async def get_agency(
     agency_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
-) -> Agency:
+) -> AgencyOut:
     agency = session.get(Agency, agency_id)
     if agency is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="agency not found")
-    return agency
+    return agency_to_out(session, agency)
 
 
 @router.patch(
     "/agencies/{agency_id}",
-    response_model=Agency,
+    response_model=AgencyOut,
     summary="Rename / change agency status",
     responses={404: {"description": "Agency not found"}, 409: {"description": "Name already exists"}},
 )
@@ -102,7 +111,7 @@ async def update_agency(
     body: AgencyUpdate,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
-) -> Agency:
+) -> AgencyOut:
     agency = session.get(Agency, agency_id)
     if agency is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="agency not found")
@@ -130,12 +139,12 @@ async def update_agency(
                          after={"name": agency.name, "status": agency.status})
     session.commit()
     session.refresh(agency)
-    return agency
+    return agency_to_out(session, agency)
 
 
 @router.delete(
     "/agencies/{agency_id}",
-    response_model=Agency,
+    response_model=AgencyOut,
     summary="Soft-delete an agency",
     responses={404: {"description": "Agency not found"}, 409: {"description": "Has open sheets"}},
 )
@@ -143,7 +152,7 @@ async def soft_delete_agency(
     agency_id: str,
     principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
     session: Session = Depends(get_session),
-) -> Agency:
+) -> AgencyOut:
     agency = session.get(Agency, agency_id)
     if agency is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="agency not found")
@@ -168,7 +177,33 @@ async def soft_delete_agency(
                          entity=f"agency:{agency.id}")
     session.commit()
     session.refresh(agency)
-    return agency
+    return agency_to_out(session, agency)
+
+
+@router.post(
+    "/users/assign-role",
+    response_model=UserOut,
+    summary="Quick-assign a role to a user by email",
+    responses={404: {"description": "User not found"}, 422: {"description": "Invalid role"}},
+)
+async def assign_role(
+    body: AssignRoleRequest,
+    principal: Principal = Depends(require(Capability.MANAGE_USERS)),
+    session: Session = Depends(get_session),
+) -> User:
+    """Powers the admin 'Quick Role Assignment' widget — look the user up by email and set
+    their role. Idempotent; audited."""
+    user = session.exec(select(User).where(User.email == body.email)).first()
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user not found")
+    before = {"role": user.role}
+    user.role = _parse_role(body.role)
+    session.add(user)
+    audit_service.record(session, actor=principal, action="ROLE_ASSIGNMENT",
+                         entity=f"user:{user.id}", before=before, after={"role": user.role})
+    session.commit()
+    session.refresh(user)
+    return user
 
 
 @router.get("/users", response_model=list[UserOut], summary="List users (filterable)")

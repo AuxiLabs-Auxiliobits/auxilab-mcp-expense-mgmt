@@ -10,6 +10,8 @@ dependencies = [
     # or `pip install -e ./mcp-server` after, so `expense_core` resolves.
     "expense-core>=0.1.0",
     "pydantic>=2.7",
+    # HTTP client for the authenticated business tools that call the FastAPI backend.
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

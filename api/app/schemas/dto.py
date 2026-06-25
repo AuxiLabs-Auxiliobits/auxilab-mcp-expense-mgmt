@@ -168,6 +168,8 @@ class AttachmentOut(BaseModel):
     blob_uri: str
     scan_status: str
     download_url: str | None = None  # API path to fetch the bytes (auth required)
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -216,6 +218,7 @@ class SheetOut(BaseModel):
     status: SheetStatus
     period: str | None
     finance_decision: FinanceDecision | None
+    finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
@@ -556,3 +559,83 @@ class PolicyIndexedCallback(BaseModel):
     indexed: bool
     chunks: int = 0
     detail: str | None = None
+
+
+# --- Agency read DTO (adds the live user_count the admin table shows) ------ #
+class AgencyOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    created_by: str | None = None
+    created_at: datetime
+    user_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+# --- Role assignment (admin quick-assign by email) ------------------------- #
+class AssignRoleRequest(BaseModel):
+    email: str
+    role: str
+
+    model_config = {
+        "json_schema_extra": {"example": {"email": "manager@demo.local", "role": "manager"}}
+    }
+
+
+# --- Reports: spend-by-category + finance KPIs ----------------------------- #
+class SpendByCategoryOut(BaseModel):
+    """One bar in the spend-by-category chart."""
+
+    category: str
+    amount: Decimal
+
+
+class FinanceKpisOut(BaseModel):
+    """Real, deterministically-computed finance KPIs (SCOPING §4). AI-quality metrics that
+    require ground-truth labels (accuracy, false-positive rate, SLA) are intentionally omitted
+    here — the client fills those from its baseline until a metrics pipeline emits them."""
+
+    auto_approval_rate: float  # % of finance-reached sheets the LLM auto-approved
+    manual_interventions: int  # sheets currently routed to a human
+    policy_citations: int  # decisions that cited at least one policy clause
+    policy_compliance_rate: float  # % of line items with no rejection / policy failure
+    finance_reached: int  # denominator: sheets that reached a finance outcome
+
+
+# --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #
+class AssistantQuery(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+
+    model_config = {
+        "json_schema_extra": {"example": {"query": "What's the per-meal limit?"}}
+    }
+
+
+class AssistantCitation(BaseModel):
+    id: str
+    title: str
+    text: str
+    source: str
+
+
+class AssistantAnswerOut(BaseModel):
+    answer: str
+    citations: list[AssistantCitation] = Field(default_factory=list)
+    policy_version: str
+    routed_to_human: bool = False
+    model_version: str = "offline"
+
+
+# --- Notifications --------------------------------------------------------- #
+class NotificationOut(BaseModel):
+    id: str
+    kind: str
+    icon: str
+    title: str
+    body: str
+    href: str | None
+    read: bool
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}

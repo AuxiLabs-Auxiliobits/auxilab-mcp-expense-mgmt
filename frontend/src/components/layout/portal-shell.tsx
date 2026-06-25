@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import { LogoTile } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
+import { SessionManager } from "@/components/session-manager";
+import { AssistantWidget } from "@/features/assistant/assistant-widget";
 import { Sidebar } from "./sidebar";
 import { TopNav } from "./top-nav";
 
@@ -83,6 +85,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1">{children}</main>
       </div>
       <CommandPalette />
+      <SessionManager />
+      <AssistantWidget role={role} pathname={pathname} />
     </div>
   );
 }

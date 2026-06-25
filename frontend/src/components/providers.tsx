@@ -8,22 +8,14 @@ import {
   MutationCache,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { ThemeProvider, useTheme } from "next-themes";
 import { SessionProvider, signOut } from "next-auth/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ReceiptUploadsProvider } from "@/data/receipt-uploads";
-import { isUnauthorized } from "@/data/http";
-
-// A backend 401 means the NextAuth cookie has outlived the access token (a
-// "stale session"). Tear the session down and route to /login. Guarded so a
-// burst of parallel 401s triggers a single sign-out rather than a redirect loop.
-let signingOut = false;
-function handleSessionExpiry(error: unknown) {
-  if (!isUnauthorized(error) || signingOut) return;
-  signingOut = true;
-  signOut({ redirectTo: "/login" });
-}
+import { GlobalProgress } from "@/components/layout/global-progress";
+import { ApiError } from "@/data/http";
+import { triggerSessionExpired } from "@/lib/session";
 
 function ThemedToaster() {
   const { resolvedTheme } = useTheme();
@@ -37,18 +29,59 @@ function ThemedToaster() {
   );
 }
 
+function isAbortedApiError(error: unknown): error is ApiError & { kind?: string } {
+  return error instanceof ApiError && error.kind === "aborted";
+}
+
+/** Turn any thrown error into a single user-friendly string for a toast. */
+function messageFor(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return "Something went wrong. Please try again.";
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        queryCache: new QueryCache({ onError: handleSessionExpiry }),
-        mutationCache: new MutationCache({ onError: handleSessionExpiry }),
+        // Global error surfacing: every failed query/mutation shows a toast and
+        // React Query automatically clears isLoading/isPending, so loaders never
+        // get stuck after a failure. Aborted/cancelled requests are ignored.
+        queryCache: new QueryCache({
+          onError: (error) => {
+            if (error instanceof ApiError && (error as { kind?: string }).kind === "aborted") return;
+            // 401 = expired/revoked session → auto logout (handled by SessionManager).
+            if (error instanceof ApiError && error.status === 401) {
+              triggerSessionExpired("expired");
+              return;
+            }
+            toast.error(messageFor(error));
+          },
+        }),
+        mutationCache: new MutationCache({
+          onError: (error, _vars, _ctx, mutation) => {
+            if (error instanceof ApiError && (error as { kind?: string }).kind === "aborted") return;
+            if (error instanceof ApiError && error.status === 401) {
+              triggerSessionExpired("expired");
+              return;
+            }
+            // Opt-out for hooks whose call sites already show a tailored error (e.g. flows
+            // that also do non-mutation work like receipt uploads in the same try/catch).
+            if (mutation.options.meta?.suppressErrorToast) return;
+            toast.error(messageFor(error));
+          },
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30_000,
             refetchOnWindowFocus: false,
-            // Never burn a retry on an auth failure — it can't succeed.
-            retry: (count, error) => !isUnauthorized(error) && count < 1,
+            // Don't retry client errors (4xx) — only transient network/5xx, once.
+            retry: (count, error) => {
+              if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+                return false;
+              }
+              return count < 1;
+            },
           },
         },
       }),
@@ -58,15 +91,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider
       attribute="class"
       defaultTheme="light"
-      themes={["light", "dark", "high-contrast"]}
+      themes={["light", "dark"]}
       enableSystem
       disableTransitionOnChange
     >
       <SessionProvider>
         <QueryClientProvider client={queryClient}>
-          <ReceiptUploadsProvider>
-            <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-          </ReceiptUploadsProvider>
+          <GlobalProgress />
+          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
           <ThemedToaster />
           {process.env.NODE_ENV === "development" && (
             <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />

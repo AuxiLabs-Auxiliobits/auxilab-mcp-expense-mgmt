@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { broadcastLogout, setRememberMe } from "@/lib/session";
 import { OPEN_COMMAND_EVENT } from "@/components/command-palette";
 import { RoleSwitcher } from "./role-switcher";
 import { NotificationBell } from "./notification-bell";
@@ -68,6 +69,7 @@ export function TopNav({
   const user = session?.user;
   const signedInRole = (user?.role ?? role) as Role;
   const name = user?.name ?? "—";
+  const agencyName = user?.agencyName;
   const initials = name
     .split(" ")
     .map((p) => p[0])
@@ -126,6 +128,7 @@ export function TopNav({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>
+              {/* Row 1: name · Row 2: email · Row 3: role + agency */}
               <div className="font-sans text-body-sm font-semibold normal-case text-on-surface">
                 {name}
               </div>
@@ -134,6 +137,7 @@ export function TopNav({
               </div>
               <div className="mt-1 text-label-sm uppercase text-secondary">
                 {ROLE_LABELS[signedInRole]}
+                {agencyName ? ` · ${agencyName}` : ""}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -151,7 +155,11 @@ export function TopNav({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => signOut({ redirectTo: "/login" })}
+              onClick={() => {
+                setRememberMe(false);
+                broadcastLogout("manual"); // sign out every tab
+                signOut({ redirectTo: "/login" });
+              }}
               className="text-error focus:bg-error-container"
             >
               <Icon name="logout" /> Sign Out

@@ -57,14 +57,14 @@ async def token(
     return TokenResponse(access_token=access)
 
 
-@router.get("/me", response_model=MeOut, summary="Current authenticated user")
+@router.get("/me", response_model=MeOut, summary="Current authenticated principal")
 async def me(
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
 ) -> MeOut:
-    """Return the caller's identity for the UI: the token's principal plus the human-readable
-    display name and agency name (looked up from the DB) so the frontend shows a name, not the
-    email. Handy first call to confirm Authorize worked and to see your role."""
+    """Return the caller's identity for the UI: id, email, role, agency, scope — plus the
+    display `name` and `agency_name` resolved from the DB (the token carries only ids). Handy
+    first call to confirm Authorize worked and to see your role."""
     user = session.get(User, principal.subject_id)
     agency = session.get(Agency, principal.agency_id) if principal.agency_id else None
     return MeOut(

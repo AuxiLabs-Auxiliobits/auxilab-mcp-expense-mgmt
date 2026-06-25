@@ -3,15 +3,16 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { useCurrentUser, useFinanceOverride } from "@/data/hooks";
+import { useCurrentUser, useFinanceOverride, useSheetDecisions, useSheetReceipts } from "@/data/hooks";
 import { financeOverrideSchema, type FinanceOverrideValues } from "@/lib/schemas";
 import { CitedClause } from "@/components/shared/ai-citation";
+import { ReceiptViewer, ReceiptsLoading } from "@/components/shared/receipt-viewer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExpenseSheet } from "@/data/types";
 
@@ -27,6 +28,8 @@ export function ReviewDetail({
 }) {
   const { data: user } = useCurrentUser("finance");
   const override = useFinanceOverride();
+  const { data: receipts, isLoading: receiptsLoading } = useSheetReceipts(sheet.id);
+  const { data: decisions, isLoading: decisionsLoading } = useSheetDecisions(sheet.id);
 
   const {
     register,
@@ -140,6 +143,58 @@ export function ReviewDetail({
             Actioning this sheet will log your ID and reason.
           </p>
         </div>
+      </div>
+
+      {/* Supporting receipts — full submission visibility for Finance. */}
+      <div className="mt-6 border-t border-outline-variant pt-5">
+        <h4 className="mb-3 flex items-center gap-2 text-headline-md font-semibold text-on-surface">
+          <Icon name="receipt_long" className="text-secondary" /> Supporting Receipts
+        </h4>
+        {receiptsLoading ? (
+          <ReceiptsLoading />
+        ) : (
+          <ReceiptViewer attachments={receipts ?? []} emptyHint="No receipts were attached to this sheet." />
+        )}
+      </div>
+
+      {/* Approval history — manager/finance/LLM actions + remarks, oldest first. */}
+      <div className="mt-6 border-t border-outline-variant pt-5">
+        <h4 className="mb-3 flex items-center gap-2 text-headline-md font-semibold text-on-surface">
+          <Icon name="history" className="text-secondary" /> Approval History
+        </h4>
+        {decisionsLoading ? (
+          <p className="text-body-sm text-on-surface-variant">Loading history…</p>
+        ) : (decisions ?? []).length === 0 ? (
+          <p className="text-body-sm text-on-surface-variant">No decisions recorded yet.</p>
+        ) : (
+          <ol className="space-y-2">
+            {(decisions ?? []).map((d) => (
+              <li
+                key={d.id}
+                className="flex items-start gap-3 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-2"
+              >
+                <Icon name="check_circle" className="mt-0.5 shrink-0 text-[18px] text-secondary" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-body-sm font-medium text-on-surface">{d.action}</span>
+                    <span className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-label-sm uppercase text-on-surface-variant">
+                      {d.actorRole}
+                    </span>
+                    <span className="font-mono text-label-sm text-on-surface-variant">
+                      {formatRelative(d.timestamp)}
+                    </span>
+                  </div>
+                  {d.reason && <p className="mt-0.5 text-body-sm text-on-surface-variant">{d.reason}</p>}
+                  {d.citedClauses.length > 0 && (
+                    <p className="mt-0.5 font-mono text-label-sm text-secondary">
+                      Cited: {d.citedClauses.join(", ")}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </>
   );

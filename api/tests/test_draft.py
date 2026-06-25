@@ -131,7 +131,7 @@ def test_edit_and_delete_line_item_while_draft(client):
     assert deleted.json()["line_items"] == []
 
 
-def test_withdraw_draft(client):
+def test_discard_draft(client):
     emp = login(client, "employee@demo.local")
     sheet = _draft(client, emp)
     assert client.delete(f"/sheets/{sheet['id']}", headers=auth(emp)).status_code == 204

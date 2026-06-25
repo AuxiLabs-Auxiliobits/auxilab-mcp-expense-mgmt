@@ -43,7 +43,7 @@ export function RecentSheets({ employeeId }: { employeeId: string }) {
                   </span>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="font-mono text-label-md text-on-surface-variant">{sheet.id}</span>
+                  <span className="font-mono text-label-md text-on-surface-variant">{sheet.period}</span>
                   <StatusBadge meta={SHEET_STATUS_META[sheet.status]} className="rounded" />
                 </div>
               </Link>

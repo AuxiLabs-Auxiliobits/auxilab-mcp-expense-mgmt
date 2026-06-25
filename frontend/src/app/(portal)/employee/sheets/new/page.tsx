@@ -116,10 +116,8 @@ export default function NewSheetPage() {
         description: "Now add line items and attachments.",
       });
       router.push(`/employee/sheets/${sheet.id}`);
-    } catch (err) {
-      toast.error("Couldn't create the draft", {
-        description: err instanceof Error ? err.message : "Please try again.",
-      });
+    } catch {
+      /* error toast handled globally (QueryClient mutationCache); stay on the form */
     }
   }
 
@@ -173,12 +171,19 @@ export default function NewSheetPage() {
                   done={titleValid}
                 >
                   <div className="space-y-2">
-                    <Label htmlFor="title">Sheet Title</Label>
+                    <Label htmlFor="title">
+                      Sheet Title
+                      <span className="ml-0.5 text-error" aria-hidden>
+                        *
+                      </span>
+                    </Label>
                     <Input
                       id="title"
                       placeholder="e.g. Q3 Engineering Offsite"
                       autoFocus
                       autoComplete="off"
+                      required
+                      maxLength={50}
                       {...register("title")}
                       aria-invalid={!!errors.title}
                       aria-describedby="title-help"

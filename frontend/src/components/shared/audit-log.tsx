@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { formatRelative } from "@/lib/format";
+import { friendlyAction } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { AuditLogEntry } from "@/data/types";
 
@@ -16,14 +17,17 @@ export function AuditLog({ entries }: { entries: AuditLogEntry[] }) {
       {entries.map((entry) => (
         <li key={entry.id} className="p-3 transition-colors hover:bg-surface-bright">
           <div className="mb-1 flex items-start justify-between">
-            <span className={cn("font-mono text-label-sm font-bold", SEVERITY_TEXT[entry.severity])}>
-              {entry.action}
+            <span className={cn("text-label-sm font-bold", SEVERITY_TEXT[entry.severity])}>
+              {friendlyAction(entry.action)}
             </span>
             <span className="font-mono text-[10px] text-on-surface-variant">
               {formatRelative(entry.timestamp)}
             </span>
           </div>
-          <p className="text-body-sm text-on-surface">{entry.summary}</p>
+          {/* Show a human summary only when it isn't just the raw action code. */}
+          {entry.summary && entry.summary !== entry.action && (
+            <p className="text-body-sm text-on-surface">{entry.summary}</p>
+          )}
           {(entry.reference || entry.hash) && (
             <p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-on-surface-variant">
               <Icon name="tag" className="text-[12px]" />

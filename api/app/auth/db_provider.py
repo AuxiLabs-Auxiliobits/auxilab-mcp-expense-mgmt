@@ -16,7 +16,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 from app.auth.base import AuthError, AuthProvider
-from app.principal import Principal, scope_for
+from app.principal import Principal, Role, scope_for
 
 _ph = PasswordHasher()
 
@@ -33,6 +33,7 @@ class UserRecord:
 
 class UserRepository(Protocol):
     async def get_by_email(self, email: str) -> UserRecord | None: ...
+    async def get_by_id(self, user_id: str) -> UserRecord | None: ...
 
 
 class DbAuthProvider(AuthProvider):
@@ -69,9 +70,22 @@ class DbAuthProvider(AuthProvider):
     async def verify(self, token: str) -> Principal:
         try:
             claims = jwt.decode(token, self._secret, algorithms=[self._algorithm])
+        except jwt.ExpiredSignatureError as e:
+            raise AuthError("session expired") from e
         except jwt.PyJWTError as e:
             raise AuthError("invalid token") from e
-        return Principal.from_claims(claims)
+
+        principal = Principal.from_claims(claims)
+        # Re-check account status on every request so deactivation takes effect immediately —
+        # a still-valid token for a disabled/removed user is rejected. Service principals
+        # (e.g. the AGENT/ingestion worker) aren't DB users, so they skip this check.
+        if principal.role is not Role.AGENT:
+            user = await self._users.get_by_id(principal.subject_id)
+            if user is None:
+                raise AuthError("account no longer exists")
+            if not user.is_active:
+                raise AuthError("account disabled")
+        return principal
 
 
 # Pre-computed argon2 hash of a random string, used only to equalize timing.

@@ -145,26 +145,32 @@ def delete_draft(session: Session, sheet: ExpenseSheet, actor: Principal) -> Non
     session.commit()
 
 
-# A sheet can be withdrawn (recalled to DRAFT) only BEFORE the manager approves it — i.e.
-# while it's queued or under manager review. Once the manager approves and it advances to
-# finance, it can no longer be withdrawn.
+# Submitted/in-review sheets the owner can pull back to DRAFT (recall, not delete).
 _RECALLABLE = {
     SheetStatus.SUBMITTED,
     SheetStatus.IN_MANAGER_REVIEW,
+    SheetStatus.IN_FINANCE_REVIEW,
+    SheetStatus.FINANCE_MANUAL_REVIEW,
 }
 
 
 def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
     """Withdraw an in-flight sheet back to DRAFT so the owner can edit/resubmit. Clears the
-    submission + all manager/finance verdicts and drops it out of the review queues."""
+    submission + all manager/finance verdicts (it'll be re-reviewed from scratch). Removes it
+    from the manager/finance queues by virtue of the DRAFT status."""
     _assert_owner(actor, sheet)
     if sheet.status not in _RECALLABLE:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=f"cannot withdraw a sheet in status {sheet.status}",
         )
+    items = _line_items(session, sheet.id)
     before = sheet.status
-    for item in _line_items(session, sheet.id):
+    sheet.status = SheetStatus.DRAFT
+    sheet.submitted_at = None
+    sheet.finance_decision = None
+    sheet.finance_decided_by = None
+    for item in items:
         item.manager_status = LineItemStatus.PENDING_MANAGER
         item.manager_actor_id = None
         item.manager_reason = None
@@ -174,6 +180,19 @@ def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> Exp
     sheet.submitted_at = None
     sheet.finance_decision = None
     sheet.finance_decided_by = None
+        
+def withdraw_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
+    """Soft-withdraw a DRAFT (SCOPING §5.1). Unlike delete_draft this preserves the sheet and
+    its line items for the audit trail, moving it to the terminal WITHDRAWN state. Owner-only,
+    DRAFT-only."""
+    _assert_owner(actor, sheet)
+    if sheet.status is not SheetStatus.DRAFT:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail="only DRAFT sheets can be withdrawn"
+        )
+    before = sheet.status
+    assert_transition(sheet.status, SheetStatus.WITHDRAWN)
+    sheet.status = SheetStatus.WITHDRAWN
     sheet.updated_at = utcnow()
     session.add(sheet)
     audit_service.record(
@@ -248,7 +267,9 @@ def attach_receipt(
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
-    att = Attachment(line_item_id=item.id, blob_uri="", file_type=file_type, size=len(data))
+    att = Attachment(
+        line_item_id=item.id, blob_uri="", filename=filename, file_type=file_type, size=len(data)
+    )
     session.add(att)
     session.flush()  # assign att.id for a collision-safe blob name
     att.blob_uri = upload_receipt_blob(sheet.employee_id, f"{att.id}-{filename}", data)
@@ -311,10 +332,11 @@ def submit_sheet(
             before={"status": before}, after={"status": sheet.status},
         )
         notification_service.notify(
-            session, recipient_id=sheet.employee_id, kind="warning",
+            session, recipient_id=sheet.employee_id, kind="warning", icon="error",
             title="Sheet returned at intake",
-            body=f"“{title}” didn't pass automatic checks — fix the flagged items and resubmit.",
-            href=f"/employee/sheets/{sheet.id}",
+            body=f'"{title}" was returned automatically — fix the flagged items and resubmit.',
+            href=f"/employee/sheets/{sheet.id}", entity=f"expense_sheet:{sheet.id}",
+            agency_id=sheet.agency_id,
         )
     else:
         assert_transition(SheetStatus.SUBMITTED, SheetStatus.IN_MANAGER_REVIEW)
@@ -323,12 +345,13 @@ def submit_sheet(
             session, actor=actor, action="SUBMITTED", entity=f"expense_sheet:{sheet.id}",
             before={"status": before}, after={"status": sheet.status, "version": sheet.version},
         )
-        # Tell the agency's managers there's a sheet to review.
+        # Alert every manager in the sheet's agency that there's work in their queue.
         notification_service.notify_role_in_agency(
-            session, agency_id=sheet.agency_id, role=Role.MANAGER, kind="info",
-            title="New expense sheet to review",
-            body=f"“{title}” was submitted and is awaiting your review.",
-            href="/manager",
+            session, role=Role.MANAGER, agency_id=sheet.agency_id, kind="info", icon="assignment",
+            title="New sheet to review",
+            body=f'"{title}" is awaiting your review.',
+            href="/manager", entity=f"expense_sheet:{sheet.id}",
+            exclude_user_id=actor.subject_id,
         )
 
     sheet.updated_at = utcnow()
@@ -388,6 +411,45 @@ def manager_action(
     return sheet
 
 
+def manager_approve_sheet(
+    session: Session, sheet: ExpenseSheet, actor: Principal
+) -> ExpenseSheet:
+    """Approve a whole sheet in one action (SCOPING §6.2, §8 bulk-approve): mark every
+    not-yet-rejected line item MANAGER_APPROVED, then advance to finance review. Enforces
+    agency scope + segregation-of-duties (a manager cannot approve their own line items)."""
+    rbac_scope.assert_manager_in_agency(actor, sheet)
+    if sheet.status is not SheetStatus.IN_MANAGER_REVIEW:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="sheet not in manager review")
+
+    items = _line_items(session, sheet.id)
+    if not items:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="sheet has no line items")
+    for item in items:
+        rbac_scope.assert_no_self_approval(actor, item)  # SoD across the whole sheet
+
+    approved = 0
+    for item in items:
+        # Preserve any explicit rejection/info-request the manager already made; approve the rest.
+        if item.manager_status in (
+            LineItemStatus.MANAGER_REJECTED,
+            LineItemStatus.INFO_REQUESTED,
+        ):
+            continue
+        item.manager_status = LineItemStatus.MANAGER_APPROVED
+        item.manager_actor_id = actor.subject_id
+        session.add(item)
+        approved += 1
+
+    audit_service.record(
+        session, actor=actor, action="MANAGER_SHEET_APPROVED",
+        entity=f"expense_sheet:{sheet.id}", after={"items_approved": approved},
+    )
+    _maybe_advance_after_manager(session, sheet, actor)
+    session.commit()
+    session.refresh(sheet)
+    return sheet
+
+
 def _maybe_advance_after_manager(
     session: Session, sheet: ExpenseSheet, actor: Principal
 ) -> None:
@@ -404,10 +466,11 @@ def _maybe_advance_after_manager(
             entity=f"expense_sheet:{sheet.id}",
         )
         notification_service.notify(
-            session, recipient_id=sheet.employee_id, kind="warning",
+            session, recipient_id=sheet.employee_id, kind="warning", icon="undo",
             title="Sheet returned by your manager",
-            body=f"“{title}” needs changes — review the feedback and resubmit.",
-            href=f"/employee/sheets/{sheet.id}",
+            body=f'"{title}" needs changes — review the manager\'s notes and resubmit.',
+            href=f"/employee/sheets/{sheet.id}", entity=f"expense_sheet:{sheet.id}",
+            agency_id=sheet.agency_id,
         )
     elif statuses == {LineItemStatus.MANAGER_APPROVED}:
         # All approved → advance to the finance (LLM) queue.
@@ -418,10 +481,11 @@ def _maybe_advance_after_manager(
             entity=f"expense_sheet:{sheet.id}",
         )
         notification_service.notify(
-            session, recipient_id=sheet.employee_id, kind="success",
-            title="Approved by your manager",
-            body=f"“{title}” cleared manager review and is now with Finance.",
-            href=f"/employee/sheets/{sheet.id}",
+            session, recipient_id=sheet.employee_id, kind="success", icon="forward",
+            title="Sheet approved by your manager",
+            body=f'"{title}" passed manager review and is now in finance review.',
+            href=f"/employee/sheets/{sheet.id}", entity=f"expense_sheet:{sheet.id}",
+            agency_id=sheet.agency_id,
         )
         # NOTE: enqueue to Service Bus finance queue here (workers package consumes it).
     sheet.updated_at = utcnow()

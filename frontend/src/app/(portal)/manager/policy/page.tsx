@@ -57,7 +57,8 @@ function extractSections(content: string | undefined): { id: string; title: stri
 export default function ManagerPolicyPage() {
   const { data: user } = useCurrentUser("manager");
   const { data: docs, isLoading } = usePolicyDocuments();
-  const { data: agencies } = useAgencies();
+  // Listing agencies is admin-only; gate so non-admins never fire a guaranteed-403 request.
+  const { data: agencies } = useAgencies(user?.role === "admin");
 
   const myDocs = useMemo(
     () =>

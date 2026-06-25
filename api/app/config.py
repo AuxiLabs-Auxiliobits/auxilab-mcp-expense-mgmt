@@ -6,9 +6,16 @@ The single switch that makes Entra a config flip is `AUTH_PROVIDER` (db | entra)
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor the default SQLite file to the repo root (this file is api/app/config.py), so the
+# DB is the same single file no matter which directory the server/Alembic is launched from.
+# A relative "./expense.db" would otherwise create a separate DB per working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_SQLITE_URL = f"sqlite:///{(_REPO_ROOT / 'expense.db').as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -28,31 +35,43 @@ class Settings(BaseSettings):
     auth_provider: Literal["db", "entra"] = "db"
     jwt_secret: str = "dev-only-change-me"  # noqa: S105 — overridden via env/Key Vault
     jwt_algorithm: str = "HS256"
-    jwt_ttl_seconds: int = 3600
+    # Access-token lifetime == the absolute session cap (8h). The client also enforces a
+    # 30-min idle timeout, so an inactive session is logged out well before the token expires.
+    jwt_ttl_seconds: int = 28800
     entra_tenant_id: str = ""
     entra_audience: str = ""
     entra_jwks_url: str = ""
 
     # --- Data -------------------------------------------------------------- #
     # SQLite by default so the API runs with zero infra; point at Postgres in any real env.
-    database_url: str = "sqlite:///./expense.db"
+    database_url: str = _DEFAULT_SQLITE_URL
     db_echo: bool = False
 
     # --- Seeding ----------------------------------------------------------- #
     seed_demo_data: bool = True  # seed agencies/users on startup in dev
 
     # --- Azure (optional; workers/engine use these when wired) ------------- #
+    # Azure AI Foundry (chat) — empty endpoint → offline deterministic answers.
     foundry_endpoint: str = ""
     foundry_chat_deployment: str = "gpt-4o"
-    # Azure AI Document Intelligence — live receipt OCR/extraction for the scan endpoint.
-    # Empty → offline fallback (decode text-based receipts only).
-    doc_intel_endpoint: str = ""
-    # Azure AI Search — RAG retrieval of the agency's policy clauses (advisory note).
-    # Empty → no advisory (the deterministic policy check is unaffected).
+    foundry_api_key: str = ""  # prefer Managed Identity; key only for local dev
+    foundry_api_version: str = "2024-10-21"
+    # Azure AI Search (per-agency policy RAG index) — empty → offline retrieval from the
+    # agency's stored policy doc / baseline ruleset.
     search_endpoint: str = ""
     search_index_name: str = "agency-policies"
+    search_api_key: str = ""  # prefer Managed Identity; key only for local dev
+    search_semantic_config: str = "default"  # must match the index's semantic configuration
     storage_account_url: str = ""
     servicebus_namespace: str = ""
+
+    @property
+    def azure_foundry_enabled(self) -> bool:
+        return bool(self.foundry_endpoint)
+
+    @property
+    def azure_search_enabled(self) -> bool:
+        return bool(self.search_endpoint)
 
     # --- Agency policy documents (RAG ingestion, SCOPING §7) --------------- #
     # Blob container for uploaded policy docs. With no storage_account_url configured the
