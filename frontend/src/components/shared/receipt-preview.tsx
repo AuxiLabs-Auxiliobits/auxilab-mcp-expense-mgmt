@@ -49,7 +49,7 @@ function FullPreview({
       apiBlob(downloadUrl)
         .then((b) => {
           if (!active) return;
-          created = URL.createObjectURL(b);
+          created = URL.createObjectURL(b.blob);
           setUrl(created);
         })
         .catch(() => active && setFailed(true));
@@ -133,7 +133,7 @@ export function ReceiptPreview({
       apiBlob(downloadUrl)
         .then((b) => {
           if (!active) return;
-          created = URL.createObjectURL(b);
+          created = URL.createObjectURL(b.blob);
           setThumb(created);
         })
         .catch(() => {});

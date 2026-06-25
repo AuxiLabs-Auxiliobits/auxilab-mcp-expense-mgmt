@@ -110,7 +110,7 @@ export default function EmployeeReceiptsPage() {
 
   async function downloadReceipt(r: ReceiptRow) {
     try {
-      const blob = r.file ?? (r.downloadUrl ? await apiBlob(r.downloadUrl) : null);
+      const blob = r.file ?? (r.downloadUrl ? (await apiBlob(r.downloadUrl)).blob : null);
       if (!blob) {
         toast.error("Nothing to download for this receipt");
         return;
