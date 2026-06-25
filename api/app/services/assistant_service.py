@@ -93,8 +93,9 @@ def _retrieve(session: Session, agency_id: str | None, query: str) -> tuple[list
 
 
 def _retrieve_azure(agency_id: str, query: str) -> tuple[list[Clause], str]:
-    """Per-agency hybrid/semantic retrieval via Azure AI Search, server-filtered to the agency
-    and defensively re-trimmed (a misindexed doc can never leak another agency's clauses)."""
+    """Per-agency semantic retrieval via Azure AI Search (the agency's indexed Foundry policy),
+    server-filtered to the agency and defensively re-trimmed (a misindexed doc can never leak
+    another agency's clauses)."""
     from azure.search.documents import SearchClient  # noqa: PLC0415
 
     if settings.search_api_key:
@@ -111,8 +112,31 @@ def _retrieve_azure(agency_id: str, query: str) -> tuple[list[Clause], str]:
         index_name=settings.search_index_name,
         credential=credential,
     )
+    return _azure_search(client, agency_id, query)
+
+
+def _azure_search(client, agency_id: str, query: str) -> tuple[list[Clause], str]:
+    """Two-pass agency-scoped retrieval (mirrors the finance-approver retriever):
+      1. semantic-ranked search for the question — best for natural-language policy queries;
+      2. if that returns nothing (terms don't lexically/semantically match), fetch the agency's
+         FULL policy so an answer is still grounded in *its* clauses, not the generic baseline.
+    The agency filter is server-enforced AND re-checked per row (defense-in-depth, SCOPING §9.1)."""
     flt = f"agency_id eq '{agency_id.replace(chr(39), chr(39) * 2)}'"
-    rows = client.search(search_text=query or "*", filter=flt, top=6)
+    try:
+        clauses, version = _azure_collect(client, agency_id, search_text=query, flt=flt, top=6, semantic=True)
+    except Exception:  # noqa: BLE001 — service tier without semantic ranker → broad fetch below
+        clauses, version = [], "unknown"
+    if not clauses:
+        clauses, version = _azure_collect(client, agency_id, search_text="*", flt=flt, top=50, semantic=False)
+    return clauses, version
+
+
+def _azure_collect(client, agency_id: str, *, search_text: str, flt: str, top: int, semantic: bool) -> tuple[list[Clause], str]:
+    kwargs: dict = {"search_text": search_text or "*", "filter": flt, "top": top}
+    if semantic:
+        kwargs["query_type"] = "semantic"
+        kwargs["semantic_configuration_name"] = settings.search_semantic_config
+    rows = client.search(**kwargs)
 
     clauses: list[Clause] = []
     version = "unknown"
@@ -131,32 +155,44 @@ def _retrieve_azure(agency_id: str, query: str) -> tuple[list[Clause], str]:
 
 
 def _retrieve_offline(session: Session, agency_id: str, query: str) -> tuple[list[Clause], str]:
-    """Offline retrieval: the agency's stored policy document (if uploaded) + the baseline
-    ruleset, ranked by keyword overlap with the question."""
-    pool: list[Clause] = []
-    version = "baseline-v1"
+    """Offline retrieval: prefer the agency's OWN stored policy document (if uploaded), topped up
+    with the baseline ruleset. The agency's clauses always lead so the answer reflects that
+    agency's policy, not the generic baseline."""
+    agency_clauses, version = _agency_doc_clauses(session, agency_id)
+    baseline = _baseline_clauses()
 
-    # 1) The agency's most-recent policy document, if one has been uploaded.
+    agency_hits = _rank(query, agency_clauses)
+    baseline_hits = _rank(query, baseline)
+    combined = agency_hits + [c for c in baseline_hits if c not in agency_hits]
+
+    # If the agency has a policy but nothing keyword-matched, still surface its clauses first
+    # (ground in the agency's own policy). If there's no agency policy AND nothing matched, leave
+    # it empty so the caller routes the question to a human (SCOPING §6.3, §8).
+    if not agency_hits and agency_clauses:
+        combined = agency_clauses[:2] + baseline_hits
+    return combined[:4], version
+
+
+def _agency_doc_clauses(session: Session, agency_id: str) -> tuple[list[Clause], str]:
+    """Chunk the agency's most-recent uploaded policy document into clauses (empty if none)."""
     policy = session.exec(
         select(AgencyPolicy)
         .where(AgencyPolicy.agency_id == agency_id)
         .order_by(AgencyPolicy.version.desc())
     ).first()
-    if policy and policy.doc_blob_uri:
-        try:
-            text = read_blob(policy.doc_blob_uri).decode("utf-8", errors="ignore")
-            version = f"agency-policy-v{policy.version}"
-            for i, para in enumerate(_chunks(text)):
-                pool.append(Clause(id=f"P{i + 1}", title="Agency policy", text=para,
-                                   source=f"Agency policy v{policy.version}"))
-        except Exception:  # noqa: BLE001 — missing/unreadable blob → fall back to baseline only
-            pass
-
-    # 2) The baseline ruleset — always available, grounded in the enforced limits.
-    pool.extend(_baseline_clauses())
-
-    ranked = _rank(query, pool)
-    return ranked, version
+    if not (policy and policy.doc_blob_uri):
+        return [], "baseline-v1"
+    try:
+        text = read_blob(policy.doc_blob_uri).decode("utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001 — missing/unreadable blob → baseline only
+        return [], "baseline-v1"
+    version = f"agency-policy-v{policy.version}"
+    clauses = [
+        Clause(id=f"P{i + 1}", title="Agency policy", text=para,
+               source=f"Agency policy v{policy.version}")
+        for i, para in enumerate(_chunks(text))
+    ]
+    return clauses, version
 
 
 def _baseline_clauses() -> list[Clause]:
@@ -192,12 +228,14 @@ def _chunks(text: str) -> list[str]:
 
 
 def _rank(query: str, pool: list[Clause]) -> list[Clause]:
+    """Clauses from `pool` that match the query, best first (all score>0; caller caps)."""
+    if not pool:
+        return []
     terms = {t for t in _tokens(query) if t not in _STOPWORDS}
     if not terms:
-        return pool[:3]
+        return list(pool)
     scored = [(sum(t in _tokens(c.title + " " + c.text) for t in terms), c) for c in pool]
-    hits = [c for score, c in sorted(scored, key=lambda x: x[0], reverse=True) if score > 0]
-    return hits[:4]
+    return [c for score, c in sorted(scored, key=lambda x: x[0], reverse=True) if score > 0]
 
 
 def _tokens(s: str) -> set[str]:

@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     search_endpoint: str = ""
     search_index_name: str = "agency-policies"
     search_api_key: str = ""  # prefer Managed Identity; key only for local dev
+    search_semantic_config: str = "default"  # must match the index's semantic configuration
     storage_account_url: str = ""
     servicebus_namespace: str = ""
 

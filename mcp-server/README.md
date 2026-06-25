@@ -45,24 +45,46 @@ src/expense_mcp/
 └── server.py          # imports modules to register, exposes main()
 ```
 
-## Tools (38)
+## Tools (60)
 
-**System:** `server_health` (readiness/observability) ·
+The business tools cover **the entire backend API** (every user-facing endpoint has a tool —
+machine/UI/worker endpoints like the OAuth2 form login, the in-app web-assistant routes, and the
+AI-approver webhook are intentionally excluded).
+
+**System:** `server_health` · **Meta:** `get_value_sets`, `get_periods` ·
+**Notifications:** `list_notifications`, `mark_notifications_read` ·
 
 **Auth:** `login`, `whoami`, `logout` · **Expenses:** `list_my_expenses`, `get_expense`,
 `create_expense`, `add_line_item`, `update_expense`, `submit_expense`, `resubmit_expense`,
-`withdraw_expense`, `search_expenses` · **Receipts:** `list_receipts`, `get_receipt_details`,
+`withdraw_expense`, `search_expenses`, `update_line_item`, `remove_line_item`, `discard_draft`,
+`get_decisions` · **Receipts:** `list_receipts`, `get_receipt_details`,
 `upload_receipt`, `download_receipt` · **Manager:** `get_pending_approvals`,
 `approve_line_item`, `reject_line_item`, `return_to_employee`, `approve_sheet` ·
-**Finance:** `get_finance_queue`, `list_all_expenses`, `finance_decision`, `finance_override` ·
+**Finance:** `get_finance_queue`, `list_all_expenses`, `finance_decision`, `finance_override`,
+`get_finance_audit`, `list_agency_policies`, `upload_agency_policy`, `publish_agency_policy` ·
 **Dashboard:** `get_dashboard_metrics`, `get_spend_by_category`, `get_finance_kpis` ·
+**Admin:** `list_agencies`, `get_agency`, `create_agency`, `update_agency`, `delete_agency`,
+`create_user`, `update_user`, `deactivate_user`, `assign_role` ·
 **Users/Audit:** `list_users`, `get_user`, `my_activity` · **Policy:** `ask_policy` ·
 **Engine:** `policy_checker`, `receipt_parser`, `category_classifier`, `duplicate_detector`,
-`report_summariser`.
+`report_summariser` · plus the agent router `recommend_agent`.
 
 Every tool validates inputs (typed schema), logs the call, and surfaces a **friendly error**
 (never a stack trace). Authorization is delegated to the API — a tool the user can't perform
 returns a clear "you don't have permission" message.
+
+### Verify with MCP Inspector
+
+```bash
+# from mcp-server/ — list everything, then call a tool against the running API
+EXPENSE_API_URL=http://localhost:8000 EXPENSE_API_TOKEN=<JWT> \
+  npx @modelcontextprotocol/inspector --cli python -m expense_mcp --method tools/list
+EXPENSE_API_URL=http://localhost:8000 EXPENSE_API_TOKEN=<JWT> \
+  npx @modelcontextprotocol/inspector --cli python -m expense_mcp \
+  --method tools/call --tool-name get_value_sets
+```
+
+Drop `--cli` to open the interactive Inspector web UI instead.
 
 ## Resources
 
