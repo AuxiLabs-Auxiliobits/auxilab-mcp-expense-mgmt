@@ -20,11 +20,17 @@ def notify(
     title: str,
     body: str = "",
     href: str | None = None,
+    icon: str = "notifications",
+    entity: str | None = None,
+    agency_id: str | None = None,
 ) -> None:
     if not recipient_id:
         return
     session.add(
-        Notification(recipient_id=recipient_id, kind=kind, title=title, body=body, href=href)
+        Notification(
+            recipient_id=recipient_id, agency_id=agency_id, kind=kind, icon=icon,
+            title=title, body=body, href=href, entity=entity,
+        )
     )
 
 
@@ -37,8 +43,12 @@ def notify_role_in_agency(
     title: str,
     body: str = "",
     href: str | None = None,
+    icon: str = "notifications",
+    entity: str | None = None,
+    exclude_user_id: str | None = None,
 ) -> None:
-    """Notify every active user with `role` in `agency_id` (e.g. all managers of an agency)."""
+    """Notify every active user with `role` in `agency_id` (e.g. all managers of an agency).
+    `exclude_user_id` skips one recipient (e.g. the actor who triggered the event)."""
     if not agency_id:
         return
     recipients = session.exec(
@@ -49,7 +59,14 @@ def notify_role_in_agency(
         )
     ).all()
     for u in recipients:
-        session.add(Notification(recipient_id=u.id, kind=kind, title=title, body=body, href=href))
+        if exclude_user_id and u.id == exclude_user_id:
+            continue
+        session.add(
+            Notification(
+                recipient_id=u.id, agency_id=agency_id, kind=kind, icon=icon,
+                title=title, body=body, href=href, entity=entity,
+            )
+        )
 
 
 def list_for(session: Session, principal: Principal, *, limit: int = 50) -> list[Notification]:

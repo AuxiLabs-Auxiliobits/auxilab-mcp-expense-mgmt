@@ -181,26 +181,18 @@ async def update_sheet(
     return _to_out(session, sheet, policy=policy)
 
 
-@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Discard a draft sheet")
+@router.delete(
+    "/{sheet_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Discard a draft sheet (hard delete)",
+)
 async def discard_draft(
     sheet_id: str,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
-    policy: BaselinePolicy = Depends(get_policy),
-) -> SheetOut:
-    """Withdraw an in-progress draft. The sheet and its line items are preserved (audit trail)
-    and the sheet moves to the terminal WITHDRAWN state. Use DELETE to hard-discard instead."""
-    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
-    sheet = sheet_service.withdraw_sheet(session, sheet, principal)
-    return _to_out(session, sheet, policy=policy)
-
-
-@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Discard a draft sheet (hard delete)")
-async def discard_sheet(
-    sheet_id: str,
-    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
-    session: Session = Depends(get_session),
 ) -> None:
+    """Permanently discard a DRAFT sheet and its line items. Owner-only, DRAFT-only. For a
+    soft withdraw that preserves the audit trail, use POST /sheets/{id}/withdraw instead."""
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet_service.delete_draft(session, sheet, principal)
 

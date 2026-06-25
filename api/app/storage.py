@@ -116,4 +116,4 @@ def read_policy_blob(uri: str) -> bytes:
 
 
 # Back-compat alias (policy docs read the same way).
-read_policy_blob = read_blob
+read_blob = read_policy_blob

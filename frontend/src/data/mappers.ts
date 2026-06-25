@@ -65,7 +65,7 @@ export function mapLineItem(r: Raw, sheetId = ""): LineItem {
           (a: Raw): import("./types").Attachment => ({
             id: String(a.id ?? ""),
             lineItemId: String(a.line_item_id ?? r.id ?? ""),
-            fileName: a.file_name ?? a.fileName ?? "receipt",
+            fileName: a.filename ?? a.file_name ?? a.fileName ?? "receipt",
             fileType: a.file_type ?? a.fileType ?? "application/octet-stream",
             sizeBytes: num(a.size ?? a.sizeBytes ?? 0),
             scanStatus: (a.scan_status ?? "clean") as import("./types").ScanStatus,

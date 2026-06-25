@@ -162,7 +162,7 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
-    file_name: str | None = None  # original name, derived from the blob path
+    filename: str | None = None  # original upload name (matches the Attachment model attr)
     file_type: str
     size: int
     blob_uri: str
@@ -342,6 +342,7 @@ class ActivityPageOut(BaseModel):
 class NotificationOut(BaseModel):
     id: str
     kind: str  # info | success | warning | error
+    icon: str = "notifications"
     title: str
     body: str = ""
     href: str | None = None
@@ -625,17 +626,3 @@ class AssistantAnswerOut(BaseModel):
     policy_version: str
     routed_to_human: bool = False
     model_version: str = "offline"
-
-
-# --- Notifications --------------------------------------------------------- #
-class NotificationOut(BaseModel):
-    id: str
-    kind: str
-    icon: str
-    title: str
-    body: str
-    href: str | None
-    read: bool
-    timestamp: datetime
-
-    model_config = {"from_attributes": True}

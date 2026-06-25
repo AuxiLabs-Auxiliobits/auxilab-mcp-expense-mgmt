@@ -356,7 +356,7 @@ def _skill_withdraw(T, ApiError, msg, low, ctx, res, principal):
         return _ask_to_list(res, "withdraw", "show my expenses")
     res.pending = {"action": "withdraw", "id": target["id"], "title": target["title"]}
     res.context = _carry(ctx)
-    res.reply = f"Withdraw the draft **{target['title']}**? This removes it from your active sheets. Reply **yes** to confirm."
+    res.reply = f"Withdraw **{target['title']}**? This recalls it back to a draft so you can edit and resubmit. Reply **yes** to confirm."
     res.confidence = "medium"
 
 
