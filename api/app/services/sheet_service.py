@@ -139,10 +139,52 @@ def delete_draft(session: Session, sheet: ExpenseSheet, actor: Principal) -> Non
             session.delete(att)
         session.delete(item)
     audit_service.record(
-        session, actor=actor, action="SHEET_WITHDRAWN", entity=f"expense_sheet:{sheet.id}",
+        session, actor=actor, action="SHEET_DISCARDED", entity=f"expense_sheet:{sheet.id}",
     )
     session.delete(sheet)
     session.commit()
+
+
+# Submitted/in-review sheets the owner can pull back to DRAFT (recall, not delete).
+_RECALLABLE = {
+    SheetStatus.SUBMITTED,
+    SheetStatus.IN_MANAGER_REVIEW,
+    SheetStatus.IN_FINANCE_REVIEW,
+    SheetStatus.FINANCE_MANUAL_REVIEW,
+}
+
+
+def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
+    """Withdraw an in-flight sheet back to DRAFT so the owner can edit/resubmit. Clears the
+    submission + all manager/finance verdicts (it'll be re-reviewed from scratch). Removes it
+    from the manager/finance queues by virtue of the DRAFT status."""
+    _assert_owner(actor, sheet)
+    if sheet.status not in _RECALLABLE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"cannot withdraw a sheet in status {sheet.status}",
+        )
+    items = _line_items(session, sheet.id)
+    before = sheet.status
+    sheet.status = SheetStatus.DRAFT
+    sheet.submitted_at = None
+    sheet.finance_decision = None
+    sheet.finance_decided_by = None
+    for item in items:
+        item.manager_status = LineItemStatus.PENDING_MANAGER
+        item.manager_actor_id = None
+        item.manager_reason = None
+        item.policy_status = None
+        item.policy_clause_ref = None
+    sheet.updated_at = utcnow()
+    session.add(sheet)
+    audit_service.record(
+        session, actor=actor, action="SHEET_WITHDRAWN", entity=f"expense_sheet:{sheet.id}",
+        before={"status": before}, after={"status": sheet.status},
+    )
+    session.commit()
+    session.refresh(sheet)
+    return sheet
 
 
 def add_line_item(

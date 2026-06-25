@@ -395,10 +395,13 @@ export function LineItemDialog({
                 mode="datetime"
                 value={v.receiptDatetime}
                 onChange={(val) => setValue("receiptDatetime", val, { shouldValidate: true })}
-                placeholder="Optional"
+                placeholder="Select date & time"
                 min={dateBounds?.min}
                 max={dateBounds?.max}
               />
+              {errors.receiptDatetime && (
+                <p className="text-label-md text-error">{errors.receiptDatetime.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="li-tax">Tax / VAT</Label>

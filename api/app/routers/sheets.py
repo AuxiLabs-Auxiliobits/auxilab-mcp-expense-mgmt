@@ -149,14 +149,36 @@ async def update_sheet(
     return _to_out(session, sheet, policy=policy)
 
 
-@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Withdraw a draft sheet")
-async def withdraw_sheet(
+@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Discard a draft sheet")
+async def discard_draft(
     sheet_id: str,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
 ) -> None:
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet_service.delete_draft(session, sheet, principal)
+
+
+@router.post(
+    "/{sheet_id}/withdraw",
+    response_model=SheetOut,
+    summary="Withdraw a submitted sheet back to DRAFT (recall)",
+    responses={
+        404: {"description": "Sheet not found"},
+        409: {"description": "Sheet is not in a withdrawable state"},
+    },
+)
+async def withdraw_sheet(
+    sheet_id: str,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+    policy: BaselinePolicy = Depends(get_policy),
+) -> SheetOut:
+    """Recall an in-flight sheet (submitted / in review) back to the employee as a DRAFT —
+    clears verdicts and removes it from the manager/finance queues."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    sheet = sheet_service.recall_sheet(session, sheet, principal)
+    return _to_out(session, sheet, policy=policy)
 
 
 @router.post(
