@@ -1,5 +1,6 @@
 from app.routers import (
     admin,
+    ai,
     assistant,
     attachments,
     audit,
@@ -28,4 +29,5 @@ ALL_ROUTERS = [
     notifications.router,
     attachments.router,
     assistant.router,
+    ai.router,
 ]

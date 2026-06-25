@@ -3,7 +3,7 @@ items, view own/permitted sheets, submit and resubmit."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import current_principal, require
@@ -28,7 +28,8 @@ from app.schemas.dto import (
 )
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
-from app.services import sheet_service
+from app.config import settings
+from app.services import ai_events, sheet_service
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 
@@ -121,6 +122,7 @@ async def sheet_decisions(
 )
 async def submit_sheet(
     sheet_id: str,
+    background_tasks: BackgroundTasks,
     principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
     session: Session = Depends(get_session),
     policy: BaselinePolicy = Depends(get_policy),
@@ -129,6 +131,8 @@ async def submit_sheet(
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet_service._assert_owner(principal, sheet)
     sheet = sheet_service.submit_sheet(session, sheet, principal, policy)
+    if settings.ai_background_events and "MANAGER_REVIEW" in str(sheet.status).upper():
+        background_tasks.add_task(ai_events.emit, ai_events.EventType.SHEET_SUBMITTED, sheet.id)
     return _to_out(session, sheet, policy=policy)
 
 

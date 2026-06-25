@@ -2,6 +2,7 @@
 tables on SQLModel.metadata."""
 
 from app.models.agency import Agency
+from app.models.ai import AiFeedback, AiRecommendation
 from app.models.attachment import Attachment
 from app.models.audit import AuditLog
 from app.models.claim_check import ClaimCheck
@@ -14,6 +15,8 @@ from app.models.user import User
 
 __all__ = [
     "Agency",
+    "AiFeedback",
+    "AiRecommendation",
     "Attachment",
     "AuditLog",
     "ClaimCheck",

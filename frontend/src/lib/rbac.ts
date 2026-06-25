@@ -39,6 +39,10 @@ const NAV: Record<Role, NavGroup[]> = {
       ],
     },
     {
+      title: "Intelligence",
+      items: [{ label: "AI Workspace", href: "/employee/ai", icon: "auto_awesome" }],
+    },
+    {
       title: "Account",
       items: [
         { label: "My Activity", href: "/employee/activity", icon: "history" },
@@ -48,6 +52,10 @@ const NAV: Record<Role, NavGroup[]> = {
   ],
   manager: [
     { items: [{ label: "Review Queue", href: "/manager", icon: "fact_check" }] },
+    {
+      title: "Intelligence",
+      items: [{ label: "AI Workspace", href: "/manager/ai", icon: "auto_awesome" }],
+    },
     {
       title: "Policy",
       items: [
@@ -60,6 +68,10 @@ const NAV: Record<Role, NavGroup[]> = {
     },
   ],
   finance: [
+    {
+      title: "Intelligence",
+      items: [{ label: "AI Workspace", href: "/finance/ai", icon: "auto_awesome" }],
+    },
     {
       title: "Policy",
       items: [
@@ -80,6 +92,10 @@ const NAV: Record<Role, NavGroup[]> = {
     {
       title: "Administration",
       items: [{ label: "Platform Settings", href: "/admin", icon: "settings" }],
+    },
+    {
+      title: "Intelligence",
+      items: [{ label: "AI Workspace", href: "/admin/ai", icon: "auto_awesome" }],
     },
     {
       title: "Policy",

@@ -8,6 +8,9 @@ import tempfile
 
 os.environ.setdefault("APP_ENVIRONMENT", "dev")
 os.environ.setdefault("APP_SEED_DEMO_DATA", "true")
+# Background AI events write concurrently and contend on the shared SQLite test file; disable the
+# wiring here and exercise the event handler directly in test_ai_platform instead.
+os.environ.setdefault("APP_AI_BACKGROUND_EVENTS", "false")
 _db = os.path.join(tempfile.gettempdir(), "expense_api_test.db")
 if os.path.exists(_db):
     os.remove(_db)

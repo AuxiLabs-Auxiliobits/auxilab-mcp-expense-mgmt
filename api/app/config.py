@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # --- Seeding ----------------------------------------------------------- #
     seed_demo_data: bool = True  # seed agencies/users on startup in dev
 
+    # --- Agentic layer ----------------------------------------------------- #
+    # Fire AI recommendation/notification events from lifecycle endpoints (background tasks).
+    # Disabled in the test harness, where in-process background writes contend on SQLite; the
+    # event handler is exercised directly there instead.
+    ai_background_events: bool = True
+
     # --- Azure (optional; workers/engine use these when wired) ------------- #
     # Azure AI Foundry (chat) — empty endpoint → offline deterministic answers.
     foundry_endpoint: str = ""
