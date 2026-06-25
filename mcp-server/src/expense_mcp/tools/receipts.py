@@ -8,23 +8,24 @@ import os
 from typing import Any
 
 from expense_mcp import client
+from expense_mcp.annotations import READ, WRITE
 from expense_mcp.client import ApiError
 from expense_mcp.instance import mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def list_receipts(sheet_id: str) -> list[dict[str, Any]]:
     """List all receipts on a sheet (filename, type, size, upload date) — for review."""
     return client.get(f"/sheets/{sheet_id}/receipts")
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_receipt_details(attachment_id: str) -> dict[str, Any]:
     """Get a receipt's metadata (filename, content type, size, uploaded_at)."""
     return client.get(f"/attachments/{attachment_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def upload_receipt(sheet_id: str, line_item_id: str, file_path: str) -> dict[str, Any]:
     """Upload a local file as a receipt on a DRAFT line item (.pdf/.png/.jpg/.docx, ≤25MB)."""
     if not os.path.isfile(file_path):
@@ -36,7 +37,7 @@ def upload_receipt(sheet_id: str, line_item_id: str, file_path: str) -> dict[str
     return client.post(f"/sheets/{sheet_id}/line-items/{line_item_id}/receipt", files=files)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def download_receipt(attachment_id: str, dest_path: str) -> dict[str, Any]:
     """Download a receipt's bytes to a local path. Returns where it was saved + byte size."""
     content, _headers = client.get(f"/attachments/{attachment_id}/content", params={"download": "true"}, raw=True)

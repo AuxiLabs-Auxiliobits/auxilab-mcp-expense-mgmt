@@ -28,6 +28,7 @@ from expense_core.tools import (
 from expense_core.tools.duplicate_detector import CandidateLineItem, HistoricalLineItem
 from expense_core.tools.report_summariser import SummaryLineItem
 
+from expense_mcp.annotations import COMPUTE
 from expense_mcp.instance import mcp
 
 # Baseline ruleset loaded once at import (Admin-owned packaged JSON — read-only, stateless).
@@ -46,7 +47,7 @@ def _resolve_llm(use_llm: bool) -> LLMGateway | None:
     return AzureFoundryProvider(endpoint=endpoint, deployment=deployment)
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMPUTE)
 def policy_checker(
     employee_id: str,
     amount: Annotated[Decimal, Field(gt=0)],
@@ -70,20 +71,20 @@ def policy_checker(
     return check_policy(item, _BASELINE_POLICY, today=today).model_dump(mode="json")
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMPUTE)
 def receipt_parser(receipt_text: str, use_llm: bool = False) -> dict[str, Any]:
     """Extract structured receipt fields and reconcile the math. Returns
     `{merchant, receipt_datetime, total, tax, line_items[], payment_method, reconciles, delta}`."""
     return parse_receipt(receipt_text, llm=_resolve_llm(use_llm)).model_dump(mode="json")
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMPUTE)
 def category_classifier(description: str, merchant: str, use_llm: bool = False) -> dict[str, Any]:
     """Classify an expense into one of the 8 categories. Returns `{category, confidence, rationale}`."""
     return classify_category(description, merchant, llm=_resolve_llm(use_llm)).model_dump(mode="json")
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMPUTE)
 def duplicate_detector(
     candidate: CandidateLineItem,
     history: list[HistoricalLineItem],
@@ -93,7 +94,7 @@ def duplicate_detector(
     return detect_duplicates(candidate, history, near_match_days=near_match_days).model_dump(mode="json")
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMPUTE)
 def report_summariser(items: list[SummaryLineItem], use_llm: bool = False) -> dict[str, Any]:
     """Aggregate a sheet/period and write a narrative. Returns `{total_by_category,
     violation_count, total_at_risk, compliance_rate_pct, narrative}`."""

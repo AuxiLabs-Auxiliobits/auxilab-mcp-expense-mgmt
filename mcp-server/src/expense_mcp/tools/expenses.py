@@ -9,28 +9,29 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from expense_mcp import client
+from expense_mcp.annotations import DESTRUCTIVE, READ, WRITE
 from expense_mcp.instance import mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def list_my_expenses() -> list[dict[str, Any]]:
     """List the current user's own expense sheets (id, title, status, period, total)."""
     return client.get("/sheets")
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_expense(sheet_id: str) -> dict[str, Any]:
     """Get one expense sheet with its line items, totals, status, and submit/blocker info."""
     return client.get(f"/sheets/{sheet_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def create_expense(title: str, period: Annotated[str, Field(description="Month 'YYYY-MM'")]) -> dict[str, Any]:
     """Create a DRAFT expense sheet. Add line items + receipts, then submit."""
     return client.post("/sheets", json={"title": title, "period": period})
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def add_line_item(
     sheet_id: str,
     amount: Annotated[Decimal, Field(gt=0)],
@@ -54,32 +55,32 @@ def add_line_item(
     return client.post(f"/sheets/{sheet_id}/line-items", json=body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def update_expense(sheet_id: str, title: str | None = None, period: str | None = None) -> dict[str, Any]:
     """Edit a DRAFT sheet's title and/or period."""
     body = {k: v for k, v in {"title": title, "period": period}.items() if v is not None}
     return client.patch(f"/sheets/{sheet_id}", json=body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def submit_expense(sheet_id: str) -> dict[str, Any]:
     """Submit a DRAFT sheet for manager review (runs the intake gate first)."""
     return client.post(f"/sheets/{sheet_id}/submit")
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def resubmit_expense(sheet_id: str) -> dict[str, Any]:
     """Resubmit a returned/rejected sheet (bumps version, restarts review)."""
     return client.post(f"/sheets/{sheet_id}/resubmit")
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 def withdraw_expense(sheet_id: str) -> dict[str, Any]:
     """Withdraw a DRAFT sheet (soft — keeps the record, moves it to WITHDRAWN)."""
     return client.post(f"/sheets/{sheet_id}/withdraw")
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def search_expenses(
     scope: Annotated[str, Field(description="'mine' or 'all' (all = finance/admin only)")] = "mine",
     status: str | None = None,

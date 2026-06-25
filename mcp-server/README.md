@@ -45,7 +45,9 @@ src/expense_mcp/
 └── server.py          # imports modules to register, exposes main()
 ```
 
-## Tools (37)
+## Tools (38)
+
+**System:** `server_health` (readiness/observability) ·
 
 **Auth:** `login`, `whoami`, `logout` · **Expenses:** `list_my_expenses`, `get_expense`,
 `create_expense`, `add_line_item`, `update_expense`, `submit_expense`, `resubmit_expense`,
@@ -93,6 +95,9 @@ Copy `.env.example` → `.env` (or set in the MCP host config):
 | `EXPENSE_API_URL` | FastAPI backend base URL | `http://localhost:8000` |
 | `EXPENSE_API_TOKEN` | bootstrap bearer (else use the `login` tool) | — |
 | `EXPENSE_API_TIMEOUT` | per-request timeout (s) | `30` |
+| `EXPENSE_API_MAX_RETRIES` | retries for transient failures (idempotent GETs only) | `2` |
+
+Config is **validated at startup** (bad URL / non-positive timeout fail fast with a clear message).
 
 ## Run (stdio)
 
@@ -129,11 +134,22 @@ calls the `login` tool and the session token is held in memory for subsequent ca
 - “What’s the per-meal limit?” → `ask_policy` (cited)
 - “Generate a finance report for 2026-06.” → `finance_report` prompt → dashboard tools
 
-## Security
-- Token never logged; only `METHOD path -> status` is logged.
-- All RBAC/agency-scope/SoD/audit enforced by the API; 401→re-auth, 403→permission message.
+## Security & hardening
+- **Tool annotations**: read-only tools are marked `readOnlyHint`; consequential actions
+  (`approve_*`, `reject_*`, `return_to_employee`, `withdraw_expense`, `finance_decision`,
+  `finance_override`) are `destructiveHint` so MCP clients **prompt for confirmation** before an
+  AI runs them.
+- **Token safety**: forwarded to the API, **never logged** (logs are `cid=… METHOD path -> status`)
+  and never returned by any tool (incl. `server_health`).
+- All RBAC / agency-scope / SoD / audit enforced by the API; 401→re-auth, 403→permission message.
+- **Resilience**: one pooled keep-alive `httpx` client; bounded **retry with backoff** on transient
+  failures (connect errors / timeouts / 502-503-504) for **idempotent GETs only** — writes are
+  never silently repeated. Each call carries a **correlation id** (`X-Request-Id`) for tracing.
 - Inputs validated by typed schemas; backend re-validates (defense in depth).
-- Rate limiting belongs at the API/gateway (stdio MCP is single-client per host).
+- **Health/readiness:** the `server_health` tool reports version, configured API URL, auth state,
+  and backend reachability. Graceful shutdown closes the pooled client.
+- Rate limiting and OAuth 2.1 / token refresh belong at the API/IdP (Entra cutover, ADR-001),
+  not in this single-client stdio adapter.
 
 ## Test
 

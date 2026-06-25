@@ -26,6 +26,7 @@ from expense_mcp.tools import (  # noqa: E402,F401
     expenses,
     finance,
     receipts,
+    system,
     users,
 )
 from expense_mcp.resources import resources  # noqa: E402,F401

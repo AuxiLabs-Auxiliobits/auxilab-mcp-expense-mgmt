@@ -7,10 +7,11 @@ from __future__ import annotations
 from typing import Any
 
 from expense_mcp import client
+from expense_mcp.annotations import READ
 from expense_mcp.instance import mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def ask_policy(query: str) -> dict[str, Any]:
     """Ask a natural-language question about the caller's agency expense policy. Returns a
     grounded `{answer, citations[], routed_to_human}` (cites the governing clauses)."""
