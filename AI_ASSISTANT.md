@@ -120,5 +120,79 @@ nothing to scale, and the token is isolated per request via a `ContextVar`.
 - `api/tests/test_assistant_chat.py` — integration tests that drive the real MCP tools (routed
   in-process to the seeded test DB): routing, explainability, role enforcement, guided create
   slot-filling, confirmation-before-destructive-action, no-ID-leakage, screen-aware suggestions.
+- `api/tests/test_assistant_reliability.py` — the stabilization suite (see report below).
 - Verified end-to-end in the browser (Playwright): launcher → panel → MCP-backed replies with
   explainability and cited policy answers.
+
+---
+
+# Stabilization Report (Production Readiness)
+
+## Phase 7 — Intent → MCP tool → backend mapping
+
+The assistant is the host; the orchestration is the deterministic router (no separate "agent
+prompt" is invoked server-side — the agent *prompts* are for external MCP hosts). Every action
+resolves to exactly one MCP tool, which calls one backend endpoint.
+
+| Intent (examples) | MCP tool | Backend API | Result |
+|---|---|---|---|
+| "who am i" | `whoami` | `GET /auth/me` | identity |
+| "what do I need to do next?" | `get_pending_approvals` / `get_finance_queue` / `list_my_expenses` | role-dependent | outstanding-work summary |
+| "what's the per-meal limit?" | `ask_policy` | `POST /assistant/policy` | cited answer |
+| "show my expenses" | `list_my_expenses` | `GET /sheets` | numbered list |
+| "create … / Berlin / 2026-06" | `create_expense` | `POST /sheets` | draft (dup-guarded) |
+| "submit 2" / "submit the latest" | `submit_expense` | `POST /sheets/{id}/submit` | → manager review |
+| "withdraw 1" (draft) | `withdraw_expense` | `POST /sheets/{id}/withdraw` | → withdrawn |
+| "resubmit the travel sheet" | `resubmit_expense` | `POST /sheets/{id}/resubmit` | → manager review |
+| "show pending approvals" | `get_pending_approvals` | `GET /manager/queue` | numbered list |
+| "approve 1" (manager) | `approve_sheet` | `POST /manager/sheets/{id}/approve` | → finance review |
+| "return 1 because …" | `get_expense`+`return_to_employee` | `GET /sheets/{id}` + `POST /manager/sheets/{id}/action` | → returned |
+| "show the finance queue" | `get_finance_queue` | `GET /finance/queue` | numbered list |
+| "approve 1" / "reject 1 because …" (finance) | `finance_decision` | `POST /finance/sheets/{id}/decision` | → approved/rejected |
+| "show the dashboard" | `get_dashboard_metrics` | `GET /reports/summary` | KPIs |
+| "spend by category" | `get_spend_by_category` | `GET /reports/spend-by-category` | breakdown |
+| "finance kpis" | `get_finance_kpis` | `GET /finance/kpis` | KPIs |
+| "list users" | `list_users` | `GET /admin/users` | directory |
+| "system health" | `server_health` | `GET /healthz` | status |
+| "my activity" | `my_activity` | `GET /audit/me` | trail |
+| "log out" | `logout` | (clears session token) | signed out |
+
+No business logic bypasses MCP — verified by `test_*` asserting `tools_used` for each flow.
+
+## Phase 10 — readiness summary
+
+**Conversation flows implemented & passing (43/43 assistant tests, 126/126 API, 50/50 MCP):**
+employee create→submit, withdraw (draft), resubmit-after-return; manager view-queue→approve /
+return; finance view-queue→approve / reject; admin users / dashboard / health / reports; policy
+Q&A; "what next"; cross-user decline; logout.
+
+**State-management architecture:** stateless server; the client echoes one opaque `context` blob
+holding `last_list`/`list_kind` (for references) and `pending` (the action awaiting
+confirmation). The per-request token is a `ContextVar`, so **concurrent users never cross state**
+(test: `test_concurrent_users_do_not_cross_context`).
+
+**Confirmation workflow (Phase 3):** summarize → ask → fuzzy yes/no → run the MCP tool → **clear
+pending** → success message. Ambiguous replies **preserve** pending; an explicit new command
+switches away; a transient failure **keeps** pending so "yes" retries.
+
+**References (Phase 4/6):** number ("submit 2"), ordinal ("the second one"), "latest/last",
+and title ("the Barcelona sheet") — resolved from the last list or by fetching the relevant list.
+
+**Duplicate prevention (Phase 5):** create checks for an existing same-title+period draft and
+asks to confirm; the DB enforces a unique `(employee, receipt_datetime, receipt_total)` on
+receipts; state-machine transitions reject double-submit/double-approve (surfaced friendly).
+
+**Error recovery (Phase 8):** 401/403/404/409/422/5xx/timeout map to plain-language messages;
+no IDs/UUIDs/stack traces leak; transient failures retain the pending action.
+
+**Security validation:** all actions carry the signed-in user's token; RBAC/agency/SoD/audit
+enforced by the API; employee→approvals returns a friendly "no access"; cross-user requests are
+declined; tokens never logged or returned.
+
+**Known limitations (by design):** NL is deterministic keyword routing + guided flows (upgrades
+to an LLM via Azure Foundry behind the same contract); adding line items / uploading receipts is
+done in the sheet UI, not via chat (file handling is out of the text bridge); context lives in
+the client thread (no server-side TTL — it ends with the conversation).
+
+**Performance:** each turn is 1–2 in-process MCP→API calls; reads ~single GET, guided actions add
+one list fetch for reference resolution. No N+1; idempotent GETs retried by the MCP client.

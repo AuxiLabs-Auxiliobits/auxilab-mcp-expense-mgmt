@@ -8,6 +8,12 @@ confirmation); it upgrades to an LLM by configuring Azure Foundry, without chang
 
 Responses are business-friendly: numbered lists (no raw ids), plain-language summaries, and an
 explainability footer (which MCP tools ran, what was done, what to do next).
+
+State model (host-owned, stateless server): every reply returns an opaque `context` blob the
+client echoes back. It carries the last numbered list (`last_list` + `list_kind`) for follow-up
+references and a `pending` action awaiting confirmation. Confirmation is robust (fuzzy yes/no),
+ambiguous replies keep the pending action, an explicit new command switches away from it, and a
+transient failure preserves it so "yes" retries.
 """
 
 from __future__ import annotations
@@ -16,6 +22,28 @@ import re
 from typing import Any, Callable
 
 from app.principal import Principal
+
+# ---- small NL lexicons ------------------------------------------------------------------- #
+_AFFIRM = {
+    "yes", "y", "yeah", "yep", "yup", "ya", "sure", "ok", "okay", "k", "confirm", "confirmed",
+    "do it", "go ahead", "go", "proceed", "please do", "yes please", "sounds good", "correct",
+    "affirmative", "approved", "submit it", "approve it", "send it", "absolutely",
+}
+_NEGATE = {
+    "no", "n", "nope", "nah", "cancel", "never mind", "nevermind", "stop", "abort", "don't",
+    "dont", "forget it", "leave it", "not now", "no thanks", "negative", "wait",
+}
+_ORDINALS = {
+    "first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4,
+    "fifth": 5, "5th": 5, "sixth": 6, "6th": 6, "seventh": 7, "7th": 7, "eighth": 8, "8th": 8,
+    "ninth": 9, "9th": 9, "tenth": 10, "10th": 10,
+}
+_TITLE_STOPWORDS = {
+    "the", "my", "a", "an", "of", "to", "for", "that", "this", "one", "it", "please", "sheet",
+    "sheets", "expense", "expenses", "submit", "approve", "reject", "return", "withdraw",
+    "resubmit", "draft", "latest", "last", "recent", "show", "review", "and", "with",
+}
+_TRANSIENT = {0, 408, 425, 429, 500, 502, 503, 504}
 
 
 # --- result container --------------------------------------------------------------------- #
@@ -67,12 +95,9 @@ def handle_chat(token: str, principal: Principal, message: str, context: dict[st
     low = msg.lower()
 
     try:
-        # 1) Resolve a pending confirmation (human-in-the-loop) first.
         pending = ctx.get("pending")
         if pending:
-            return _resolve_pending(T, ApiError, msg, low, pending, res, principal)
-
-        # 2) Otherwise route the message to a skill.
+            return _resolve_pending(T, ApiError, msg, low, ctx, pending, res, principal)
         skill = _route(low)
         skill(T, ApiError, msg, low, ctx, res, principal)
     except ApiError as e:
@@ -83,24 +108,44 @@ def handle_chat(token: str, principal: Principal, message: str, context: dict[st
 
 
 # --- routing ------------------------------------------------------------------------------ #
+# A leading action verb wins over keyword matching, so a reason like "reject 1 because it
+# breaks policy" routes to the reject action, not the policy reader.
+_LEADING_VERBS: dict[str, Callable] = {}  # populated after skill defs (see _init_verbs)
+
+
 def _route(low: str) -> Callable:
+    head = re.findall(r"[a-z']+", low)[:3]
+    for tok in head:
+        if tok in ("please", "pls", "can", "could", "you", "would", "kindly", "now"):
+            continue
+        if tok in _LEADING_VERBS:
+            return _LEADING_VERBS[tok]
+        break  # only the first meaningful word counts as the imperative verb
+    # Order matters: more specific intents first (e.g. "resubmit"/"withdraw" before "submit").
     table: list[tuple[tuple[str, ...], Callable]] = [
-        (("who am i", "what's my role", "whoami"), _skill_whoami),
+        (("who am i", "what's my role", "whoami", "am i logged"), _skill_whoami),
+        (("log out", "logout", "sign out", "log off"), _skill_logout),
+        (("what do i need", "what next", "what's next", "next step", "what should i do",
+          "anything pending", "my to-do", "my todo"), _skill_next),
         (("policy", "per-meal", "meal cap", "hotel cap", "limit", "allowed", "receipt rule",
           "deadline", "reimburse", "reimbursement", "is this allowed", "what's the cap"), _skill_policy),
+        (("'s expense", "'s sheet", "'s receipt", "'s approval", "someone else", "other people",
+          "another user", "other users"), _skill_cross_user),
         (("pending approval", "to approve", "to review", "review queue", "approvals", "pending sheets"), _skill_pending),
-        (("finance queue", "manual review", "routed sheets"), _skill_finance_queue),
+        (("finance queue", "manual review", "routed sheets", "finance review"), _skill_finance_queue),
         (("spend by category", "category spend", "by category"), _skill_spend_category),
         (("kpi", "auto-approval", "auto approval", "compliance rate"), _skill_kpis),
         (("dashboard", "metrics", "overview", "summary of spend", "total spend", "how much"), _skill_dashboard),
-        (("list users", "users", "accounts", "who has access"), _skill_users),
-        (("system health", "is the system", "health check", "are services"), _skill_health),
+        (("list users", "all users", "user list", "accounts", "who has access"), _skill_users),
+        (("system health", "is the system", "health check", "are services", "is everything up"), _skill_health),
         (("my activity", "my history", "audit", "what did i do"), _skill_activity),
+        (("resubmit", "re-submit", "send it back in", "submit again"), _skill_resubmit),
+        (("withdraw", "recall", "pull back", "take back"), _skill_withdraw),
         (("approve",), _skill_approve),
-        (("reject", "return"), _skill_reject),
+        (("reject", "return", "send back", "decline"), _skill_reject),
         (("submit",), _skill_submit),
-        (("create", "new expense", "start an expense", "new sheet", "new draft"), _skill_create),
-        (("my expense", "my sheet", "my draft", "status of my", "my expenses"), _skill_my_expenses),
+        (("create", "new expense", "start an expense", "new sheet", "new draft", "add a sheet"), _skill_create),
+        (("my expense", "my sheet", "my draft", "status of my", "my expenses", "my claims"), _skill_my_expenses),
     ]
     for keys, fn in table:
         if any(k in low for k in keys):
@@ -112,7 +157,7 @@ def _route(low: str) -> Callable:
 def _skill_whoami(T, ApiError, msg, low, ctx, res, principal):
     me = T["auth_tools"].whoami()
     res.tools_used = ["whoami"]
-    res.reply = f"You're signed in as **{me.get('name')}** — {me.get('role','').title()} at {me.get('agency') or 'your agency'}."
+    res.reply = f"You're signed in as **{me.get('name')}** — {str(me.get('role','')).title()} at {me.get('agency') or 'your agency'}."
     res.actions = ["Read your profile"]
 
 
@@ -129,7 +174,7 @@ def _skill_policy(T, ApiError, msg, low, ctx, res, principal):
 def _skill_pending(T, ApiError, msg, low, ctx, res, principal):
     rows = T["approvals"].get_pending_approvals()
     res.tools_used = ["get_pending_approvals"]
-    res.reply, res.context = _numbered_sheets(rows, "pending sheet")
+    res.reply, res.context = _numbered_sheets(rows, "pending sheet", "approvals")
     res.actions = [f"Listed {len(rows)} sheet(s) awaiting your review"]
     if rows:
         res.reply += "\n\nSay e.g. *“approve 1”* or *“return 1 because the receipt is missing”*."
@@ -138,28 +183,29 @@ def _skill_pending(T, ApiError, msg, low, ctx, res, principal):
 def _skill_finance_queue(T, ApiError, msg, low, ctx, res, principal):
     rows = T["finance"].get_finance_queue()
     res.tools_used = ["get_finance_queue"]
-    res.reply, res.context = _numbered_sheets(rows, "routed sheet")
+    res.reply, res.context = _numbered_sheets(rows, "routed sheet", "finance")
     res.actions = [f"Listed {len(rows)} sheet(s) in finance manual review"]
+    if rows:
+        res.reply += "\n\nSay e.g. *“approve 1”* or *“reject 1 because it exceeds policy”*."
 
 
 def _skill_my_expenses(T, ApiError, msg, low, ctx, res, principal):
     rows = T["expenses"].list_my_expenses()
     res.tools_used = ["list_my_expenses"]
-    res.reply, res.context = _numbered_sheets(rows, "sheet")
+    res.reply, res.context = _numbered_sheets(rows, "sheet", "mine")
     res.actions = [f"Listed your {len(rows)} expense sheet(s)"]
     if rows:
-        res.reply += "\n\nSay e.g. *“submit 1”* to submit a draft."
+        res.reply += "\n\nSay e.g. *“submit 1”*, *“withdraw 2”*, or *“resubmit 1”*."
 
 
 def _skill_dashboard(T, ApiError, msg, low, ctx, res, principal):
     d = T["dashboard"].get_dashboard_metrics()
     res.tools_used = ["get_dashboard_metrics"]
-    total = d.get("grand_total"); comp = d.get("compliance_rate_pct")
     res.reply = (
-        f"**Spend overview**\n- Total spend: **{_money(total)}**\n"
+        f"**Spend overview**\n- Total spend: **{_money(d.get('grand_total'))}**\n"
         f"- Sheets: {d.get('sheet_count', 0)} · Line items: {d.get('line_item_count', 0)}\n"
-        f"- Compliance rate: {comp}%\n- At risk: {_money(d.get('total_at_risk'))} "
-        f"({d.get('violation_count', 0)} flag(s))"
+        f"- Compliance rate: {d.get('compliance_rate_pct')}%\n"
+        f"- At risk: {_money(d.get('total_at_risk'))} ({d.get('violation_count', 0)} flag(s))"
     )
     res.actions = ["Read the dashboard summary"]
 
@@ -211,54 +257,129 @@ def _skill_activity(T, ApiError, msg, low, ctx, res, principal):
     if not rows:
         res.reply = "No recorded activity yet."
     else:
-        lines = "\n".join(f"- {str(r.get('action','')).replace('_', ' ').capitalize()}" for r in rows[:15])
+        lines = "\n".join(f"- {str(r.get('action', '')).replace('_', ' ').capitalize()}" for r in rows[:15])
         res.reply = f"**Your recent activity**\n{lines}"
     res.actions = ["Read your activity trail"]
 
 
+def _skill_next(T, ApiError, msg, low, ctx, res, principal):
+    """'What do I need to do next?' — role-aware summary of outstanding work."""
+    role = str(principal.role).lower()
+    if role == "manager":
+        rows = T["approvals"].get_pending_approvals()
+        res.tools_used = ["get_pending_approvals"]
+        res.reply = (
+            f"You have **{len(rows)}** sheet(s) awaiting approval."
+            + (" Say *“show pending approvals”* to review them." if rows else " Your queue is clear. 🎉")
+        )
+    elif role == "finance":
+        rows = T["finance"].get_finance_queue()
+        res.tools_used = ["get_finance_queue"]
+        res.reply = (
+            f"**{len(rows)}** sheet(s) need finance review."
+            + (" Say *“show the finance queue”*." if rows else " Nothing routed to you right now. 🎉")
+        )
+    else:
+        rows = T["expenses"].list_my_expenses()
+        res.tools_used = ["list_my_expenses"]
+        drafts = [r for r in rows if r.get("can_submit") or "DRAFT" in str(r.get("status", ""))]
+        returned = [r for r in rows if "RETURN" in str(r.get("status", "")).upper()]
+        res.reply = (
+            f"You have **{len(drafts)}** draft(s) ready to submit and "
+            f"**{len(returned)}** returned sheet(s) to fix."
+        )
+    res.actions = ["Summarized your next steps"]
+
+
+def _skill_cross_user(T, ApiError, msg, low, ctx, res, principal):
+    res.confidence = "low"
+    res.reply = (
+        "I can only access **your own** expenses and whatever your role already lets you see "
+        "(e.g. a manager's own approval queue) — I can't pull up another person's expenses for you."
+    )
+    res.actions = ["Declined a cross-user request (out of scope)"]
+
+
 # --- action skills (guided + confirmation) ------------------------------------------------ #
 def _skill_approve(T, ApiError, msg, low, ctx, res, principal):
-    sheet = _resolve_ref(low, ctx)
-    if not sheet:
-        res.reply = "Which sheet should I approve? List your queue first (*“show pending approvals”*), then say *“approve 1”*."
-        res.confidence = "low"
-        return
-    res.pending = {"action": "approve", "id": sheet["id"], "title": sheet["title"]}
-    res.context = ctx.get("last_list") and {"last_list": ctx["last_list"]} or None
-    res.reply = f"Approve **{sheet['title']}**? This advances it to finance review. Reply **yes** to confirm."
+    role = str(principal.role).lower()
+    if role == "finance":
+        target = _resolve_target(low, ctx, lambda: T["finance"].get_finance_queue())
+        if not target:
+            return _ask_to_list(res, "approve", "show the finance queue")
+        res.pending = {"action": "finance_approve", "id": target["id"], "title": target["title"]}
+        res.reply = f"Approve **{target['title']}** in finance review? Reply **yes** to confirm."
+    else:
+        target = _resolve_target(low, ctx, lambda: T["approvals"].get_pending_approvals())
+        if not target:
+            return _ask_to_list(res, "approve", "show pending approvals")
+        res.pending = {"action": "approve", "id": target["id"], "title": target["title"]}
+        res.reply = f"Approve **{target['title']}**? This advances it to finance review. Reply **yes** to confirm."
+    res.context = _carry(ctx)
     res.confidence = "medium"
 
 
 def _skill_reject(T, ApiError, msg, low, ctx, res, principal):
-    sheet = _resolve_ref(low, ctx)
-    if not sheet:
-        res.reply = "Which sheet should I return, and why? e.g. *“return 1 because the receipt is missing”*."
-        res.confidence = "low"
-        return
-    reason = _extract_reason(msg) or "Please review and correct."
-    res.pending = {"action": "return", "id": sheet["id"], "title": sheet["title"], "reason": reason}
-    res.reply = f"Return **{sheet['title']}** to the employee with the note: *“{reason}”*? Reply **yes** to confirm."
+    role = str(principal.role).lower()
+    reason = _extract_reason(msg)
+    if role == "finance":
+        target = _resolve_target(low, ctx, lambda: T["finance"].get_finance_queue())
+        if not target:
+            return _ask_to_list(res, "reject", "show the finance queue")
+        reason = reason or "Rejected by finance."
+        res.pending = {"action": "finance_reject", "id": target["id"], "title": target["title"], "reason": reason}
+        res.reply = f"Reject **{target['title']}** with the note *“{reason}”*? Reply **yes** to confirm."
+    else:
+        target = _resolve_target(low, ctx, lambda: T["approvals"].get_pending_approvals())
+        if not target:
+            return _ask_to_list(res, "return", "show pending approvals")
+        reason = reason or "Please review and correct."
+        res.pending = {"action": "return", "id": target["id"], "title": target["title"], "reason": reason}
+        res.reply = f"Return **{target['title']}** to the employee with the note *“{reason}”*? Reply **yes** to confirm."
+    res.context = _carry(ctx)
     res.confidence = "medium"
 
 
 def _skill_submit(T, ApiError, msg, low, ctx, res, principal):
-    sheet = _resolve_ref(low, ctx)
-    if not sheet:
-        res.reply = "Which draft should I submit? List them (*“show my expenses”*), then say *“submit 1”*."
-        res.confidence = "low"
-        return
-    res.pending = {"action": "submit", "id": sheet["id"], "title": sheet["title"]}
-    res.reply = f"Submit **{sheet['title']}** for manager review? Reply **yes** to confirm."
+    target = _resolve_target(low, ctx, lambda: T["expenses"].list_my_expenses())
+    if not target:
+        return _ask_to_list(res, "submit", "show my expenses")
+    res.pending = {"action": "submit", "id": target["id"], "title": target["title"]}
+    res.context = _carry(ctx)
+    res.reply = f"Submit **{target['title']}** for manager review? Reply **yes** to confirm."
+    res.confidence = "medium"
+
+
+def _skill_withdraw(T, ApiError, msg, low, ctx, res, principal):
+    target = _resolve_target(low, ctx, lambda: T["expenses"].list_my_expenses())
+    if not target:
+        return _ask_to_list(res, "withdraw", "show my expenses")
+    res.pending = {"action": "withdraw", "id": target["id"], "title": target["title"]}
+    res.context = _carry(ctx)
+    res.reply = f"Withdraw the draft **{target['title']}**? This removes it from your active sheets. Reply **yes** to confirm."
+    res.confidence = "medium"
+
+
+def _skill_resubmit(T, ApiError, msg, low, ctx, res, principal):
+    target = _resolve_target(low, ctx, lambda: T["expenses"].list_my_expenses())
+    if not target:
+        return _ask_to_list(res, "resubmit", "show my expenses")
+    res.pending = {"action": "resubmit", "id": target["id"], "title": target["title"]}
+    res.context = _carry(ctx)
+    res.reply = f"Resubmit **{target['title']}** for review? Reply **yes** to confirm."
+    res.confidence = "medium"
+
+
+def _skill_logout(T, ApiError, msg, low, ctx, res, principal):
+    res.pending = {"action": "logout"}
+    res.reply = "Sign out of the assistant session? Reply **yes** to confirm."
     res.confidence = "medium"
 
 
 def _skill_create(T, ApiError, msg, low, ctx, res, principal):
-    title = ctx.get("draft_title")
-    period = _extract_period(msg) or ctx.get("draft_period")
-    # naive title: text after "called/titled/named"
-    m = re.search(r"(?:called|titled|named)\s+[\"']?([^\"']{3,50})", msg, re.I)
-    if m:
-        title = m.group(1).strip()
+    period = _extract_period(msg)
+    m = re.search(r"(?:called|titled|named)\s+[\"']?(.+?)[\"']?(?:\s+for\b|\s+in\b|$)", msg, re.I)
+    title = m.group(1).strip()[:50] if m else None
     if not title:
         res.needs = ["title"]
         res.pending = {"action": "create", "period": period}
@@ -269,45 +390,84 @@ def _skill_create(T, ApiError, msg, low, ctx, res, principal):
         res.pending = {"action": "create", "title": title}
         res.reply = f"Got it — **{title}**. Which **month** is it for? (e.g. 2026-06)"
         return
-    sheet = T["expenses"].create_expense(title, period)
-    res.tools_used = ["create_expense"]
-    res.reply = f"Created a draft **{title}** for {period}. Add line items and receipts, then submit it."
-    res.actions = ["Created a draft expense sheet"]
+    _do_create(T, ApiError, title, period, res, principal, ctx)
 
 
-def _resolve_pending(T, ApiError, msg, low, pending, res, principal):
+# --- pending resolution ------------------------------------------------------------------- #
+def _resolve_pending(T, ApiError, msg, low, ctx, pending, res, principal):
     action = pending.get("action")
-    # create slot-filling: the message supplies the next missing field (keep original case).
+
+    # 1) Guided create slot-filling: the message supplies the next missing field.
     if action == "create":
         merged = dict(pending)
         if not merged.get("title"):
             merged["title"] = _strip(msg) or "Expenses"
         elif not merged.get("period"):
             merged["period"] = _extract_period(msg) or msg.strip()
-        try:
-            out = _create_from(T, ApiError, merged, res)
-        except ApiError as e:
-            res.reply = _friendly_error(e); res.confidence = "low"
-            res.suggestions = _suggestions_for(principal.role)
-            return res.as_dict()
+        if not merged.get("title"):
+            res.needs = ["title"]; res.pending = merged; res.reply = "What should the sheet be titled?"
+        elif not merged.get("period"):
+            res.needs = ["period"]; res.pending = merged
+            res.reply = f"Which **month** is **{merged['title']}** for? (e.g. 2026-06)"
+        else:
+            _do_create(T, ApiError, merged["title"], merged["period"], res, principal, ctx)
         res.suggestions = _suggestions_for(principal.role)
-        return out
-    # confirmation actions
-    if low not in ("yes", "y", "confirm", "do it", "approve", "go ahead"):
+        return res.as_dict()
+
+    # 2) Confirmation actions: robust yes / no / ambiguous / new-command handling.
+    if _affirmative(low):
+        _execute(T, ApiError, action, pending, res, principal)
+        res.suggestions = _suggestions_for(principal.role)
+        return res.as_dict()
+    if _negative(low):
         res.reply = "Okay, cancelled — nothing was changed."
         res.actions = ["Cancelled the pending action"]
+        res.suggestions = _suggestions_for(principal.role)
         return res.as_dict()
+
+    # Not a clear yes/no. If it's plainly a new command, switch to it (implicit cancel);
+    # otherwise re-ask and KEEP the pending action so the task isn't lost.
+    new_skill = _route(low)
+    if new_skill is not _skill_fallback:
+        ctx2 = {k: v for k, v in ctx.items() if k != "pending"}
+        new_skill(T, ApiError, msg, low, ctx2, res, principal)
+        res.suggestions = res.suggestions or _suggestions_for(principal.role)
+        return res.as_dict()
+
+    res.pending = pending  # keep it alive
+    res.context = _carry(ctx)
+    res.reply = f"Sorry, I didn't catch that — reply **yes** to {pending.get('action', 'confirm')} or **no** to cancel."
+    res.confidence = "low"
+    res.suggestions = _suggestions_for(principal.role)
+    return res.as_dict()
+
+
+def _execute(T, ApiError, action, pending, res, principal):
+    """Run the confirmed MCP tool. On a transient failure, keep `pending` so 'yes' retries."""
     try:
         if action == "approve":
             out = T["approvals"].approve_sheet(pending["id"])
             res.tools_used = ["approve_sheet"]
             res.reply = f"Approved **{pending['title']}** — it's now in {_status(out)}."
             res.actions = [f"Approved “{pending['title']}”"]
+        elif action == "finance_approve":
+            out = T["finance"].finance_decision(pending["id"], True, "Approved by finance.")
+            res.tools_used = ["finance_decision"]
+            res.reply = f"Approved **{pending['title']}** — it's now {_status(out)}."
+            res.actions = [f"Finance-approved “{pending['title']}”"]
+        elif action == "finance_reject":
+            out = T["finance"].finance_decision(pending["id"], False, pending.get("reason", "Rejected."))
+            res.tools_used = ["finance_decision"]
+            res.reply = f"Rejected **{pending['title']}** — it's now {_status(out)}."
+            res.actions = [f"Finance-rejected “{pending['title']}”"]
         elif action == "return":
-            # Return = request-info on the first line item (manager 'return' action).
             sheet = T["expenses"].get_expense(pending["id"])
-            li = sheet["line_items"][0]["id"]
-            T["approvals"].return_to_employee(pending["id"], li, pending["reason"])
+            items = sheet.get("line_items") or []
+            if not items:
+                res.reply = "That sheet has no line items to return."
+                res.confidence = "low"
+                return
+            T["approvals"].return_to_employee(pending["id"], items[0]["id"], pending["reason"])
             res.tools_used = ["get_expense", "return_to_employee"]
             res.reply = f"Returned **{pending['title']}** to the employee with your note."
             res.actions = [f"Returned “{pending['title']}”"]
@@ -316,64 +476,155 @@ def _resolve_pending(T, ApiError, msg, low, pending, res, principal):
             res.tools_used = ["submit_expense"]
             res.reply = f"Submitted **{pending['title']}** — it's now in {_status(out)}."
             res.actions = [f"Submitted “{pending['title']}”"]
+        elif action == "withdraw":
+            out = T["expenses"].withdraw_expense(pending["id"])
+            res.tools_used = ["withdraw_expense"]
+            res.reply = f"Withdrew the draft **{pending['title']}** — it's now {_status(out)}."
+            res.actions = [f"Withdrew “{pending['title']}”"]
+        elif action == "resubmit":
+            out = T["expenses"].resubmit_expense(pending["id"])
+            res.tools_used = ["resubmit_expense"]
+            res.reply = f"Resubmitted **{pending['title']}** — it's now in {_status(out)}."
+            res.actions = [f"Resubmitted “{pending['title']}”"]
+        elif action == "create_confirm":
+            _do_create(T, ApiError, pending["title"], pending["period"], res, principal, {}, force=True)
+        elif action == "logout":
+            T["auth_tools"].logout()
+            res.tools_used = ["logout"]
+            res.reply = "You've been signed out of the assistant session."
+            res.actions = ["Signed out"]
+        else:
+            res.reply = "That request is no longer valid — let's start over."
+            res.confidence = "low"
     except ApiError as e:
         res.reply = _friendly_error(e)
         res.confidence = "low"
-    res.suggestions = _suggestions_for(principal.role)
-    return res.as_dict()
+        if getattr(e, "status", 0) in _TRANSIENT:
+            res.pending = pending  # preserve so the user can retry with "yes"
+            res.reply += " Reply **yes** to try again."
 
 
-def _create_from(T, ApiError, merged, res):
-    if not merged.get("title"):
-        res.needs = ["title"]; res.pending = merged; res.reply = "What should the sheet be titled?"
-        return res.as_dict()
-    if not merged.get("period"):
-        res.needs = ["period"]; res.pending = merged; res.reply = "Which month is it for? (e.g. 2026-06)"
-        return res.as_dict()
-    sheet = T["expenses"].create_expense(merged["title"], merged["period"])
-    res.tools_used = ["create_expense"]
-    res.reply = f"Created a draft **{merged['title']}** for {merged['period']}."
+def _do_create(T, ApiError, title, period, res, principal, ctx, force=False):
+    """Create a draft — with a duplicate guard (Phase 5) unless the user already confirmed."""
+    if not force:
+        existing = [
+            s for s in T["expenses"].list_my_expenses()
+            if str(s.get("title", "")).strip().lower() == title.strip().lower()
+            and str(s.get("period", "")) == period
+            and "DRAFT" in str(s.get("status", "")).upper()
+        ]
+        if existing:
+            res.tools_used = ["list_my_expenses"]
+            res.pending = {"action": "create_confirm", "title": title, "period": period}
+            res.reply = (
+                f"You already have a draft **{title}** for {period}. "
+                "Create another one anyway? Reply **yes** to confirm or **no** to cancel."
+            )
+            res.confidence = "medium"
+            return
+    sheet = T["expenses"].create_expense(title, period)
+    res.tools_used = (res.tools_used or []) + ["create_expense"]
+    res.reply = f"Created a draft **{title}** for {period}. Add line items and receipts, then submit it."
     res.actions = ["Created a draft expense sheet"]
-    return res.as_dict()
 
 
 def _skill_fallback(T, ApiError, msg, low, ctx, res, principal):
     res.confidence = "low"
     res.reply = (
         "I can help with expenses, approvals, receipts, policy questions, reports, and dashboards. "
-        "Try one of the suggestions below."
+        "Try one of the suggestions below, or ask *“what do I need to do next?”*"
     )
 
 
 # --- helpers ------------------------------------------------------------------------------ #
-def _numbered_sheets(rows: list[dict], noun: str) -> tuple[str, dict | None]:
+def _numbered_sheets(rows: list[dict], noun: str, kind: str) -> tuple[str, dict | None]:
     if not rows:
-        return (f"No {noun}s right now. 🎉", None)
-    last_list = []
-    lines = []
+        return (f"No {noun}s right now. 🎉", {"last_list": [], "list_kind": kind})
+    last_list, lines = [], []
     for i, s in enumerate(rows, 1):
         title = s.get("title") or "Untitled"
         who = s.get("employee_name")
-        amt = _money(s.get("total"))
         suffix = f" — {who}" if who else ""
-        lines.append(f"{i}. **{title}**{suffix} · {amt} · {_status(s)}")
+        lines.append(f"{i}. **{title}**{suffix} · {_money(s.get('total'))} · {_status(s)}")
         last_list.append({"ref": i, "id": s.get("id"), "title": title})
-    return ("\n".join(lines), {"last_list": last_list})
+    return ("\n".join(lines), {"last_list": last_list, "list_kind": kind})
 
 
-def _resolve_ref(low: str, ctx: dict) -> dict | None:
-    m = re.search(r"\b(\d{1,3})\b", low)
-    last = ctx.get("last_list") or []
-    if m and last:
-        ref = int(m.group(1))
-        for item in last:
-            if item.get("ref") == ref:
-                return item
+def _carry(ctx: dict) -> dict | None:
+    """Preserve the active list across a confirmation turn so follow-ups keep working."""
+    kept = {k: ctx[k] for k in ("last_list", "list_kind") if k in ctx}
+    return kept or None
+
+
+def _ask_to_list(res, verb: str, list_cmd: str):
+    res.reply = f"Which one should I {verb}? Say *“{list_cmd}”* first, then e.g. *“{verb} 1”* (or *“{verb} the latest”*)."
+    res.confidence = "low"
     return None
 
 
+def _ref_in(low: str) -> int | None:
+    m = re.search(r"#?\b(\d{1,3})\b", low)
+    if m:
+        return int(m.group(1))
+    for word, n in _ORDINALS.items():
+        if re.search(rf"\b{re.escape(word)}\b", low):
+            return n
+    return None
+
+
+def _title_match(low: str, title: str) -> bool:
+    title_l = title.lower()
+    for tok in re.findall(r"[a-z0-9]{3,}", low):
+        if tok not in _TITLE_STOPWORDS and tok in title_l:
+            return True
+    return False
+
+
+def _resolve_ref(low: str, ctx: dict) -> dict | None:
+    """Resolve a reference against the last shown numbered list (digit / ordinal / last / title)."""
+    last = ctx.get("last_list") or []
+    if not last:
+        return None
+    ref = _ref_in(low)
+    if ref is None and any(w in low for w in ("last", "latest", "most recent", "final")):
+        ref = len(last)
+    if ref is not None:
+        return next((it for it in last if it.get("ref") == ref), None)
+    return next((it for it in last if _title_match(low, it.get("title", ""))), None)
+
+
+def _resolve_target(low: str, ctx: dict, fetch: Callable[[], list[dict]]) -> dict | None:
+    """Resolve a target sheet — first from the last list, else by fetching the relevant list
+    and matching by title / 'latest' / a single candidate."""
+    hit = _resolve_ref(low, ctx)
+    if hit:
+        return hit
+    rows = fetch() or []
+    if not rows:
+        return None
+    for r in rows:
+        if _title_match(low, r.get("title", "")):
+            return {"id": r.get("id"), "title": r.get("title") or "Untitled"}
+    if any(w in low for w in ("last", "latest", "most recent", "recent")):
+        newest = max(rows, key=lambda r: str(r.get("updated_at") or r.get("created_at") or ""))
+        return {"id": newest.get("id"), "title": newest.get("title") or "Untitled"}
+    if len(rows) == 1:
+        return {"id": rows[0].get("id"), "title": rows[0].get("title") or "Untitled"}
+    return None
+
+
+def _affirmative(low: str) -> bool:
+    s = low.strip().rstrip("!. ")
+    return s in _AFFIRM or bool(re.match(r"^(yes|yeah|yep|sure|ok|okay|confirm|go ahead|do it|proceed)\b", s))
+
+
+def _negative(low: str) -> bool:
+    s = low.strip().rstrip("!. ")
+    return s in _NEGATE or bool(re.match(r"^(no|nope|nah|cancel|never ?mind|stop|abort|don'?t|forget)\b", s))
+
+
 def _extract_reason(msg: str) -> str | None:
-    m = re.search(r"\b(?:because|reason|since|due to|:)\s+(.*)", msg, re.I)
+    m = re.search(r"\b(?:because|reason|since|due to|:|-)\s+(.*)", msg, re.I)
     return m.group(1).strip().rstrip(".") if m else None
 
 
@@ -394,41 +645,55 @@ def _money(v) -> str:
 
 
 def _status(s: dict) -> str:
-    raw = str(s.get("status", "")).replace("_", " ").title()
-    return raw or "—"
+    return str(s.get("status", "")).replace("_", " ").title() or "—"
 
 
 def _friendly_error(e) -> str:
-    msg = getattr(e, "message", str(e))
     status = getattr(e, "status", 0)
-    if status == 403:
-        return "You don't have access to that — it's outside your role or agency."
+    msg = re.sub(r"^Request failed:\s*", "", getattr(e, "message", str(e)) or "")
     if status == 401:
         return "Your session has expired. Please sign in again."
-    return msg
+    if status == 403:
+        return "You don't have access to that — it's outside your role or agency."
+    if status == 404:
+        return "I couldn't find that item — it may have changed. Try listing again."
+    if status == 409:
+        return msg or "That conflicts with the item's current state — it may have already moved on."
+    if status == 422:
+        return msg or "Some details weren't valid — please check and try again."
+    if status in _TRANSIENT:
+        return "That didn't go through due to a temporary problem."
+    return msg or "Sorry, that didn't work."
 
 
 def _suggestions_for(role: str) -> list[str]:
-    role = (role or "").lower()
+    role = str(role or "").lower()
     if role == "manager":
-        return ["Show pending approvals", "What's the per-meal limit?", "Summarize the spend dashboard"]
+        return ["Show pending approvals", "What do I need to do next?", "What's the per-meal limit?"]
     if role == "finance":
         return ["Show the finance queue", "Generate finance KPIs", "Spend by category"]
     if role == "admin":
         return ["List users", "System health", "Show the dashboard"]
-    return ["Show my expenses", "Create a new expense sheet", "What's the receipt policy?"]
+    return ["Show my expenses", "Create a new expense sheet", "What do I need to do next?"]
 
 
 def suggestions_for_screen(role: str, screen: str | None) -> list[str]:
     """Context-aware suggestions for the current screen (Phase 4)."""
-    role = (role or "").lower()
-    screen = (screen or "").lower()
+    screen = str(screen or "").lower()
     if "manager" in screen:
-        return ["Review pending approvals", "Flag high-value sheets to review", "Show returned items"]
+        return ["Review pending approvals", "What do I need to do next?", "Show returned items"]
     if "finance" in screen:
-        return ["Review the finance queue", "Generate the monthly report", "Find likely duplicate expenses"]
+        return ["Review the finance queue", "Generate finance KPIs", "Find likely duplicate expenses"]
     if "admin" in screen:
-        return ["User summary", "System health", "Audit/activity summary"]
+        return ["List users", "System health", "Show the dashboard"]
     if "employee" in screen:
-        return ["Create a new expense sheet", "Check my approval status", "View my returned expenses"]
+        return ["Create a new expense sheet", "What do I need to do next?", "Show my expenses"]
     return _suggestions_for(role)
+
+
+# Imperative verbs that should win over keyword routing (populated once skills are defined).
+_LEADING_VERBS.update({
+    "approve": _skill_approve, "reject": _skill_reject, "return": _skill_reject,
+    "decline": _skill_reject, "submit": _skill_submit, "resubmit": _skill_resubmit,
+    "withdraw": _skill_withdraw, "recall": _skill_withdraw, "create": _skill_create,
+})
