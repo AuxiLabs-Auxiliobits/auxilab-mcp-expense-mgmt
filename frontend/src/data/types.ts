@@ -117,6 +117,7 @@ export interface Attachment {
   scanStatus: ScanStatus;
   ocrStatus: OcrStatus;
   uploadedAt?: string;
+  downloadUrl?: string;
 }
 
 /** One entry in a sheet's approval/decision history (manager/finance/LLM actions). */
