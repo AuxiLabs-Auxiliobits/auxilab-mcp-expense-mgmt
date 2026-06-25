@@ -91,7 +91,7 @@ export function LineItemDialog({
     reset,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<LineItemValues>({
     // Cast: the schema coerces number inputs (z.coerce / preprocess), so its
     // input type differs from the inferred output type — runtime is correct.

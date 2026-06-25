@@ -11,11 +11,17 @@ from decimal import Decimal
 
 from sqlmodel import Session, select
 
+from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.principal import Principal, Scope
-from app.schemas.dto import CategoryTotal, ReportSummaryOut
-from expense_core.schemas.enums import Category, LineItemStatus
+from app.schemas.dto import (
+    CategoryTotal,
+    FinanceKpisOut,
+    ReportSummaryOut,
+    SpendByCategoryOut,
+)
+from expense_core.schemas.enums import Category, LineItemStatus, SheetStatus
 from expense_core.tools.report_summariser import SummaryLineItem, summarise_report
 
 
@@ -87,4 +93,76 @@ def build_summary(
         by_category=by_category,
         by_status=by_status,
         narrative=report.narrative,
+    )
+
+
+def _scoped_line_items(
+    session: Session, principal: Principal, agency_id: str | None = None
+) -> list[LineItem]:
+    """Line items visible to the caller: manager → own agency; finance/admin → all (optionally
+    filtered to one agency)."""
+    stmt = select(LineItem).join(ExpenseSheet, LineItem.sheet_id == ExpenseSheet.id)
+    if principal.scope is Scope.AGENCY:
+        stmt = stmt.where(ExpenseSheet.agency_id == principal.agency_id)
+    elif agency_id:
+        stmt = stmt.where(ExpenseSheet.agency_id == agency_id)
+    return list(session.exec(stmt).all())
+
+
+def spend_by_category(
+    session: Session, principal: Principal, *, agency_id: str | None = None
+) -> list[SpendByCategoryOut]:
+    """Total spend per expense category within the caller's scope, highest first."""
+    totals: dict[str, Decimal] = {}
+    for item in _scoped_line_items(session, principal, agency_id):
+        cat = (item.category or Category.OTHER)
+        cat = cat.value if hasattr(cat, "value") else str(cat)
+        totals[cat] = totals.get(cat, Decimal("0")) + item.amount
+    return [
+        SpendByCategoryOut(category=cat, amount=amount)
+        for cat, amount in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+
+
+# Statuses that mean a sheet reached a finance-stage outcome (the KPI denominator).
+_FINANCE_REACHED = {
+    SheetStatus.IN_FINANCE_REVIEW,
+    SheetStatus.FINANCE_APPROVED,
+    SheetStatus.FINANCE_REJECTED,
+    SheetStatus.FINANCE_MANUAL_REVIEW,
+    SheetStatus.APPROVED,
+    SheetStatus.REJECTED,
+    SheetStatus.PAID,
+}
+
+
+def build_finance_kpis(session: Session, principal: Principal) -> FinanceKpisOut:
+    """Deterministic finance KPIs over all sheets in the caller's scope (SCOPING §4)."""
+    stmt = select(ExpenseSheet)
+    if principal.scope is Scope.AGENCY:
+        stmt = stmt.where(ExpenseSheet.agency_id == principal.agency_id)
+    sheets = list(session.exec(stmt).all())
+
+    reached = [s for s in sheets if s.status in _FINANCE_REACHED]
+    auto_approved = sum(1 for s in reached if s.status is SheetStatus.FINANCE_APPROVED)
+    manual = sum(1 for s in sheets if s.status is SheetStatus.FINANCE_MANUAL_REVIEW)
+    auto_rate = round(100.0 * auto_approved / len(reached), 1) if reached else 0.0
+
+    # Policy citations: finance decisions that cited at least one clause.
+    citations = sum(
+        1
+        for d in session.exec(select(Decision)).all()
+        if d.cited_clauses and d.cited_clauses not in ("[]", "null", "")
+    )
+
+    items = _scoped_line_items(session, principal)
+    compliant = sum(1 for i in items if _is_compliant(i))
+    compliance_rate = round(100.0 * compliant / len(items), 1) if items else 100.0
+
+    return FinanceKpisOut(
+        auto_approval_rate=auto_rate,
+        manual_interventions=manual,
+        policy_citations=citations,
+        policy_compliance_rate=compliance_rate,
+        finance_reached=len(reached),
     )

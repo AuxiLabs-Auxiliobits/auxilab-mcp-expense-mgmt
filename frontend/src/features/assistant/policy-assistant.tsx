@@ -33,7 +33,8 @@ function prettyAgency(agencyId: string) {
 export function PolicyAssistant({ role }: { role: Role }) {
   const { data: user } = useCurrentUser(role);
   const agencyId = user?.agencyId ?? "AGY-CRISPIN";
-  const agencyName = prettyAgency(agencyId);
+  // Prefer the real agency name (never expose the raw agency id in the UI).
+  const agencyName = user?.agencyName || prettyAgency(agencyId);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");

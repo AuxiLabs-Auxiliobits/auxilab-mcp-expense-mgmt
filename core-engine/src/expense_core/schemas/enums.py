@@ -53,6 +53,7 @@ class SheetStatus(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     PAID = "PAID"
+    WITHDRAWN = "WITHDRAWN"  # employee withdrew a draft before submission (soft, auditable)
 
 
 class LineItemStatus(StrEnum):

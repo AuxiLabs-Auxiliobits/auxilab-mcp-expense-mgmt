@@ -3,11 +3,12 @@ and OCR'd before processing (SCOPING §6.1)."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
-from app.models.base import new_id
+from app.models.base import new_id, utcnow
 
 
 class ScanStatus(StrEnum):
@@ -29,7 +30,9 @@ class Attachment(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     line_item_id: str = Field(foreign_key="line_items.id", index=True)
     blob_uri: str
+    filename: str | None = None  # original upload name (for display + download Content-Disposition)
     file_type: str
     size: int
     scan_status: ScanStatus = Field(default=ScanStatus.PENDING)
     ocr_status: OcrStatus = Field(default=OcrStatus.PENDING)
+    uploaded_at: datetime = Field(default_factory=utcnow)

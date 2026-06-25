@@ -17,6 +17,7 @@ import {
 } from "./mock";
 import { toAiFlag, validateLineItem, type IntakeIssue } from "@/lib/intake";
 import {
+  apiBlob,
   apiDelete,
   apiGet,
   apiPatch,
@@ -26,7 +27,9 @@ import {
 } from "./http";
 import {
   mapAgency,
+  mapAttachment,
   mapAudit,
+  mapDecision,
   mapNotification,
   mapPolicy,
   mapSheet,
@@ -63,8 +66,10 @@ import type {
   AgencyPolicyDocument,
   AgencyTier,
   AppNotification,
+  Attachment,
   AuditLogEntry,
   Currency,
+  DecisionEntry,
   EmployeeKpis,
   ExpenseCategory,
   ExpenseSheet,
@@ -219,6 +224,62 @@ export function getSheet(id: string): Promise<ExpenseSheet> {
   return backend(
     () => apiGet<Raw>(`/sheets/${id}`).then(mapSheet),
     () => delay(clone(findSheet(id))),
+  );
+}
+
+// ── Receipts & approval history (manager + finance review) ───────────────────
+
+/** All receipts on a sheet (scope-checked server-side). */
+export function getSheetReceipts(sheetId: string): Promise<Attachment[]> {
+  return backend(
+    () => apiGet<Raw[]>(`/sheets/${sheetId}/receipts`).then((rows) => rows.map(mapAttachment)),
+    () => {
+      const sheet = sheetStore.find((s) => s.id === sheetId);
+      const atts = (sheet?.lineItems ?? []).flatMap((li) => li.attachments ?? []);
+      return delay(clone(atts));
+    },
+  );
+}
+
+/** Fetch a receipt's bytes (authenticated) for inline preview or download. */
+export function fetchReceiptBlob(
+  attachmentId: string,
+  download = false,
+): Promise<{ blob: Blob; filename: string; contentType: string }> {
+  return apiBlob(`/attachments/${attachmentId}/content${download ? "?download=true" : ""}`);
+}
+
+// ── Policy Assistant (agency RAG over Azure Foundry, backend-resolved) ────────
+export interface AssistantAnswer {
+  answer: string;
+  citations: import("./policy-kb").PolicyClause[];
+  routedToHuman: boolean;
+}
+
+/** Ask the backend Policy Assistant (RAG over the caller's agency policy via Azure Foundry,
+ *  offline composer when Azure isn't configured). Agency is taken from the auth token. */
+export function queryPolicyAssistant(query: string): Promise<AssistantAnswer> {
+  return apiPost<Raw>("/assistant/policy", { query }).then((r) => ({
+    answer: String(r.answer ?? ""),
+    routedToHuman: Boolean(r.routed_to_human),
+    citations: Array.isArray(r.citations)
+      ? r.citations.map((c: Raw) => ({
+          id: String(c.id ?? ""),
+          agencyId: "",
+          keywords: [],
+          title: String(c.title ?? "Policy clause"),
+          text: String(c.text ?? ""),
+          source: String(c.source ?? ""),
+        }))
+      : [],
+  }));
+}
+
+/** A sheet's approval/decision history (manager → finance → LLM actions), oldest first. */
+export function getSheetDecisions(sheetId: string): Promise<DecisionEntry[]> {
+  return backend(
+    () => apiGet<Raw[]>(`/sheets/${sheetId}/decisions`).then((rows) => rows.map(mapDecision)),
+    () => delay([]),
   );
 }
 

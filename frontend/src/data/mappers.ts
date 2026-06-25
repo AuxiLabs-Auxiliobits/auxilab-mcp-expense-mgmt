@@ -7,7 +7,9 @@ import type {
   AgencyPolicyDocument,
   AgencyStatus,
   AppNotification,
+  Attachment,
   AuditLogEntry,
+  DecisionEntry,
   ExpenseSheet,
   LineItem,
   Role,
@@ -173,6 +175,7 @@ export function mapUser(r: Raw): User {
     email: r.email ?? "",
     role: String(r.role ?? "employee").toLowerCase() as Role,
     agencyId: String(r.agency_id ?? r.agencyId ?? ""),
+    agencyName: r.agency_name ?? r.agencyName ?? undefined,
   };
 }
 
@@ -210,5 +213,32 @@ export function mapSpend(r: Raw): SpendByCategory {
   return {
     category: (r.category ?? "Other") as SpendByCategory["category"],
     amount: num(r.amount),
+  };
+}
+
+export function mapAttachment(r: Raw): Attachment {
+  return {
+    id: String(r.id ?? ""),
+    lineItemId: String(r.line_item_id ?? r.lineItemId ?? ""),
+    fileName: r.filename ?? r.fileName ?? r.file_name ?? "receipt",
+    fileType: r.file_type ?? r.fileType ?? "application/octet-stream",
+    sizeBytes: num(r.size ?? r.sizeBytes, 0),
+    scanStatus: (String(r.scan_status ?? r.scanStatus ?? "pending").toLowerCase() as Attachment["scanStatus"]),
+    ocrStatus: (String(r.ocr_status ?? r.ocrStatus ?? "pending").toLowerCase() as Attachment["ocrStatus"]),
+    uploadedAt: asUtc(r.uploaded_at ?? r.uploadedAt),
+  };
+}
+
+export function mapDecision(r: Raw): DecisionEntry {
+  return {
+    id: String(r.id ?? ""),
+    actorId: String(r.actor_id ?? r.actorId ?? ""),
+    actorRole: String(r.actor_role ?? r.actorRole ?? "system").toLowerCase(),
+    action: r.action ?? "EVENT",
+    reason: r.reason ?? undefined,
+    llmModelVersion: r.llm_model_version ?? undefined,
+    policyVersion: r.policy_version ?? undefined,
+    citedClauses: Array.isArray(r.cited_clauses) ? r.cited_clauses.map(String) : [],
+    timestamp: asUtc(r.timestamp ?? r.created_at) ?? new Date().toISOString(),
   };
 }

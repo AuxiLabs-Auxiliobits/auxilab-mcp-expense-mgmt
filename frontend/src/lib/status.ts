@@ -94,6 +94,43 @@ export const AGENCY_STATUS_META: Record<AgencyStatus, StatusMeta> = {
   soft_deleted: { label: "Deleted", badgeClass: NEUTRAL, icon: "delete" },
 };
 
+/**
+ * Map a raw audit/decision action code to a business-friendly label so end users never see
+ * internal codes (e.g. "INTAKE_RETURNED"). Unknown codes are humanized (Title Case, no
+ * underscores) rather than shown raw.
+ */
+const ACTION_LABELS: Record<string, string> = {
+  SHEET_DRAFTED: "Draft created",
+  SUBMITTED: "Submitted for review",
+  SHEET_SUBMITTED: "Submitted for review",
+  SHEET_RESUBMITTED: "Resubmitted for review",
+  INTAKE_RETURNED: "Returned for changes",
+  RETURNED_TO_EMPLOYEE: "Returned for changes",
+  RECEIPT_ATTACHED: "Receipt attached",
+  SHEET_WITHDRAWN: "Withdrawn",
+  ADVANCED_TO_FINANCE: "Approved by manager",
+  MANAGER_SHEET_APPROVED: "Approved by manager",
+  MANAGER_MANAGER_APPROVED: "Line item approved",
+  MANAGER_MANAGER_REJECTED: "Line item rejected",
+  MANAGER_INFO_REQUESTED: "Information requested",
+  FINANCE_APPROVED: "Approved by finance",
+  FINANCE_REJECTED: "Rejected by finance",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  PAID: "Paid",
+};
+
+export function friendlyAction(action: string): string {
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  // Strip internal prefixes (LLM_, FINANCE_HUMAN_) then humanize.
+  const cleaned = action.replace(/^(LLM_|FINANCE_HUMAN_)/, "");
+  if (ACTION_LABELS[cleaned]) return ACTION_LABELS[cleaned];
+  return cleaned
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
 /** Category → Material Symbols icon, used in line-item grids. */
 export const CATEGORY_ICON: Record<string, string> = {
   "Meals & Entertainment": "restaurant",

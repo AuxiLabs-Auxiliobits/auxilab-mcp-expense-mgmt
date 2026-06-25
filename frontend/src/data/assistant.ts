@@ -1,4 +1,6 @@
 import { composeAnswer, retrieve, type PolicyClause } from "./policy-kb";
+import { queryPolicyAssistant } from "./api";
+import { USE_BACKEND } from "./http";
 
 /**
  * Simulated streaming RAG run for the Policy Assistant. Emits the same shape a
@@ -33,11 +35,36 @@ export async function* streamPolicyAnswer(
   signal?: AbortSignal,
 ): AsyncGenerator<AssistantEvent> {
   yield { type: "step", text: "Retrieving agency policy (hybrid + semantic)…" };
-  await delay(700, signal);
 
+  // Backend path: real RAG over the agency policy via Azure Foundry (offline composer when
+  // Azure isn't configured). The answer streams in token-by-token for the same UX.
+  if (USE_BACKEND) {
+    try {
+      const res = await queryPolicyAssistant(query);
+      yield { type: "citations", clauses: res.citations };
+      yield {
+        type: "step",
+        text: res.citations.length
+          ? `Grounding answer in ${res.citations.length} clause${res.citations.length === 1 ? "" : "s"}…`
+          : "Preparing guidance…",
+      };
+      await delay(250, signal);
+      const tokens = res.answer.match(/\s+|\S+/g) ?? [res.answer];
+      for (const tok of tokens) {
+        yield { type: "token", text: tok };
+        await delay(12, signal);
+      }
+      yield { type: "done", full: res.answer };
+      return;
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") throw err;
+      // Backend unreachable → fall back to the offline knowledge base below.
+    }
+  }
+
+  await delay(500, signal);
   const clauses = retrieve(query, agencyId);
   yield { type: "citations", clauses };
-
   yield {
     type: "step",
     text: clauses.length

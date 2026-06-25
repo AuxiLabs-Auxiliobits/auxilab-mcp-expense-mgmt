@@ -10,7 +10,7 @@ from app.auth.dependencies import require
 from app.db import get_session
 from app.principal import Principal
 from app.rbac.permissions import Capability
-from app.schemas.dto import ReportSummaryOut
+from app.schemas.dto import ReportSummaryOut, SpendByCategoryOut
 from app.services import reports_service
 
 router = APIRouter(
@@ -33,3 +33,18 @@ async def summary(
     """Aggregated totals for the dashboard. `period` ('YYYY-MM') and `agency_id` are optional
     filters; managers are always scoped to their own agency regardless of `agency_id`."""
     return reports_service.build_summary(session, principal, period=period, agency_id=agency_id)
+
+
+@router.get(
+    "/spend-by-category",
+    response_model=list[SpendByCategoryOut],
+    summary="Total spend per expense category (scoped), highest first",
+)
+async def spend_by_category(
+    agency_id: str | None = None,
+    principal: Principal = Depends(require(Capability.VIEW_REPORTS)),
+    session: Session = Depends(get_session),
+) -> list[SpendByCategoryOut]:
+    """Powers the spend-by-category chart. Manager → own agency; Finance/Admin → all
+    (optionally filtered by `agency_id`)."""
+    return reports_service.spend_by_category(session, principal, agency_id=agency_id)

@@ -73,3 +73,25 @@ async def action_line_item(
 
     sheet = sheet_service.manager_action(session, sheet, item, principal, body.action, body.reason)
     return sheet_to_out(session, sheet)
+
+
+@router.post(
+    "/sheets/{sheet_id}/approve",
+    response_model=SheetOut,
+    summary="Approve the whole sheet (all not-yet-rejected line items) and advance to finance",
+    responses={
+        400: {"description": "Sheet has no line items"},
+        404: {"description": "Sheet not found"},
+        409: {"description": "Sheet not in manager review"},
+    },
+)
+async def approve_sheet(
+    sheet_id: str,
+    principal: Principal = Depends(require(Capability.MANAGER_ACTION_LINE_ITEM)),
+    session: Session = Depends(get_session),
+) -> SheetOut:
+    """One-click approve: marks every not-yet-rejected line item MANAGER_APPROVED and advances
+    the sheet to finance review. Agency scope + SoD enforced (SCOPING §6.2, §8)."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    sheet = sheet_service.manager_approve_sheet(session, sheet, principal)
+    return sheet_to_out(session, sheet)

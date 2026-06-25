@@ -89,6 +89,7 @@ export interface User {
   email: string;
   role: Role;
   agencyId: string;
+  agencyName?: string;
   avatarUrl?: string;
 }
 
@@ -115,8 +116,20 @@ export interface Attachment {
   sizeBytes: number;
   scanStatus: ScanStatus;
   ocrStatus: OcrStatus;
-  /** API path to fetch the bytes (auth required) — present for stored attachments. */
-  downloadUrl?: string;
+  uploadedAt?: string;
+}
+
+/** One entry in a sheet's approval/decision history (manager/finance/LLM actions). */
+export interface DecisionEntry {
+  id: string;
+  actorId: string;
+  actorRole: string;
+  action: string;
+  reason?: string;
+  llmModelVersion?: string;
+  policyVersion?: string;
+  citedClauses: string[];
+  timestamp: string;
 }
 
 /** Deterministic intake-tier check results (SCOPING.md §6.1). */

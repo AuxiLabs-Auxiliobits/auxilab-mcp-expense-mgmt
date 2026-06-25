@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { useAgencies, useUploadPolicy } from "@/data/hooks";
+import { useAgencies, useCurrentUser, useUploadPolicy } from "@/data/hooks";
 import { baselinePolicy } from "@/data/mock";
 import { fileIssue } from "@/lib/intake";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,11 @@ import {
 } from "@/components/ui/select";
 
 export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
-  const { data: agencies } = useAgencies();
+  const { data: user } = useCurrentUser("finance");
+  const isAdmin = user?.role === "admin";
+  // Admins manage any agency (list endpoint is admin-only); Finance only their own,
+  // so they never hit /admin/agencies — their agency comes from the session.
+  const { data: agencies } = useAgencies(isAdmin);
   const upload = useUploadPolicy();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -38,7 +42,8 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
   const [effectiveDate, setEffectiveDate] = useState("");
   const [fileName, setFileName] = useState("");
 
-  const agencyList = agencies ?? [];
+  const agencyList =
+    agencies ?? (user?.agencyId ? [{ id: user.agencyId, name: user.agencyName ?? "My agency" }] : []);
   const valid = agencyId && name.trim() && version.trim() && effectiveDate && fileName;
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -135,7 +140,7 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!valid || upload.isPending}>
+          <Button onClick={submit} disabled={!valid} loading={upload.isPending}>
             Upload (Draft)
           </Button>
         </DialogFooter>
