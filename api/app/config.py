@@ -6,9 +6,16 @@ The single switch that makes Entra a config flip is `AUTH_PROVIDER` (db | entra)
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor the default SQLite file to the repo root (this file is api/app/config.py), so the
+# DB is the same single file no matter which directory the server/Alembic is launched from.
+# A relative "./expense.db" would otherwise create a separate DB per working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_SQLITE_URL = f"sqlite:///{(_REPO_ROOT / 'expense.db').as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -37,7 +44,7 @@ class Settings(BaseSettings):
 
     # --- Data -------------------------------------------------------------- #
     # SQLite by default so the API runs with zero infra; point at Postgres in any real env.
-    database_url: str = "sqlite:///./expense.db"
+    database_url: str = _DEFAULT_SQLITE_URL
     db_echo: bool = False
 
     # --- Seeding ----------------------------------------------------------- #

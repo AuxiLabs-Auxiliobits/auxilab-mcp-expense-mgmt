@@ -159,6 +159,9 @@ export interface LineItem {
   managerReason?: string;
   policyStatus?: LineItemStatus;
   policyClauseRef?: string;
+  /** Receipt-scan flag for Finance: total unreadable or ≠ entered amount. */
+  needsHumanReview?: boolean;
+  reviewReason?: string;
   /** AI-surfaced intake/finance flag shown inline in the grids. */
   aiFlag?: {
     message: string;

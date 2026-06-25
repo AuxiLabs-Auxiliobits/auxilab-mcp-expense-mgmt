@@ -34,16 +34,17 @@ def _item(**kw) -> LineItemInput:
     return LineItemInput(**base)
 
 
-# §20.E row 1 — meal over per-meal limit
-def test_meal_over_limit_rejected():
+# Per-category caps were removed from intake — a meal of any amount clears the cap rule
+# (a receipt is mandatory at submission instead).
+def test_meal_no_longer_capped():
     res = check_policy(
         _item(category=Category.MEALS_ENTERTAINMENT, amount=Decimal("187")), POLICY, today=TODAY
     )
-    assert res.status is PolicyCheckStatus.FAIL
-    assert any(v.code == "OVER_MEAL_LIMIT" for v in res.violations)
+    assert res.status is PolicyCheckStatus.PASS
+    assert not any(v.code == "OVER_MEAL_LIMIT" for v in res.violations)
 
 
-# §19.3 — inclusive cap boundary ($100 passes, $100.01 fails) via baseline meal cap analogue
+# §19.3 — inclusive cap boundary helper is still used by the LLM finance approver cross-check.
 def test_cap_boundary_inclusive():
     assert POLICY.exceeds_cap(Decimal("75"), Decimal("75")) is False
     assert POLICY.exceeds_cap(Decimal("75.01"), Decimal("75")) is True
@@ -84,17 +85,19 @@ def test_near_match_window():
     assert res.risk is DuplicateRisk.MEDIUM
 
 
-# Receipt required over threshold when missing
-def test_receipt_required_over_threshold():
+# The receipt-over-threshold rule was removed: a receipt is mandatory on every line item
+# (enforced at submission), so intake itself no longer flags a missing receipt by amount.
+def test_no_receipt_threshold_violation():
     res = check_policy(_item(amount=Decimal("200"), has_receipt=False), POLICY, today=TODAY)
-    assert res.status is PolicyCheckStatus.FAIL
-    assert any(v.code == "RECEIPT_REQUIRED" for v in res.violations)
+    assert not any(v.code == "RECEIPT_REQUIRED" for v in res.violations)
 
 
-# Submission after month-end of incurred month is rejected (§19.6)
-def test_submission_window_missed():
+# The submission-window (month-end) rule was removed — back-dated months are valid
+# (periods come from a rolling 12-month window), so a prior-month expense no longer flags.
+def test_no_submission_window_violation():
     res = check_policy(_item(expense_date=date(2026, 5, 1)), POLICY, today=date(2026, 6, 14))
-    assert any(v.code == "SUBMISSION_WINDOW_MISSED" for v in res.violations)
+    assert not any(v.code == "SUBMISSION_WINDOW_MISSED" for v in res.violations)
+    assert res.status is PolicyCheckStatus.PASS
 
 
 # Summariser aggregation + compliance rate

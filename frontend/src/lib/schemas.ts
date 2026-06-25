@@ -39,7 +39,7 @@ export const lineItemSchema = z
       .positive("Amount must be greater than 0"),
     currency: z.enum(CURRENCIES),
     expenseDate: z.string().min(1, "Expense date is required"),
-    receiptDatetime: z.string().optional(),
+    receiptDatetime: z.string().min(1, "Receipt date & time is required"),
     receiptTotal: optionalNumber,
     tax: optionalNumber,
   })

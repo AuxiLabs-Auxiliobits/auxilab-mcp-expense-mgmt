@@ -6,7 +6,8 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
-import { uploadReceipt } from "@/data/api";
+import { uploadReceipt, scanReceipt } from "@/data/api";
+import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { baselinePolicy } from "@/data/mock";
 import {
   EXPENSE_CATEGORIES,
@@ -15,7 +16,13 @@ import {
   type LineItem,
 } from "@/data/types";
 import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
-import { fileIssue, fileNote, validateLineItem } from "@/lib/intake";
+import { fileIssue, fileNote } from "@/lib/intake";
+import {
+  policyPreview,
+  policyAdvisory,
+  type PolicyPreviewResult,
+  type PolicyAdvisory,
+} from "@/data/api";
 import type { AttachmentInput } from "@/data/api";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -53,22 +60,29 @@ export function LineItemDialog({
   open,
   onOpenChange,
   sheetId,
+  period,
   item,
   siblings,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sheetId: string;
+  /** Sheet's expense period ("YYYY-MM") — constrains the expense date to that month. */
+  period?: string;
   item?: LineItem;
   siblings: LineItem[];
 }) {
   const addLineItem = useAddLineItem();
   const updateLineItem = useUpdateLineItem();
   const qc = useQueryClient();
-  // Each entry carries optional `file` bytes — present for newly picked/dropped files,
-  // absent for attachments already on the server (edit mode).
-  const [files, setFiles] = useState<(AttachmentInput & { file?: File })[]>([]);
+  // Each entry carries optional `file` bytes (newly picked/dropped) and/or a `downloadUrl`
+  // (already on the server, edit mode) so we can show a real size + preview either way.
+  const [files, setFiles] = useState<
+    (AttachmentInput & { file?: File; downloadUrl?: string })[]
+  >([]);
   const [dragging, setDragging] = useState(false);
+  const [policy, setPolicy] = useState<PolicyPreviewResult | null>(null);
+  const [advisory, setAdvisory] = useState<PolicyAdvisory>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -115,6 +129,7 @@ export function LineItemDialog({
           fileName: a.fileName,
           fileType: a.fileType,
           sizeBytes: a.sizeBytes,
+          downloadUrl: a.downloadUrl,
         })),
       );
     } else {
@@ -124,22 +139,61 @@ export function LineItemDialog({
   }, [open, item, reset]);
 
   const v = watch();
-  const liveIssues = validateLineItem(
-    {
-      merchant: v.merchant ?? "",
-      description: v.description ?? "",
-      category: (v.category as ExpenseCategory) ?? "Other",
-      categoryOther: v.categoryOther,
-      amount: Number(v.amount) || 0,
-      currency: "USD" as Currency,
-      expenseDate: v.expenseDate ?? "",
-      receiptDatetime: v.receiptDatetime || undefined,
-      tax: v.tax != null ? Number(v.tax) : undefined,
-      attachments: files,
-    },
-    baselinePolicy,
-    siblings,
-  );
+
+  // Restrict the expense date to the sheet's period month (backend enforces this too).
+  const dateBounds = period
+    ? (() => {
+        const [y, m] = period.split("-").map(Number);
+        const last = new Date(y, m, 0).getDate();
+        return { min: `${period}-01`, max: `${period}-${String(last).padStart(2, "0")}` };
+      })()
+    : undefined;
+
+  // Live, authoritative policy check from the backend (engine `check_policy`) — debounced as
+  // the user types. Offline it falls back to the client validator (see api.policyPreview).
+  useEffect(() => {
+    const amount = Number(v.amount);
+    if (!amount || amount <= 0) {
+      setPolicy(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      policyPreview({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        amount,
+        currency: "USD",
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+        expenseDate: v.expenseDate || undefined,
+        receiptDatetime: v.receiptDatetime || undefined,
+        hasReceipt: files.length > 0,
+      })
+        .then(setPolicy)
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [v.category, v.amount, v.merchant, v.description, v.expenseDate, v.receiptDatetime, files.length]);
+
+  // RAG advisory: the relevant agency policy clause (advisory only; empty offline).
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      policyAdvisory({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+      })
+        .then(setAdvisory)
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [v.category, v.merchant, v.description]);
+
+  const policyStatus = policy?.status ?? "pass";
+  const liveIssues = (policy?.violations ?? []).map((vi) => ({
+    level: policyStatus === "fail" ? ("error" as const) : ("warning" as const),
+    message: vi.message,
+    clauseRef: vi.code,
+  }));
 
   function acceptFiles(picked: File[]) {
     const accepted: (AttachmentInput & { file?: File })[] = [];
@@ -203,6 +257,15 @@ export function LineItemDialog({
             await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
           }
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
+
+          // Trigger the server-side receipt scan so Finance gets a human-review flag if the
+          // receipt total can't be read or doesn't match the entered amount. Intentionally
+          // silent for the employee — the result is not surfaced here.
+          try {
+            await scanReceipt({ sheetId, lineItemId: targetId });
+          } catch {
+            /* scan is best-effort; never block the save */
+          }
         }
       }
 
@@ -311,6 +374,8 @@ export function LineItemDialog({
                 value={v.expenseDate}
                 onChange={(val) => setValue("expenseDate", val, { shouldValidate: true })}
                 placeholder="Select date"
+                min={dateBounds?.min}
+                max={dateBounds?.max}
               />
               {errors.expenseDate && <p className="text-label-md text-error">{errors.expenseDate.message}</p>}
             </div>
@@ -330,8 +395,13 @@ export function LineItemDialog({
                 mode="datetime"
                 value={v.receiptDatetime}
                 onChange={(val) => setValue("receiptDatetime", val, { shouldValidate: true })}
-                placeholder="Optional"
+                placeholder="Select date & time"
+                min={dateBounds?.min}
+                max={dateBounds?.max}
               />
+              {errors.receiptDatetime && (
+                <p className="text-label-md text-error">{errors.receiptDatetime.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="li-tax">Tax / VAT</Label>
@@ -396,7 +466,12 @@ export function LineItemDialog({
                       className="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2"
                     >
                       <div className="flex items-center gap-2">
-                        <Icon name="description" className="text-[18px] text-secondary" />
+                        <ReceiptPreview
+                          file={f.file}
+                          downloadUrl={f.downloadUrl}
+                          fileName={f.fileName}
+                          fileType={f.fileType}
+                        />
                         <span className="flex-1 truncate text-body-sm">{f.fileName}</span>
                         <span className="font-mono text-label-sm text-on-surface-variant">
                           {formatSize(f.sizeBytes)}
@@ -419,6 +494,12 @@ export function LineItemDialog({
                   );
                 })}
               </ul>
+            )}
+            {files.length === 0 && (
+              <p className="flex items-center gap-1 text-label-md text-error">
+                <Icon name="error" className="text-[14px]" />
+                A receipt is required to save this line item.
+              </p>
             )}
           </div>
 
@@ -449,11 +530,30 @@ export function LineItemDialog({
             </div>
           )}
 
+          {/* RAG advisory — cited agency policy clause (advisory only, never blocks) */}
+          {advisory.clause && (
+            <div className="space-y-1 rounded border border-secondary/30 bg-secondary-container/20 p-3">
+              <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
+                <Icon name="smart_toy" className="text-[14px] text-secondary" />
+                AI note · {advisory.clause.source}
+              </p>
+              <p className="text-body-sm text-on-surface">{advisory.clause.text}</p>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!blockingError} loading={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={
+                !!blockingError ||
+                files.length === 0 ||
+                addLineItem.isPending ||
+                updateLineItem.isPending
+              }
+            >
               {item ? "Save changes" : "Add line item"}
             </Button>
           </DialogFooter>

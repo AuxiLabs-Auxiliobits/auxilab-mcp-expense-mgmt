@@ -27,6 +27,9 @@ interface DateTimePickerProps {
   mode?: Mode;
   id?: string;
   placeholder?: string;
+  /** Optional selectable bounds (inclusive), "yyyy-MM-dd". Days outside are disabled. */
+  min?: string;
+  max?: string;
 }
 
 const DEMO_TODAY = new Date(2026, 5, 14);
@@ -48,20 +51,32 @@ export function DateTimePicker({
   mode = "datetime",
   id,
   placeholder = "Select…",
+  min,
+  max,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
   const parsed = parseValue(value, mode);
-  const [view, setView] = React.useState<Date>(parsed ?? DEMO_TODAY);
+  const initialView = parsed ?? (min ? parse(min, "yyyy-MM-dd", new Date()) : DEMO_TODAY);
+  const [view, setView] = React.useState<Date>(initialView);
   const [draft, setDraft] = React.useState<Date | null>(parsed);
+
+  // A day is selectable only within [min, max] (string compare on ISO dates).
+  const inRange = React.useCallback(
+    (day: Date) => {
+      const k = format(day, "yyyy-MM-dd");
+      return (!min || k >= min) && (!max || k <= max);
+    },
+    [min, max],
+  );
 
   // Re-sync from the incoming value each time the popover opens.
   React.useEffect(() => {
     if (open) {
       const p = parseValue(value, mode);
       setDraft(p);
-      setView(p ?? DEMO_TODAY);
+      setView(p ?? (min ? parse(min, "yyyy-MM-dd", new Date()) : DEMO_TODAY));
     }
-  }, [open, value, mode]);
+  }, [open, value, mode, min]);
 
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(view)),
@@ -159,17 +174,20 @@ export function DateTimePicker({
                 const selected = draft && isSameDay(day, draft);
                 const today = isSameDay(day, DEMO_TODAY);
                 const outside = !isSameMonth(day, view);
+                const disabled = !inRange(day);
                 return (
                   <button
                     key={day.toISOString()}
                     type="button"
-                    onClick={() => pickDay(day)}
+                    disabled={disabled}
+                    onClick={() => !disabled && pickDay(day)}
                     className={cn(
                       "h-8 w-8 rounded text-body-sm transition-colors",
                       outside && "text-on-surface-variant/40",
-                      !selected && "hover:bg-surface-container-low",
+                      disabled && "cursor-not-allowed text-on-surface-variant/30",
+                      !disabled && !selected && "hover:bg-surface-container-low",
                       selected && "bg-secondary font-semibold text-on-secondary",
-                      !selected && today && "ring-1 ring-secondary",
+                      !selected && today && !disabled && "ring-1 ring-secondary",
                     )}
                   >
                     {format(day, "d")}
@@ -241,11 +259,12 @@ export function DateTimePicker({
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={!inRange(DEMO_TODAY)}
               onClick={() => {
                 setView(DEMO_TODAY);
                 pickDay(DEMO_TODAY);
               }}
-              className="font-mono text-label-md text-secondary hover:underline"
+              className="font-mono text-label-md text-secondary hover:underline disabled:cursor-not-allowed disabled:text-on-surface-variant/40 disabled:no-underline"
             >
               Today
             </button>

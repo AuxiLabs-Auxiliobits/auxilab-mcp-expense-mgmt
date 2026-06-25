@@ -369,6 +369,127 @@ export function uploadReceipt(args: {
   );
 }
 
+export interface ReceiptScan {
+  source: string; // document_intelligence | text | unavailable
+  merchant?: string;
+  total?: number;
+  tax?: number;
+  reconciles?: boolean;
+  delta?: number;
+  matchesEntered?: boolean;
+  detail?: string;
+}
+
+/** Live receipt scan + reconciliation (Document Intelligence). Backend-only; null in mock. */
+export function scanReceipt(args: { sheetId: string; lineItemId: string }): Promise<ReceiptScan | null> {
+  return backend(
+    () =>
+      apiPost<Raw>(`/sheets/${args.sheetId}/line-items/${args.lineItemId}/scan`).then((r) => ({
+        source: String(r.source ?? "unavailable"),
+        merchant: (r.merchant as string) ?? undefined,
+        total: r.total != null ? num(r.total) : undefined,
+        tax: r.tax != null ? num(r.tax) : undefined,
+        reconciles: (r.reconciles as boolean) ?? undefined,
+        delta: r.delta != null ? num(r.delta) : undefined,
+        matchesEntered: (r.matches_entered as boolean) ?? undefined,
+        detail: (r.detail as string) ?? undefined,
+      })),
+    async () => null,
+  );
+}
+
+export interface PolicyPreviewResult {
+  status: string; // pass | warn | fail
+  violations: { code: string; message: string; field?: string }[];
+}
+
+/** Authoritative deterministic policy check for the line-item form (Crispin policy). */
+export function policyPreview(input: {
+  category?: ExpenseCategory;
+  amount: number;
+  currency?: Currency;
+  merchant?: string;
+  description?: string;
+  expenseDate?: string;
+  receiptDatetime?: string;
+  receiptTotal?: number;
+  hasReceipt?: boolean;
+}): Promise<PolicyPreviewResult> {
+  return backend(
+    () =>
+      apiPost<Raw>("/intake/policy-check", {
+        category: input.category,
+        amount: input.amount,
+        currency: input.currency ?? "USD",
+        merchant: input.merchant ?? "",
+        description: input.description ?? "",
+        expense_date: input.expenseDate || null,
+        receipt_datetime: input.receiptDatetime || null,
+        receipt_total: input.receiptTotal ?? null,
+        has_receipt: input.hasReceipt ?? false,
+      }).then((r) => ({
+        status: String(r.status ?? "pass"),
+        violations: Array.isArray(r.violations)
+          ? r.violations.map((v: Raw) => ({
+              code: String(v.code ?? ""),
+              message: String(v.message ?? ""),
+              field: (v.field as string) ?? undefined,
+            }))
+          : [],
+      })),
+    // Offline: run the client validator so the form still shows policy checks.
+    async () => {
+      const issues = validateLineItem(
+        {
+          merchant: input.merchant ?? "",
+          description: input.description ?? "",
+          category: (input.category ?? "Other") as ExpenseCategory,
+          amount: input.amount,
+          currency: (input.currency ?? "USD") as Currency,
+          expenseDate: input.expenseDate ?? "",
+          receiptDatetime: input.receiptDatetime || undefined,
+          attachments: input.hasReceipt
+            ? [{ fileName: "receipt", fileType: "", sizeBytes: 1 }]
+            : [],
+        },
+        baselinePolicy,
+        [],
+      );
+      const hasError = issues.some((i) => i.level === "error");
+      return {
+        status: hasError ? "fail" : issues.length ? "warn" : "pass",
+        violations: issues.map((i) => ({ code: i.clauseRef, message: i.message })),
+      };
+    },
+  );
+}
+
+export interface PolicyAdvisory {
+  clause?: { source: string; text: string };
+}
+
+/** RAG advisory: the most relevant agency policy clause (advisory only). Empty offline. */
+export function policyAdvisory(input: {
+  category?: ExpenseCategory;
+  merchant?: string;
+  description?: string;
+}): Promise<PolicyAdvisory> {
+  return backend(
+    () =>
+      apiPost<Raw>("/intake/policy-advisory", {
+        category: input.category,
+        merchant: input.merchant ?? "",
+        description: input.description ?? "",
+      }).then((r) => {
+        const c = r.clause as Raw | null;
+        return c
+          ? { clause: { source: String(c.source ?? "Policy"), text: String(c.text ?? "") } }
+          : {};
+      }),
+    async () => ({}),
+  );
+}
+
 // ── Line items (employee editing) ────────────────────────────────────────────
 
 export interface AttachmentInput {

@@ -162,11 +162,12 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
-    filename: str | None = None
+    file_name: str | None = None  # original name, derived from the blob path
     file_type: str
     size: int
     blob_uri: str
     scan_status: str
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
     ocr_status: str | None = None
     uploaded_at: datetime | None = None
 
@@ -187,6 +188,9 @@ class LineItemOut(BaseModel):
     tax: Decimal | None = None
     has_receipt: bool = False
     receipt_count: int = 0  # set by the serializer from attachments
+    needs_human_review: bool = False  # receipt scan flagged for Finance
+    review_reason: str | None = None
+    attachments: list["AttachmentOut"] = Field(default_factory=list)
     manager_status: LineItemStatus
     policy_status: LineItemStatus | None
 
@@ -271,6 +275,80 @@ class PeriodsOut(BaseModel):
 
     default: str  # the current month ('YYYY-MM') — preselect this
     periods: list[PeriodOption]
+
+
+# --- Live intake: policy preview + receipt scan (SCOPING §4, §6.1) ---------- #
+class PolicyPreviewRequest(BaseModel):
+    """A draft line item to dry-run against policy as the user types (no persistence)."""
+
+    category: Category | None = None
+    amount: Decimal = Field(gt=Decimal("0"))
+    currency: str = "USD"
+    merchant: str = ""
+    description: str = ""
+    expense_date: date | None = None
+    receipt_datetime: datetime | None = None
+    receipt_total: Decimal | None = None
+    has_receipt: bool = False
+
+
+class PolicyViolationOut(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
+class PolicyPreviewOut(BaseModel):
+    """Authoritative deterministic policy result for the line-item form (engine check_policy)."""
+
+    status: str  # pass | warn | fail
+    recommended_action: str
+    violations: list[PolicyViolationOut] = Field(default_factory=list)
+
+
+class PolicyAdvisoryRequest(BaseModel):
+    category: Category | None = None
+    merchant: str = ""
+    description: str = ""
+
+
+class PolicyAdvisoryClause(BaseModel):
+    source: str  # e.g. "Crispin policy v3"
+    text: str
+
+
+class PolicyAdvisoryOut(BaseModel):
+    """RAG advisory: the most relevant agency policy clause (LLM advises, never blocks).
+    `clause` is null offline / when AI Search isn't configured."""
+
+    clause: PolicyAdvisoryClause | None = None
+
+
+class ScanLineItem(BaseModel):
+    description: str
+    amount: Decimal
+
+
+class ReceiptScanOut(BaseModel):
+    """Result of scanning an uploaded receipt (Document Intelligence; offline fallback).
+
+    `source` is `document_intelligence` (live), `text` (offline text decode), or `unavailable`
+    (binary receipt with no OCR configured). Extracted numbers feed deterministic reconciliation
+    — the model never decides compliance (SCOPING §4)."""
+
+    source: str
+    merchant: str | None = None
+    total: Decimal | None = None
+    tax: Decimal | None = None
+    receipt_datetime: datetime | None = None
+    line_items: list[ScanLineItem] = Field(default_factory=list)
+    subtotal: Decimal | None = None
+    reconciles: bool | None = None  # Σ items + tax == receipt total
+    delta: Decimal | None = None
+    entered_amount: Decimal | None = None  # the line item's amount, for comparison
+    matches_entered: bool | None = None  # |receipt total − entered| ≤ tolerance
+    human_intervention_required: bool = False  # mismatch / unreadable → Finance reviews
+    detail: str | None = None
 
 
 # --- Reports (finance/manager dashboard, SCOPING §4 report summariser) ------ #

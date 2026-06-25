@@ -42,6 +42,11 @@ class LineItem(SQLModel, table=True):
     # Server-derived from attachment presence; a receipt is mandatory at submission.
     has_receipt: bool = False
 
+    # Receipt scan vs entered-amount: flag for Finance when they don't reconcile or the
+    # receipt couldn't be read confidently (not shown to the employee; SCOPING §6.3).
+    needs_human_review: bool = False
+    review_reason: str | None = None
+
     # Manager verdict (Line 2).
     manager_status: LineItemStatus = Field(default=LineItemStatus.PENDING_MANAGER)
     manager_actor_id: str | None = None
