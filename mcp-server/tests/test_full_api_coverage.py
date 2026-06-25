@@ -13,7 +13,7 @@ import pytest
 
 from expense_mcp import auth, client
 from expense_mcp.instance import mcp
-from expense_mcp.tools import admin, ai_insights, expenses, finance, meta, notifications
+from expense_mcp.tools import admin, expenses, finance, meta, notifications
 
 
 def _capture():
@@ -39,7 +39,6 @@ NEW_TOOLS = {
     "list_agencies", "get_agency", "create_agency", "update_agency", "delete_agency",
     "create_user", "update_user", "deactivate_user", "assign_role",
     "get_value_sets", "get_periods", "list_notifications", "mark_notifications_read",
-    "get_ai_recommendation", "get_ai_workspace", "get_ai_analytics", "submit_ai_feedback",
     "get_finance_audit", "list_agency_policies", "publish_agency_policy",
     "get_decisions", "discard_draft", "update_line_item", "remove_line_item",
 }
@@ -70,10 +69,6 @@ def test_all_new_tools_are_registered():
         (finance.get_finance_audit, (), "GET", "/finance/audit"),
         (finance.list_agency_policies, ("a1",), "GET", "/finance/policies/a1"),
         (finance.publish_agency_policy, ("a1", "p1"), "POST", "/finance/policies/a1/p1/publish"),
-        (ai_insights.get_ai_workspace, (), "GET", "/ai/workspace"),
-        (ai_insights.get_ai_analytics, (), "GET", "/ai/analytics"),
-        (ai_insights.get_ai_recommendation, ("s1",), "GET", "/ai/sheets/s1/recommendation"),
-        (ai_insights.submit_ai_feedback, ("r1",), "POST", "/ai/recommendations/r1/feedback"),
         (expenses.get_decisions, ("s1",), "GET", "/sheets/s1/decisions"),
         (expenses.discard_draft, ("s1",), "DELETE", "/sheets/s1"),
         (expenses.update_line_item, ("s1", "li1"), "PATCH", "/sheets/s1/line-items/li1"),

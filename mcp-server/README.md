@@ -45,7 +45,7 @@ src/expense_mcp/
 └── server.py          # imports modules to register, exposes main()
 ```
 
-## Tools (64)
+## Tools (60)
 
 The business tools cover **the entire backend API** (every user-facing endpoint has a tool —
 machine/UI/worker endpoints like the OAuth2 form login, the in-app web-assistant routes, and the
@@ -66,7 +66,6 @@ AI-approver webhook are intentionally excluded).
 **Admin:** `list_agencies`, `get_agency`, `create_agency`, `update_agency`, `delete_agency`,
 `create_user`, `update_user`, `deactivate_user`, `assign_role` ·
 **Users/Audit:** `list_users`, `get_user`, `my_activity` · **Policy:** `ask_policy` ·
-**AI insights:** `get_ai_recommendation`, `get_ai_workspace`, `get_ai_analytics`, `submit_ai_feedback` ·
 **Engine:** `policy_checker`, `receipt_parser`, `category_classifier`, `duplicate_detector`,
 `report_summariser` · plus the agent router `recommend_agent`.
 

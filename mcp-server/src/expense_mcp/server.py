@@ -19,7 +19,6 @@ from expense_mcp.instance import mcp
 # --- Register everything by importing the modules (side-effecting decorators) --------------- #
 from expense_mcp.tools import (  # noqa: E402,F401
     admin,
-    ai_insights,
     approvals,
     assistant,
     auth_tools,

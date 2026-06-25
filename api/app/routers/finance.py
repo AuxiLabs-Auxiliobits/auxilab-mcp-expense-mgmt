@@ -3,11 +3,10 @@ of LLM decisions, the audit log, and the webhook the LLM approver worker posts d
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from app.auth.dependencies import require, require_role
-from app.config import settings
 from app.db import get_session
 from app.models.audit import AuditLog
 from app.models.expense_sheet import ExpenseSheet
@@ -20,7 +19,7 @@ from app.schemas.dto import (
     SheetOut,
 )
 from app.serializers import sheet_to_out
-from app.services import ai_events, finance_service, reports_service, sheet_service
+from app.services import finance_service, reports_service, sheet_service
 from expense_core.schemas.enums import SheetStatus
 
 router = APIRouter(
@@ -82,7 +81,6 @@ async def finance_kpis(
 async def human_decision(
     sheet_id: str,
     body: FinanceHumanDecisionRequest,
-    background_tasks: BackgroundTasks,
     principal: Principal = Depends(require(Capability.FINANCE_DECISION)),
     session: Session = Depends(get_session),
 ) -> SheetOut:
@@ -90,8 +88,6 @@ async def human_decision(
     sheet = finance_service.finance_human_decision(
         session, sheet, principal, approve=body.approve, reason=body.reason
     )
-    if settings.ai_background_events:
-        background_tasks.add_task(ai_events.emit, ai_events.EventType.FINANCE_DECIDED, sheet.id)
     return sheet_to_out(session, sheet)
 
 

@@ -3,11 +3,10 @@ restricted to the manager's own agency. SoD: cannot action own line items."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import require
-from app.config import settings
 from app.db import get_session
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
@@ -15,7 +14,7 @@ from app.principal import Principal
 from app.rbac.permissions import Capability
 from app.schemas.dto import ManagerActionRequest, SheetOut
 from app.serializers import sheet_to_out
-from app.services import ai_events, sheet_service
+from app.services import sheet_service
 from expense_core.schemas.enums import LineItemStatus, SheetStatus
 
 router = APIRouter(
@@ -61,7 +60,6 @@ async def manager_queue(
 async def action_line_item(
     sheet_id: str,
     body: ManagerActionRequest,
-    background_tasks: BackgroundTasks,
     principal: Principal = Depends(require(Capability.MANAGER_ACTION_LINE_ITEM)),
     session: Session = Depends(get_session),
 ) -> SheetOut:
@@ -74,8 +72,6 @@ async def action_line_item(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="line item not found")
 
     sheet = sheet_service.manager_action(session, sheet, item, principal, body.action, body.reason)
-    if settings.ai_background_events and "RETURNED" in str(sheet.status).upper():
-        background_tasks.add_task(ai_events.emit, ai_events.EventType.SHEET_RETURNED, sheet.id)
     return sheet_to_out(session, sheet)
 
 
@@ -91,7 +87,6 @@ async def action_line_item(
 )
 async def approve_sheet(
     sheet_id: str,
-    background_tasks: BackgroundTasks,
     principal: Principal = Depends(require(Capability.MANAGER_ACTION_LINE_ITEM)),
     session: Session = Depends(get_session),
 ) -> SheetOut:
@@ -99,6 +94,4 @@ async def approve_sheet(
     the sheet to finance review. Agency scope + SoD enforced (SCOPING §6.2, §8)."""
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
     sheet = sheet_service.manager_approve_sheet(session, sheet, principal)
-    if settings.ai_background_events and "FINANCE_REVIEW" in str(sheet.status).upper():
-        background_tasks.add_task(ai_events.emit, ai_events.EventType.MANAGER_APPROVED, sheet.id)
     return sheet_to_out(session, sheet)

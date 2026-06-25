@@ -2,7 +2,7 @@
 
 **Package:** `expense_mcp` (`auxilab-mcp-expense-mgmt`)
 **Transport:** MCP over **stdio**, on the official Python MCP SDK (FastMCP)
-**Surface:** 64 tools · 8 resources + 3 templates · 16 prompts
+**Surface:** 60 tools · 8 resources + 3 templates · 16 prompts
 
 This document describes everything built for the MCP server: what it is, how it's structured, the
 full capability catalog, security/hardening, API coverage, how to run/connect/test it, and the
@@ -51,11 +51,11 @@ config.py              # EXPENSE_API_URL / timeout / retries / bootstrap token (
 auth.py                # per-request bearer token (ContextVar)
 client.py              # httpx wrapper: token, retry/backoff, correlation id, friendly ApiError
 annotations.py         # READ / COMPUTE / WRITE / DESTRUCTIVE annotation presets
-tools/                 # the 64 tools (see §4)
+tools/                 # the 60 tools (see §4)
   engine.py            #   5 stateless analysis tools
   auth_tools.py system.py meta.py notifications.py
   expenses.py receipts.py approvals.py finance.py dashboard.py
-  users.py admin.py assistant.py ai_insights.py
+  users.py admin.py assistant.py
 resources/resources.py # read-only snapshots (expense://, approvals://, dashboard://…)
 prompts/prompts.py     # reusable workflow prompts
 agents/                # multi-agent layer (registry, router, definitions)
@@ -72,11 +72,11 @@ agents/                # multi-agent layer (registry, router, definitions)
 
 ---
 
-## 4. Tool catalog (64)
+## 4. Tool catalog (60)
 
 Annotation legend — **READ**: read-only · **COMPUTE**: pure analysis · **WRITE**: state-changing,
-non-destructive · **DESTRUCTIVE**: consequential/irreversible (host should confirm). Totals: **28
-READ · 6 COMPUTE · 19 WRITE · 11 DESTRUCTIVE**.
+non-destructive · **DESTRUCTIVE**: consequential/irreversible (host should confirm). Totals: **26
+READ · 5 COMPUTE · 18 WRITE · 11 DESTRUCTIVE**.
 
 ### Auth & System
 | Tool | Ann. | Backend |
@@ -168,14 +168,6 @@ READ · 6 COMPUTE · 19 WRITE · 11 DESTRUCTIVE**.
 | `my_activity` | READ | `GET /audit/me` |
 | `ask_policy` | READ | `POST /assistant/policy` (agency RAG) |
 
-### AI insights (advisory agentic layer)
-| Tool | Ann. | Backend |
-|---|---|---|
-| `get_ai_recommendation` | COMPUTE | `GET /ai/sheets/{id}/recommendation` |
-| `get_ai_workspace` | READ | `GET /ai/workspace` |
-| `get_ai_analytics` | READ | `GET /ai/analytics` |
-| `submit_ai_feedback` | WRITE | `POST /ai/recommendations/{id}/feedback` |
-
 ### Engine (stateless analysis) & routing
 | Tool | Ann. |
 |---|---|
@@ -257,7 +249,7 @@ The agent registry is the single source of truth; a test asserts every agent onl
 
 ## 10. Full API coverage
 
-The server covers **the entire user-facing backend API**: **54 / 60 endpoints** have tools. The
+The server covers **the entire user-facing backend API**: **50 / 56 endpoints** have tools. The
 **6 excluded** are machine/UI/worker endpoints, intentionally not exposed as host tools:
 
 | Excluded endpoint | Why |
@@ -350,8 +342,8 @@ Verified live with **MCP Inspector** against the running API: `tools/list` (64),
    config, `server_health`, token-safety; ~91% test coverage.
 3. **Multi-agent layer** — 7 domain-agent prompts + orchestrator + `recommend_agent` +
    `agents://catalog`, generated from a single registry.
-4. **Full API coverage** — +25 tools (admin agencies/users, meta, notifications, finance audit +
-   policy docs, line-item edits, AI insights) → 64 tools; verified with MCP Inspector.
+4. **Full API coverage** — +21 tools (admin agencies/users, meta, notifications, finance audit +
+   policy docs, line-item edits) → 60 tools; verified with MCP Inspector.
 5. **Host integration** — `claude_desktop_config.example.json` + Inspector how-to.
 
 ---
@@ -359,8 +351,8 @@ Verified live with **MCP Inspector** against the running API: `tools/list` (64),
 ## 16. Deliberate exclusions / deferred
 
 - **No LLM in the server** — the "intelligence" lives in the MCP host's model; the server provides
-  tools/resources/prompts. (The web app's in-app assistant and the agentic recommendation engine
-  are separate systems in `api/`, because a browser can't speak stdio to this server.)
+  tools/resources/prompts. (The web app's in-app conversational assistant is a separate system in
+  `api/`, because a browser can't speak stdio to this server.)
 - **OAuth 2.1 / token refresh** belong at the API/IdP (Entra cutover), not in a stdio adapter.
 - **Rate limiting / OpenTelemetry / circuit breaker / streaming** — out of scope for a
   single-client stdio adapter; correlation-id logging + bounded retry cover the practical need.
