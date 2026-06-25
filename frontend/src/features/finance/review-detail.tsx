@@ -51,7 +51,7 @@ export function ReviewDetail({
       });
       toast.success(
         decision === "APPROVED" ? "Sheet approved" : "Sheet rejected",
-        { description: `${sheet.id} — logged to the immutable audit trail.` },
+        { description: `“${sheet.title}” — logged to the immutable audit trail.` },
       );
       onClose();
     });

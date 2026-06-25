@@ -1,16 +1,16 @@
-"""Notification routes (SCOPING §3.4, §6.5). Recipient-scoped: a user only ever sees and
-mutates their own notifications, derived from the auth token (never a client-supplied id)."""
+"""Notification routes (SCOPING §6.4). The signed-in user's in-app notifications + a
+mark-all-read. Scoped to the recipient by the bearer token."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.auth.dependencies import current_principal
 from app.db import get_session
-from app.models.notification import Notification
 from app.principal import Principal
 from app.schemas.dto import NotificationOut
+from app.services import notification_service
 
 router = APIRouter(
     prefix="/notifications",
@@ -19,49 +19,19 @@ router = APIRouter(
 )
 
 
-def _to_out(n: Notification) -> NotificationOut:
-    return NotificationOut(
-        id=n.id, kind=n.kind, icon=n.icon, title=n.title, body=n.body,
-        href=n.href, read=n.read, timestamp=n.created_at,
-    )
-
-
 @router.get("", response_model=list[NotificationOut], summary="My notifications (newest first)")
 async def list_notifications(
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
-    limit: int = 50,
 ) -> list[NotificationOut]:
-    rows = session.exec(
-        select(Notification)
-        .where(Notification.recipient_id == principal.subject_id)
-        .order_by(Notification.created_at.desc())
-        .limit(limit)
-    ).all()
-    return [_to_out(n) for n in rows]
+    return [NotificationOut.model_validate(n) for n in notification_service.list_for(session, principal)]
 
 
 @router.post("/read", response_model=list[NotificationOut], summary="Mark all my notifications read")
-async def mark_all_read(
+async def mark_read(
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
 ) -> list[NotificationOut]:
-    """Flip every unread notification for the caller to read, then return the current list."""
-    unread = session.exec(
-        select(Notification).where(
-            Notification.recipient_id == principal.subject_id,
-            Notification.read == False,  # noqa: E712 — SQL boolean comparison
-        )
-    ).all()
-    for n in unread:
-        n.read = True
-        session.add(n)
-    session.commit()
-
-    rows = session.exec(
-        select(Notification)
-        .where(Notification.recipient_id == principal.subject_id)
-        .order_by(Notification.created_at.desc())
-        .limit(50)
-    ).all()
-    return [_to_out(n) for n in rows]
+    return [
+        NotificationOut.model_validate(n) for n in notification_service.mark_all_read(session, principal)
+    ]

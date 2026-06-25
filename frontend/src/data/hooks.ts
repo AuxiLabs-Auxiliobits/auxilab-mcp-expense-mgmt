@@ -139,6 +139,14 @@ export const useActivityLog = (role: Role, userId: string) =>
     enabled: !!userId,
   });
 
+/** Role-scoped, paginated + filtered activity feed (backend scopes by token). */
+export const useActivity = (params: api.ActivityParams) =>
+  useQuery({
+    queryKey: ["activity", params] as const,
+    queryFn: () => api.getActivity(params),
+    placeholderData: (prev) => prev, // keep the table stable while paging/filtering
+  });
+
 export function useApproveSheet() {
   const qc = useQueryClient();
   return useMutation({
@@ -259,5 +267,26 @@ export function useMarkNotificationsRead(role: Role) {
   return useMutation({
     mutationFn: () => api.markNotificationsRead(role),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+// ── Settings / preferences ──
+export const usePreferences = () =>
+  useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });
+
+export function useUpdatePreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prefs: api.UserPreferences) => api.updatePreferences(prefs),
+    onMutate: async (prefs) => {
+      await qc.cancelQueries({ queryKey: ["preferences"] });
+      const prev = qc.getQueryData<api.UserPreferences>(["preferences"]);
+      qc.setQueryData(["preferences"], prefs); // optimistic
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev !== undefined) qc.setQueryData(["preferences"], ctx.prev);
+    },
+    onSuccess: (saved) => qc.setQueryData(["preferences"], saved),
   });
 }

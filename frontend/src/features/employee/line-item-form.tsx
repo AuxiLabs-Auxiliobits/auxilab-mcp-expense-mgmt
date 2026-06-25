@@ -6,7 +6,8 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
-import { uploadReceipt, scanReceipt } from "@/data/api";
+import { useReceiptUploads } from "@/data/receipt-uploads";
+import { uploadReceipt, scanReceipt, type ReceiptScan } from "@/data/api";
 import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { baselinePolicy } from "@/data/mock";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/data/types";
 import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
 import { fileIssue, fileNote } from "@/lib/intake";
+import { formatCurrency } from "@/lib/format";
 import {
   policyPreview,
   policyAdvisory,
@@ -75,15 +77,26 @@ export function LineItemDialog({
   const addLineItem = useAddLineItem();
   const updateLineItem = useUpdateLineItem();
   const qc = useQueryClient();
+  const { uploads, removeUpload } = useReceiptUploads();
   // Each entry carries optional `file` bytes (newly picked/dropped) and/or a `downloadUrl`
   // (already on the server, edit mode) so we can show a real size + preview either way.
+  // `uploadId` is set when the entry was picked from the My Receipts pool, so we can
+  // retire it from that pool once it's successfully attached here.
   const [files, setFiles] = useState<
-    (AttachmentInput & { file?: File; downloadUrl?: string })[]
+    (AttachmentInput & { file?: File; downloadUrl?: string; uploadId?: string })[]
   >([]);
   const [dragging, setDragging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Only offer the camera on touch devices — `capture` is a no-op on desktop.
+  const [hasCamera, setHasCamera] = useState(false);
   const [policy, setPolicy] = useState<PolicyPreviewResult | null>(null);
   const [advisory, setAdvisory] = useState<PolicyAdvisory>({});
+  // Headline result of the post-save receipt scan (Document Intelligence). When set, the
+  // dialog stays open to show the extracted values for review instead of closing.
+  const [scan, setScan] = useState<ReceiptScan | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -112,6 +125,8 @@ export function LineItemDialog({
   // Reset whenever the dialog opens (for add) or the edited item changes.
   useEffect(() => {
     if (!open) return;
+    setScan(null);
+    setPickerOpen(false);
     if (item) {
       reset({
         merchant: item.merchant,
@@ -138,6 +153,10 @@ export function LineItemDialog({
     }
   }, [open, item, reset]);
 
+  useEffect(() => {
+    setHasCamera(window.matchMedia?.("(pointer: coarse)").matches ?? false);
+  }, []);
+
   const v = watch();
 
   // Restrict the expense date to the sheet's period month (backend enforces this too).
@@ -148,6 +167,19 @@ export function LineItemDialog({
         return { min: `${period}-01`, max: `${period}-${String(last).padStart(2, "0")}` };
       })()
     : undefined;
+
+  // The receipt date must equal the expense date (time may differ). Keep the receipt
+  // datetime's day pinned to the expense date whenever it changes, preserving the time.
+  useEffect(() => {
+    if (!v.expenseDate) return;
+    const time = v.receiptDatetime?.slice(11, 16) || "12:00";
+    const synced = `${v.expenseDate}T${time}`;
+    if (synced !== v.receiptDatetime) {
+      setValue("receiptDatetime", synced, { shouldValidate: true });
+    }
+    // Intentionally keyed on expenseDate only — editing the time shouldn't re-pin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.expenseDate]);
 
   // Live, authoritative policy check from the backend (engine `check_policy`) — debounced as
   // the user types. Offline it falls back to the client validator (see api.policyPreview).
@@ -215,8 +247,33 @@ export function LineItemDialog({
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     acceptFiles(Array.from(e.target.files ?? []));
-    if (fileRef.current) fileRef.current.value = "";
+    e.target.value = "";
   }
+
+  /** Attach a receipt the employee already uploaded on the My Receipts page. */
+  function addFromUpload(u: (typeof uploads)[number]) {
+    if (files.some((f) => f.uploadId === u.id || f.file === u.file)) return;
+    const issue = fileIssue(u.file, baselinePolicy);
+    if (issue) {
+      toast.error(`${u.fileName}: ${issue}`);
+      return;
+    }
+    setFiles((prev) => [
+      ...prev,
+      {
+        fileName: u.fileName,
+        fileType: u.fileType,
+        sizeBytes: u.sizeBytes,
+        file: u.file,
+        uploadId: u.id,
+      },
+    ]);
+  }
+
+  // My Receipts entries not already attached to this line item.
+  const availableUploads = uploads.filter(
+    (u) => !files.some((f) => f.uploadId === u.id || f.file === u.file),
+  );
 
   function onDrop(e: React.DragEvent) {
     // Without this, the browser navigates to the dropped file (opens a new tab).
@@ -246,6 +303,8 @@ export function LineItemDialog({
       // Upload the actual receipt bytes for any newly added files. On add, the new
       // line item is the one in the returned sheet that wasn't an existing sibling.
       const newFiles = files.filter((f) => f.file);
+      let scanResult: ReceiptScan | null = null;
+      let scannedId: string | undefined;
       if (newFiles.length) {
         let targetId = item?.id;
         if (!targetId) {
@@ -256,17 +315,55 @@ export function LineItemDialog({
           for (const f of newFiles) {
             await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
           }
+          // A receipt picked from the My Receipts pool is now assigned — drop it.
+          for (const f of newFiles) if (f.uploadId) removeUpload(f.uploadId);
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
 
-          // Trigger the server-side receipt scan so Finance gets a human-review flag if the
-          // receipt total can't be read or doesn't match the entered amount. Intentionally
-          // silent for the employee — the result is not surfaced here.
+          // Scan the receipt (Document Intelligence) and reconcile against the entered
+          // amount. Beyond setting a server-side Finance flag, the extracted headline is
+          // surfaced to the employee for review (below).
           try {
-            await scanReceipt({ sheetId, lineItemId: targetId });
+            scanResult = await scanReceipt({ sheetId, lineItemId: targetId });
+            scannedId = targetId;
           } catch {
             /* scan is best-effort; never block the save */
           }
         }
+      }
+
+      // Auto-fill fields the employee left blank from the scan and persist them onto the
+      // saved item. Never overwrite what the user typed; the amount is reconciled, not
+      // replaced. Only surface a review card when the scan actually extracted something.
+      if (scanResult && scannedId && (scanResult.merchant || scanResult.total != null)) {
+        const patch: Partial<typeof input> = {};
+        if (!values.merchant?.trim() && scanResult.merchant) patch.merchant = scanResult.merchant;
+        if (values.tax == null && scanResult.tax != null) patch.tax = scanResult.tax;
+        const scanDate = scanResult.receiptDatetime?.slice(0, 10);
+        if (!values.expenseDate && scanDate) patch.expenseDate = scanDate;
+
+        if (Object.keys(patch).length) {
+          if (patch.merchant) setValue("merchant", patch.merchant, { shouldValidate: true });
+          if (patch.tax != null) setValue("tax", patch.tax, { shouldValidate: true });
+          if (patch.expenseDate) setValue("expenseDate", patch.expenseDate, { shouldValidate: true });
+          try {
+            await updateLineItem.mutateAsync({
+              sheetId,
+              lineItemId: scannedId,
+              input: { ...input, ...patch },
+            });
+          } catch {
+            /* auto-fill persist is best-effort — the item is already saved */
+          }
+        }
+
+        setScan(scanResult);
+        toast.success("Receipt scanned", {
+          description:
+            scanResult.matchesEntered === false
+              ? `Receipt total ${scanResult.total} doesn't match the entered ${Number(values.amount)}.`
+              : "Extracted values are shown below for review.",
+        });
+        return; // keep the dialog open so the employee can review the extraction
       }
 
       toast.success(item ? "Line item updated" : "Line item added");
@@ -395,12 +492,17 @@ export function LineItemDialog({
                 mode="datetime"
                 value={v.receiptDatetime}
                 onChange={(val) => setValue("receiptDatetime", val, { shouldValidate: true })}
-                placeholder="Select date & time"
-                min={dateBounds?.min}
-                max={dateBounds?.max}
+                placeholder={v.expenseDate ? "Pick the time" : "Set the expense date first"}
+                // Pinned to the expense date — only the time of day is selectable.
+                min={v.expenseDate || dateBounds?.min}
+                max={v.expenseDate || dateBounds?.max}
               />
-              {errors.receiptDatetime && (
+              {errors.receiptDatetime ? (
                 <p className="text-label-md text-error">{errors.receiptDatetime.message}</p>
+              ) : (
+                <p className="text-label-md text-on-surface-variant">
+                  Same day as the expense date; set the time from the receipt.
+                </p>
               )}
             </div>
             <div className="space-y-1.5">
@@ -456,6 +558,68 @@ export function LineItemDialog({
               className="hidden"
               onChange={onPickFiles}
             />
+            {/* On mobile these open the photo library / camera directly; on desktop
+                they fall back to the file dialog. */}
+            <input
+              ref={galleryRef}
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+
+            {/* Other ways to attach: device gallery, camera, or a receipt already
+                uploaded on the My Receipts page. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => galleryRef.current?.click()}>
+                <Icon name="photo_library" /> Gallery
+              </Button>
+              {hasCamera && (
+                <Button type="button" variant="outline" size="sm" onClick={() => cameraRef.current?.click()}>
+                  <Icon name="photo_camera" /> Camera
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={availableUploads.length === 0}
+                onClick={() => setPickerOpen((o) => !o)}
+                title={
+                  availableUploads.length === 0
+                    ? "No unassigned receipts in My Receipts"
+                    : "Pick a receipt you already uploaded"
+                }
+              >
+                <Icon name="receipt_long" /> From My Receipts ({availableUploads.length})
+              </Button>
+            </div>
+
+            {pickerOpen && availableUploads.length > 0 && (
+              <ul className="space-y-1 rounded border border-outline-variant bg-surface-container-low p-2">
+                {availableUploads.map((u) => (
+                  <li key={u.id} className="flex items-center gap-2 rounded px-1 py-1">
+                    <ReceiptPreview file={u.file} fileName={u.fileName} fileType={u.fileType} />
+                    <span className="flex-1 truncate text-body-sm">{u.fileName}</span>
+                    <span className="font-mono text-label-sm text-on-surface-variant">
+                      {formatSize(u.sizeBytes)}
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => addFromUpload(u)}>
+                      <Icon name="add" /> Add
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {files.length > 0 && (
               <ul className="space-y-1">
                 {files.map((f, i) => {
@@ -541,21 +705,80 @@ export function LineItemDialog({
             </div>
           )}
 
+          {/* Scanned receipt — headline extraction for review (Document Intelligence) */}
+          {scan && (
+            <div className="space-y-2 rounded border border-secondary/30 bg-secondary-container/20 p-3">
+              <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
+                <Icon name="document_scanner" className="text-[14px] text-secondary" />
+                Scanned from receipt
+              </p>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-body-sm">
+                {scan.merchant && (
+                  <>
+                    <dt className="text-on-surface-variant">Merchant</dt>
+                    <dd className="truncate text-on-surface">{scan.merchant}</dd>
+                  </>
+                )}
+                {scan.total != null && (
+                  <>
+                    <dt className="text-on-surface-variant">Total</dt>
+                    <dd className="font-mono tabular-nums text-on-surface">
+                      {formatCurrency(scan.total, "USD")}
+                    </dd>
+                  </>
+                )}
+                {scan.tax != null && (
+                  <>
+                    <dt className="text-on-surface-variant">Tax</dt>
+                    <dd className="font-mono tabular-nums text-on-surface">
+                      {formatCurrency(scan.tax, "USD")}
+                    </dd>
+                  </>
+                )}
+                {scan.receiptDatetime && (
+                  <>
+                    <dt className="text-on-surface-variant">Receipt date</dt>
+                    <dd className="text-on-surface">{scan.receiptDatetime.slice(0, 10)}</dd>
+                  </>
+                )}
+              </dl>
+              {scan.matchesEntered === false ? (
+                <p className="flex items-start gap-1.5 text-label-md text-error">
+                  <Icon name="warning" className="mt-px text-[14px]" />
+                  Doesn&apos;t match the entered amount
+                  {scan.delta != null ? ` (off by ${formatCurrency(Math.abs(scan.delta), "USD")})` : ""}.
+                  Finance will review.
+                </p>
+              ) : scan.matchesEntered === true ? (
+                <p className="flex items-center gap-1.5 text-label-md text-tertiary">
+                  <Icon name="check_circle" className="text-[14px]" /> Matches the entered amount.
+                </p>
+              ) : null}
+              <p className="text-label-sm text-on-surface-variant">
+                Blank fields were filled from the receipt — review and edit if needed.
+              </p>
+            </div>
+          )}
+
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                !!blockingError ||
-                files.length === 0 ||
-                addLineItem.isPending ||
-                updateLineItem.isPending
-              }
-            >
-              {item ? "Save changes" : "Add line item"}
-            </Button>
+            {scan ? (
+              <Button type="button" onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={addLineItem.isPending || updateLineItem.isPending}
+                  disabled={!!blockingError || files.length === 0}
+                >
+                  {item ? "Save changes" : "Add line item"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

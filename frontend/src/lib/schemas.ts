@@ -52,6 +52,14 @@ export const lineItemSchema = z
         message: 'Specify the expense type for "Other".',
       });
     }
+    // The receipt's calendar date must match the expense date (time of day may differ).
+    if (val.expenseDate && val.receiptDatetime?.slice(0, 10) !== val.expenseDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["receiptDatetime"],
+        message: "Receipt date must match the expense date.",
+      });
+    }
   });
 export type LineItemValues = z.infer<typeof lineItemSchema>;
 

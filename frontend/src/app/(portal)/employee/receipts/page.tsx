@@ -4,6 +4,11 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useCurrentUser, useEmployeeSheets } from "@/data/hooks";
+import { useReceiptUploads } from "@/data/receipt-uploads";
+import { apiBlob } from "@/data/http";
+import { fileIssue } from "@/lib/intake";
+import { baselinePolicy } from "@/data/mock";
+import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -27,6 +32,10 @@ type ReceiptRow = {
   merchant: string;
   sheetId: string;
   scanStatus: string;
+  fileType: string;
+  downloadUrl?: string; // stored attachment (fetched with auth)
+  file?: File; // not-yet-attached local upload
+  uploadId?: string; // store id for an unassigned upload (deletable)
 };
 
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -41,10 +50,20 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 export default function EmployeeReceiptsPage() {
   const { data: user } = useCurrentUser("employee");
   const { data: sheets } = useEmployeeSheets(user?.id ?? "");
+  const { uploads, addUploads, removeUpload } = useReceiptUploads();
   const fileRef = useRef<HTMLInputElement>(null);
-  const idRef = useRef(0);
-  const [uploaded, setUploaded] = useState<ReceiptRow[]>([]);
   const [selected, setSelected] = useState<ReceiptRow | null>(null);
+
+  const uploaded: ReceiptRow[] = uploads.map((u) => ({
+    id: u.id,
+    fileName: u.fileName,
+    merchant: "Manual upload",
+    sheetId: "Unassigned",
+    scanStatus: "clean",
+    fileType: u.fileType,
+    file: u.file,
+    uploadId: u.id,
+  }));
 
   const attached: ReceiptRow[] = (sheets ?? []).flatMap((s) =>
     s.lineItems.flatMap((li) =>
@@ -54,6 +73,8 @@ export default function EmployeeReceiptsPage() {
         merchant: li.merchant,
         sheetId: s.id,
         scanStatus: a.scanStatus,
+        fileType: a.fileType,
+        downloadUrl: a.downloadUrl,
       })),
     ),
   );
@@ -61,20 +82,51 @@ export default function EmployeeReceiptsPage() {
   const receipts = [...uploaded, ...attached];
 
   function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    const rows: ReceiptRow[] = files.map((f) => ({
-      id: `upload-${idRef.current++}`,
-      fileName: f.name,
-      merchant: "Manual upload",
-      sheetId: "Unassigned",
-      scanStatus: "clean",
-    }));
-    setUploaded((prev) => [...rows, ...prev]);
-    toast.success(`${files.length} receipt${files.length === 1 ? "" : "s"} uploaded`, {
-      description: "Scanned clean — attach to a line item when you add it to a sheet.",
-    });
+    const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
+    if (!picked.length) return;
+    const valid: File[] = [];
+    for (const f of picked) {
+      const issue = fileIssue(f, baselinePolicy);
+      if (issue) {
+        toast.error(`${f.name}: ${issue}`);
+        continue;
+      }
+      valid.push(f);
+    }
+    if (!valid.length) return;
+    addUploads(valid);
+    toast.success(`${valid.length} receipt${valid.length === 1 ? "" : "s"} added`, {
+      description: "Preview/download here; pick it when you add a line item to a sheet.",
+    });
+  }
+
+  function deleteUpload(r: ReceiptRow) {
+    if (!r.uploadId) return;
+    removeUpload(r.uploadId);
+    setSelected((cur) => (cur?.id === r.id ? null : cur));
+    toast("Receipt removed", { description: r.fileName });
+  }
+
+  async function downloadReceipt(r: ReceiptRow) {
+    try {
+      const blob = r.file ?? (r.downloadUrl ? (await apiBlob(r.downloadUrl)).blob : null);
+      if (!blob) {
+        toast.error("Nothing to download for this receipt");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = r.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Download started");
+    } catch {
+      toast.error("Download failed");
+    }
   }
 
   return (
@@ -126,6 +178,19 @@ export default function EmployeeReceiptsPage() {
               <Badge className="bg-success-green/10 capitalize text-success-green" pill={false}>
                 <Icon name="verified" className="text-[12px]" /> {r.scanStatus}
               </Badge>
+              {r.uploadId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteUpload(r);
+                  }}
+                  aria-label={`Delete ${r.fileName}`}
+                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error"
+                >
+                  <Icon name="delete" className="text-[18px]" />
+                </button>
+              )}
             </Card>
           ))}
         </div>
@@ -141,11 +206,14 @@ export default function EmployeeReceiptsPage() {
                 <DrawerDescription>{selected.merchant}</DrawerDescription>
               </DrawerHeader>
               <DrawerBody className="space-y-5">
-                <div className="flex aspect-[4/3] items-center justify-center rounded-lg border border-outline-variant bg-surface-container-low">
-                  <div className="text-center text-on-surface-variant">
-                    <Icon name="image" className="text-[40px]" />
-                    <p className="mt-2 text-body-sm">Document preview unavailable in demo</p>
-                  </div>
+                <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low">
+                  <ReceiptPreview
+                    variant="full"
+                    file={selected.file}
+                    downloadUrl={selected.downloadUrl}
+                    fileName={selected.fileName}
+                    fileType={selected.fileType}
+                  />
                 </div>
                 <dl>
                   <MetaRow label="File">
@@ -168,6 +236,15 @@ export default function EmployeeReceiptsPage() {
                 </dl>
               </DrawerBody>
               <DrawerFooter>
+                {selected.uploadId && (
+                  <Button
+                    variant="outline"
+                    onClick={() => deleteUpload(selected)}
+                    className="text-error hover:text-error"
+                  >
+                    <Icon name="delete" /> Delete
+                  </Button>
+                )}
                 {selected.sheetId !== "Unassigned" && (
                   <Button variant="outline" asChild>
                     <Link href={`/employee/sheets/${selected.sheetId}`}>
@@ -175,7 +252,7 @@ export default function EmployeeReceiptsPage() {
                     </Link>
                   </Button>
                 )}
-                <Button onClick={() => toast.success("Download started")}>
+                <Button onClick={() => downloadReceipt(selected)}>
                   <Icon name="download" /> Download
                 </Button>
               </DrawerFooter>

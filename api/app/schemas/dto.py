@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.principal import Role
+from app.principal import Role, Scope
 from app.value_sets import normalize_currency, validate_period
 from expense_core.schemas.enums import Category, FinanceDecision, LineItemStatus, SheetStatus
 
@@ -29,16 +29,16 @@ class TokenResponse(BaseModel):
 
 
 class MeOut(BaseModel):
-    """The caller's identity for the UI: includes the display `name` and `agency_name`
-    resolved from the DB (the bare Principal/token carries only ids)."""
+    """Current user for the UI — the Principal plus the human-readable display name
+    (and agency name) so the frontend never has to fall back to the email address."""
 
     subject_id: str
     email: str
-    role: str
+    name: str
+    role: Role
     agency_id: str | None = None
     agency_name: str | None = None
-    name: str | None = None
-    scope: str
+    scope: Scope
 
 
 # --- Line items / sheets --------------------------------------------------- #
@@ -192,6 +192,7 @@ class LineItemOut(BaseModel):
     review_reason: str | None = None
     attachments: list["AttachmentOut"] = Field(default_factory=list)
     manager_status: LineItemStatus
+    manager_reason: str | None = None  # manager's note on reject / request-info (shown to employee)
     policy_status: LineItemStatus | None
 
     model_config = {"from_attributes": True}
@@ -310,6 +311,54 @@ class PolicyAdvisoryRequest(BaseModel):
     category: Category | None = None
     merchant: str = ""
     description: str = ""
+
+
+class AuditEntryOut(BaseModel):
+    """One audit-trail row, enriched with the actor's display name + a human summary."""
+
+    id: str
+    actor_id: str | None = None
+    actor_name: str | None = None
+    actor_role: str | None = None
+    agency_id: str | None = None
+    action: str
+    entity: str | None = None
+    summary: str
+    before: dict | None = None
+    after: dict | None = None
+    timestamp: datetime
+
+
+class ActivityPageOut(BaseModel):
+    """A page of audit entries scoped to the caller (employee→own, manager→agency, finance/
+    admin→all) with the total for pagination."""
+
+    items: list[AuditEntryOut] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+
+
+class NotificationOut(BaseModel):
+    id: str
+    kind: str  # info | success | warning | error
+    title: str
+    body: str = ""
+    href: str | None = None
+    read: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PreferencesIn(BaseModel):
+    """Free-form user settings (e.g. notification toggles) owned by the Settings page."""
+
+    preferences: dict
+
+
+class PreferencesOut(BaseModel):
+    preferences: dict
 
 
 class PolicyAdvisoryClause(BaseModel):

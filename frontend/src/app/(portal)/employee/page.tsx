@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCurrentUser, useActivityLog } from "@/data/hooks";
+import { useCurrentUser, useActivity } from "@/data/hooks";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { ActivityFeed } from "@/components/shared/activity-feed";
@@ -17,7 +17,7 @@ export default function EmployeeDashboardPage() {
   const { data: user } = useCurrentUser("employee");
   const employeeId = user?.id ?? "";
   const firstName = user?.name?.split(" ")[0];
-  const { data: activity } = useActivityLog("employee", employeeId);
+  const { data: activity } = useActivity({ page: 1, pageSize: 6 });
 
   return (
     <PageContainer>
@@ -48,7 +48,7 @@ export default function EmployeeDashboardPage() {
               View all
             </Link>
           </CardHeader>
-          <ActivityFeed entries={activity ?? []} />
+          <ActivityFeed entries={activity?.items ?? []} />
         </Card>
       </div>
 

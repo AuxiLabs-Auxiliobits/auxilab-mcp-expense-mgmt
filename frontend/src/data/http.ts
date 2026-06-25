@@ -179,6 +179,9 @@ export async function apiBlob(
 export const apiGet = <T>(path: string, signal?: AbortSignal) => send<T>("GET", path, undefined, false, signal);
 export const apiPost = <T>(path: string, body?: unknown, signal?: AbortSignal) =>
   send<T>("POST", path, body, false, signal);
+// Kept from your branch (HEAD): used by api.ts for /me/preferences. Now routed through send().
+export const apiPut = <T>(path: string, body?: unknown, signal?: AbortSignal) =>
+  send<T>("PUT", path, body, false, signal);
 export const apiPatch = <T>(path: string, body?: unknown, signal?: AbortSignal) =>
   send<T>("PATCH", path, body, false, signal);
 export const apiDelete = <T>(path: string, signal?: AbortSignal) => send<T>("DELETE", path, undefined, false, signal);

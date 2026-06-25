@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import {
-  MutationCache,
   QueryCache,
   QueryClient,
   QueryClientProvider,
+  MutationCache,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { ThemeProvider, useTheme } from "next-themes";
-import { SessionProvider } from "next-auth/react";
+import { SessionProvider, signOut } from "next-auth/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalProgress } from "@/components/layout/global-progress";
 import { ApiError } from "@/data/http";
@@ -27,6 +27,10 @@ function ThemedToaster() {
       theme={resolvedTheme === "dark" ? "dark" : "light"}
     />
   );
+}
+
+function isAbortedApiError(error: unknown): error is ApiError & { kind?: string } {
+  return error instanceof ApiError && error.kind === "aborted";
 }
 
 /** Turn any thrown error into a single user-friendly string for a toast. */
@@ -45,7 +49,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         // get stuck after a failure. Aborted/cancelled requests are ignored.
         queryCache: new QueryCache({
           onError: (error) => {
-            if (error instanceof ApiError && error.kind === "aborted") return;
+            if (error instanceof ApiError && (error as { kind?: string }).kind === "aborted") return;
             // 401 = expired/revoked session → auto logout (handled by SessionManager).
             if (error instanceof ApiError && error.status === 401) {
               triggerSessionExpired("expired");
@@ -56,7 +60,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }),
         mutationCache: new MutationCache({
           onError: (error, _vars, _ctx, mutation) => {
-            if (error instanceof ApiError && error.kind === "aborted") return;
+            if (error instanceof ApiError && (error as { kind?: string }).kind === "aborted") return;
             if (error instanceof ApiError && error.status === 401) {
               triggerSessionExpired("expired");
               return;

@@ -176,6 +176,10 @@ def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> Exp
         item.manager_reason = None
         item.policy_status = None
         item.policy_clause_ref = None
+    sheet.status = SheetStatus.DRAFT
+    sheet.submitted_at = None
+    sheet.finance_decision = None
+    sheet.finance_decided_by = None
         
 def withdraw_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
     """Soft-withdraw a DRAFT (SCOPING §5.1). Unlike delete_draft this preserves the sheet and

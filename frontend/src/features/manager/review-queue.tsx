@@ -413,15 +413,15 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
   async function approveEntireSheet() {
     const updated = await approveSheet.mutateAsync({ sheetId: sheet.id, actor });
     if (updated.status === "FINANCE_MANUAL_REVIEW") {
-      toast.warning(`"${sheet.title}" routed to Finance for manual review`, {
+      toast.warning(`“${sheet.title}” routed to Finance for manual review`, {
         description: updated.routeReasonDetail,
       });
     } else if (updated.status === "FINANCE_APPROVED") {
-      toast.success(`"${sheet.title}" auto-approved by the AI Finance Approver`, {
+      toast.success(`“${sheet.title}” auto-approved by the AI Finance Approver`, {
         description: `Confidence ${Math.round((updated.llmConfidence ?? 0) * 100)}%.`,
       });
     } else {
-      toast.success(`"${sheet.title}" sent to Finance`);
+      toast.success(`“${sheet.title}” sent to Finance`);
     }
   }
 

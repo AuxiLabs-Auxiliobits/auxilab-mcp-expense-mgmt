@@ -57,6 +57,9 @@ const IN_FLIGHT: SheetStatus[] = [
   "IN_FINANCE_REVIEW",
   "FINANCE_MANUAL_REVIEW",
 ];
+// Withdraw is only allowed before the manager approves it (queued / in manager review).
+// Once it advances to finance, it can't be recalled.
+const WITHDRAWABLE: SheetStatus[] = ["SUBMITTED", "IN_MANAGER_REVIEW"];
 
 // ── Decision timeline model ──────────────────────────────────────────────────
 type StepState = "done" | "active" | "error" | "upcoming";
@@ -225,6 +228,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   const editable = EDITABLE.includes(sheet.status);
   const isResubmit = NEEDS_FEEDBACK.includes(sheet.status);
   const inFlight = IN_FLIGHT.includes(sheet.status);
+  const withdrawable = WITHDRAWABLE.includes(sheet.status);
   const errorCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "error").length;
   const warningCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "warning").length;
   const missingReceipts = sheet.lineItems.filter((li) => li.attachments.length === 0).length;
@@ -253,19 +257,19 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
   async function submit() {
     await submitSheet.mutateAsync(sheetId);
-    toast.success("Submitted for manager review");
+    toast.success(`“${sheet!.title}” submitted for manager review`);
     router.push("/employee");
   }
   async function resubmit() {
-    await resubmitSheet.mutateAsync(sheetId);
-    toast.success("Resubmitted for review", {
-      description: "Your sheet is back with your manager.",
+    const result = await resubmitSheet.mutateAsync(sheetId);
+    toast.success(`“${result.title}” resubmitted (v${result.version})`, {
+      description: "Restarted from manager review.",
     });
     router.push("/employee");
   }
   async function withdraw() {
     await withdrawSheet.mutateAsync(sheetId);
-    toast("Sheet withdrawn", { description: "It's been pulled from review." });
+    toast("Sheet withdrawn", { description: `“${sheet!.title}” pulled back to draft.` });
     router.push("/employee");
   }
 
@@ -337,7 +341,13 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                     variant="outline"
                     size="sm"
                     loading={withdrawSheet.isPending}
+                    disabled={!withdrawable}
                     onClick={withdraw}
+                    title={
+                      withdrawable
+                        ? "Withdraw this sheet back to draft"
+                        : "Can't withdraw — the manager has already approved it"
+                    }
                   >
                     <Icon name="cancel_presentation" /> Withdraw
                   </Button>
@@ -346,8 +356,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   isResubmit ? (
                     <Button
                       onClick={resubmit}
-                      disabled={blocked}
                       loading={primaryPending}
+                      disabled={blocked}
                       aria-label="Resubmit sheet for review"
                     >
                       <Icon name="restart_alt" /> Resubmit Sheet
@@ -355,8 +365,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   ) : (
                     <Button
                       onClick={submit}
-                      disabled={blocked}
                       loading={primaryPending}
+                      disabled={blocked}
                       aria-label="Submit sheet for review"
                     >
                       <Icon name="send" /> Submit for Review
@@ -883,7 +893,7 @@ function LineItemRow({
           <p className="mt-1 text-body-sm text-on-surface-variant">{item.description}</p>
         )}
 
-        {editable && item.managerReason && (
+        {item.managerReason && (
           <div className="mt-2 flex items-start gap-2 rounded border border-error/20 bg-error-container/40 p-2 text-body-sm text-on-surface">
             <Icon name="comment" className="mt-0.5 text-[16px] text-error" />
             <span>
