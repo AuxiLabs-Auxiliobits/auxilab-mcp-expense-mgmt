@@ -21,6 +21,7 @@ import {
   apiGet,
   apiPatch,
   apiPost,
+  apiPut,
   apiUpload,
   backend,
 } from "./http";
@@ -313,6 +314,7 @@ export interface ReceiptScan {
   merchant?: string;
   total?: number;
   tax?: number;
+  receiptDatetime?: string; // ISO datetime extracted from the receipt
   reconciles?: boolean;
   delta?: number;
   matchesEntered?: boolean;
@@ -328,6 +330,7 @@ export function scanReceipt(args: { sheetId: string; lineItemId: string }): Prom
         merchant: (r.merchant as string) ?? undefined,
         total: r.total != null ? num(r.total) : undefined,
         tax: r.tax != null ? num(r.tax) : undefined,
+        receiptDatetime: (r.receipt_datetime as string) ?? undefined,
         reconciles: (r.reconciles as boolean) ?? undefined,
         delta: r.delta != null ? num(r.delta) : undefined,
         matchesEntered: (r.matches_entered as boolean) ?? undefined,
@@ -618,7 +621,7 @@ export function submitSheet(sheetId: string): Promise<ExpenseSheet> {
  */
 export async function resubmitSheet(sheetId: string): Promise<ExpenseSheet> {
   return backend(
-    () => apiPost<Raw>(`/sheets/${sheetId}/resubmit`).then(mapSheet),
+    () => apiPost<Raw>(`/sheets/${sheetId}/submit`).then(mapSheet),
     () => resubmitSheetMock(sheetId),
   );
 }
@@ -760,6 +763,50 @@ export function getActivityLog(scope: { role: Role; userId: string }) {
         ? apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit))
         : apiGet<Raw[]>("/audit/me?limit=200").then((rows) => rows.map(mapAudit)),
     mockLog,
+  );
+}
+
+// ── Activity feed (role-scoped audit trail, paginated + filtered) ─────────────
+export interface ActivityParams {
+  page?: number;
+  pageSize?: number;
+  action?: string;
+  q?: string;
+}
+export interface ActivityPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** GET /activity — the backend scopes by the caller's role (employee→own, manager→agency,
+ *  finance/admin→all). Offline falls back to paging/filtering the mock trail. */
+export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  return backend(
+    () => {
+      const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+      if (params.action) qs.set("action", params.action);
+      if (params.q) qs.set("q", params.q);
+      return apiGet<Raw>(`/activity?${qs.toString()}`).then((r) => ({
+        items: Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
+        total: num(r.total),
+        page: num(r.page, page),
+        pageSize: num(r.page_size, pageSize),
+      }));
+    },
+    () => {
+      const ql = (params.q ?? "").toLowerCase();
+      const all = clone(auditLog).filter(
+        (e) =>
+          (!params.action || e.action === params.action) &&
+          (!ql || `${e.summary} ${e.action} ${e.entity ?? ""}`.toLowerCase().includes(ql)),
+      );
+      const start = (page - 1) * pageSize;
+      return delay({ items: all.slice(start, start + pageSize), total: all.length, page, pageSize });
+    },
   );
 }
 
@@ -1172,6 +1219,26 @@ export async function markNotificationsRead(role: Role): Promise<AppNotification
   );
 }
 
+// ── User settings / preferences ──────────────────────────────────────────────
+export type UserPreferences = Record<string, boolean | string | number>;
+
+export function getPreferences(): Promise<UserPreferences> {
+  return backend(
+    () => apiGet<Raw>("/me/preferences").then((r) => (r.preferences as UserPreferences) ?? {}),
+    () => delay({}, 100),
+  );
+}
+
+export function updatePreferences(prefs: UserPreferences): Promise<UserPreferences> {
+  return backend(
+    () =>
+      apiPut<Raw>("/me/preferences", { preferences: prefs }).then(
+        (r) => (r.preferences as UserPreferences) ?? {},
+      ),
+    () => delay(clone(prefs), 100),
+  );
+}
+
 export type FinanceKpisResult = Awaited<ReturnType<typeof getFinanceKpis>>;
 
 // ── Additional backend clients ───────────────────────────────────────────────
@@ -1183,6 +1250,7 @@ export interface MeProfile {
   subjectId: string;
   role: Role;
   agencyId?: string;
+  agencyName?: string;
   email?: string;
   name?: string;
 }
@@ -1192,6 +1260,7 @@ export function getMe(): Promise<MeProfile> {
     subjectId: String(r.subject_id ?? r.id ?? ""),
     role: String(r.role ?? "employee").toLowerCase() as Role,
     agencyId: (r.agency_id as string) ?? undefined,
+    agencyName: (r.agency_name as string) ?? undefined,
     email: (r.email as string) ?? undefined,
     name: (r.name as string) ?? undefined,
   }));

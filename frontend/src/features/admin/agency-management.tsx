@@ -120,7 +120,7 @@ export function AgencyManagement() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={onboard} disabled={name.trim().length < 2 || addAgency.isPending}>
+            <Button onClick={onboard} loading={addAgency.isPending} disabled={name.trim().length < 2}>
               Onboard
             </Button>
           </DialogFooter>

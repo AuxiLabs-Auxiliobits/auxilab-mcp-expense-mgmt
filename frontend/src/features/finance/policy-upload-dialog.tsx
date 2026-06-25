@@ -135,7 +135,7 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!valid || upload.isPending}>
+          <Button onClick={submit} loading={upload.isPending} disabled={!valid}>
             Upload (Draft)
           </Button>
         </DialogFooter>

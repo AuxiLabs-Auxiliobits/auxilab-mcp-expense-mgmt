@@ -89,6 +89,7 @@ export interface User {
   email: string;
   role: Role;
   agencyId: string;
+  agencyName?: string; // resolved from agencyId for display
   avatarUrl?: string;
 }
 

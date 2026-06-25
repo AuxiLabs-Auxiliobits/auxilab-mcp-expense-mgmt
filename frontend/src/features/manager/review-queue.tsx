@@ -236,7 +236,7 @@ export function ReviewQueue() {
                 <Button variant="ghost" size="sm" onClick={() => setCheckedIds(new Set())}>
                   Clear
                 </Button>
-                <Button size="sm" onClick={runBulkApprove} disabled={bulkApprove.isPending}>
+                <Button size="sm" onClick={runBulkApprove} loading={bulkApprove.isPending}>
                   <Icon name="done_all" /> Approve {checkedIds.size}
                 </Button>
               </div>
@@ -397,15 +397,15 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
   async function approveEntireSheet() {
     const updated = await approveSheet.mutateAsync({ sheetId: sheet.id, actor });
     if (updated.status === "FINANCE_MANUAL_REVIEW") {
-      toast.warning(`${sheet.id} routed to Finance for manual review`, {
+      toast.warning(`“${sheet.title}” routed to Finance for manual review`, {
         description: updated.routeReasonDetail,
       });
     } else if (updated.status === "FINANCE_APPROVED") {
-      toast.success(`${sheet.id} auto-approved by the AI Finance Approver`, {
+      toast.success(`“${sheet.title}” auto-approved by the AI Finance Approver`, {
         description: `Confidence ${Math.round((updated.llmConfidence ?? 0) * 100)}%.`,
       });
     } else {
-      toast.success(`${sheet.id} sent to Finance`);
+      toast.success(`“${sheet.title}” sent to Finance`);
     }
   }
 
@@ -473,7 +473,8 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
       <div className="flex justify-end gap-3 border-t border-outline-variant bg-surface-bright p-4">
         <Button variant="outline">Return to Queue</Button>
         <Button
-          disabled={!allApproved || isOwnSheet || approveSheet.isPending}
+          loading={approveSheet.isPending}
+          disabled={!allApproved || isOwnSheet}
           onClick={approveEntireSheet}
           title={allApproved ? undefined : "Complete line item reviews first"}
         >
@@ -514,7 +515,8 @@ function SheetDetail({ sheet }: { sheet: ExpenseSheet }) {
             </Button>
             <Button
               variant={pending?.action === "reject" ? "destructive" : "default"}
-              disabled={reason.trim().length < 3 || lineItemAction.isPending}
+              loading={lineItemAction.isPending}
+              disabled={reason.trim().length < 3}
               onClick={confirmPending}
             >
               {pending?.action === "reject" ? "Reject" : "Request Info"}

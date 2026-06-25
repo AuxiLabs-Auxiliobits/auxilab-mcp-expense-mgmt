@@ -13,6 +13,27 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 export const USE_BACKEND =
   !!API_BASE && process.env.NEXT_PUBLIC_USE_BACKEND === "true";
 
+/**
+ * Error thrown for non-2xx backend responses. Carries the HTTP `status` so
+ * callers (and the global query-cache handler) can react to a stale/expired
+ * token — a backend `401` means the NextAuth cookie has outlived the access
+ * token and the session must be torn down.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly method: string,
+    public readonly path: string,
+    statusText: string,
+  ) {
+    super(`${method} ${path} → ${status} ${statusText}`);
+    this.name = "ApiError";
+  }
+}
+
+export const isUnauthorized = (err: unknown): boolean =>
+  err instanceof ApiError && err.status === 401;
+
 async function authHeader(): Promise<Record<string, string>> {
   try {
     const session = await getSession();
@@ -34,7 +55,7 @@ async function request<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`${method} ${path} → ${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, method, path, res.statusText);
   }
   return (await res.json()) as T;
 }
@@ -47,7 +68,7 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
     body: form,
   });
   if (!res.ok) {
-    throw new Error(`POST ${path} → ${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, "POST", path, res.statusText);
   }
   return (await res.json()) as T;
 }
@@ -56,13 +77,14 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
 export async function apiBlob(path: string): Promise<Blob> {
   const res = await fetch(`${API_BASE}${path}`, { headers: { ...(await authHeader()) } });
   if (!res.ok) {
-    throw new Error(`GET ${path} → ${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, "GET", path, res.statusText);
   }
   return res.blob();
 }
 
 export const apiGet = <T>(path: string) => request<T>("GET", path);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>("POST", path, body);
+export const apiPut = <T>(path: string, body?: unknown) => request<T>("PUT", path, body);
 export const apiPatch = <T>(path: string, body?: unknown) => request<T>("PATCH", path, body);
 export const apiDelete = <T>(path: string) => request<T>("DELETE", path);
 

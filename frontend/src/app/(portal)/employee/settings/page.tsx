@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useCurrentUser } from "@/data/hooks";
+import { useCurrentUser, usePreferences, useUpdatePreferences } from "@/data/hooks";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,15 +19,43 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Stable preference keys persisted via PUT /me/preferences. */
 const PREFS = [
-  { label: "Sheet status changes", desc: "Notify me when a sheet is approved, rejected, or routed.", on: true },
-  { label: "Info requests", desc: "Notify me when a manager requests more information.", on: true },
-  { label: "Payment confirmations", desc: "Notify me when a reimbursement is paid.", on: false },
-];
+  {
+    key: "statusChanges",
+    label: "Sheet status changes",
+    desc: "Notify me when a sheet is approved, rejected, or routed.",
+    fallback: true,
+  },
+  {
+    key: "infoRequests",
+    label: "Info requests",
+    desc: "Notify me when a manager requests more information.",
+    fallback: true,
+  },
+  {
+    key: "paymentConfirmations",
+    label: "Payment confirmations",
+    desc: "Notify me when a reimbursement is paid.",
+    fallback: false,
+  },
+] as const;
 
 export default function EmployeeSettingsPage() {
   const { data: user } = useCurrentUser("employee");
-  const [prefs, setPrefs] = useState(PREFS);
+  const { data: prefs, isLoading } = usePreferences();
+  const update = useUpdatePreferences();
+
+  const isOn = (p: (typeof PREFS)[number]) =>
+    prefs && p.key in prefs ? Boolean(prefs[p.key]) : p.fallback;
+
+  // Persist the full set so every key is stored, flipping just the toggled one.
+  const toggle = (key: string) => {
+    const next = Object.fromEntries(
+      PREFS.map((p) => [p.key, p.key === key ? !isOn(p) : isOn(p)]),
+    );
+    update.mutate(next);
+  };
 
   return (
     <PageContainer className="max-w-3xl">
@@ -45,53 +72,54 @@ export default function EmployeeSettingsPage() {
           <Field label="Name" value={user?.name ?? "—"} />
           <Field label="Email" value={user?.email ?? "—"} />
           <Field label="Role" value={user ? ROLE_LABELS[user.role] : "—"} />
-          <Field label="Agency" value={user?.agencyId ?? "—"} />
+          <Field label="Agency" value={user?.agencyName ?? user?.agencyId ?? "—"} />
         </CardContent>
       </Card>
 
       <Card className="mt-4">
         <CardHeader>
           <CardTitle>Notifications</CardTitle>
+          {update.isError && (
+            <span className="font-mono text-label-md text-error">Couldn&apos;t save — try again</span>
+          )}
         </CardHeader>
         <div className="divide-y divide-outline-variant">
-          {prefs.map((p, i) => (
-            <div
-              key={p.label}
-              className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-container-low"
-            >
-              <div>
-                <div className="text-body-sm font-medium text-on-surface">{p.label}</div>
-                <div className="text-body-sm text-on-surface-variant">{p.desc}</div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={p.on}
-                aria-label={p.label}
-                onClick={() =>
-                  setPrefs((prev) => prev.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))
-                }
-                className={cn(
-                  "relative h-6 w-11 shrink-0 rounded-full transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  p.on ? "bg-success-green" : "bg-surface-container-highest",
-                )}
+          {PREFS.map((p) => {
+            const on = isOn(p);
+            return (
+              <div
+                key={p.key}
+                className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-container-low"
               >
-                <span
+                <div>
+                  <div className="text-body-sm font-medium text-on-surface">{p.label}</div>
+                  <div className="text-body-sm text-on-surface-variant">{p.desc}</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={on}
+                  aria-label={p.label}
+                  disabled={isLoading}
+                  onClick={() => toggle(p.key)}
                   className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-surface-container-lowest shadow transition-transform duration-300 ease-spring",
-                    p.on ? "translate-x-[1.375rem]" : "translate-x-0.5",
+                    "relative h-6 w-11 shrink-0 rounded-full transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50",
+                    on ? "bg-success-green" : "bg-surface-container-highest",
                   )}
-                />
-              </button>
-            </div>
-          ))}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-5 w-5 rounded-full bg-surface-container-lowest shadow transition-transform duration-300 ease-spring",
+                      on ? "translate-x-[1.375rem]" : "translate-x-0.5",
+                    )}
+                  />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
-      <p className="mt-4 flex items-center gap-1 text-body-sm text-on-surface-variant">
-        <Icon name="lock" className="text-[16px]" />
-        Profile fields are read-only — identity is brokered by Microsoft Entra External ID.
-      </p>
     </PageContainer>
   );
 }

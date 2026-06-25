@@ -37,7 +37,7 @@ export const lineItemSchema = z
       .positive("Amount must be greater than 0"),
     currency: z.enum(CURRENCIES),
     expenseDate: z.string().min(1, "Expense date is required"),
-    receiptDatetime: z.string().optional(),
+    receiptDatetime: z.string().min(1, "Receipt date is required"),
     receiptTotal: optionalNumber,
     tax: optionalNumber,
   })
@@ -48,6 +48,14 @@ export const lineItemSchema = z
         code: z.ZodIssueCode.custom,
         path: ["categoryOther"],
         message: 'Specify the expense type for "Other".',
+      });
+    }
+    // The receipt's calendar date must match the expense date (time of day may differ).
+    if (val.expenseDate && val.receiptDatetime?.slice(0, 10) !== val.expenseDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["receiptDatetime"],
+        message: "Receipt date must match the expense date.",
       });
     }
   });

@@ -173,6 +173,7 @@ export function mapUser(r: Raw): User {
     email: r.email ?? "",
     role: String(r.role ?? "employee").toLowerCase() as Role,
     agencyId: String(r.agency_id ?? r.agencyId ?? ""),
+    agencyName: (r.agency_name ?? r.agencyName) as string | undefined,
   };
 }
 

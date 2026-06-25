@@ -48,7 +48,7 @@ export function ReviewDetail({
       });
       toast.success(
         decision === "APPROVED" ? "Sheet approved" : "Sheet rejected",
-        { description: `${sheet.id} — logged to the immutable audit trail.` },
+        { description: `“${sheet.title}” — logged to the immutable audit trail.` },
       );
       onClose();
     });
@@ -122,7 +122,7 @@ export function ReviewDetail({
               type="button"
               variant="outline"
               className="flex-1 bg-surface-container-highest"
-              disabled={override.isPending}
+              loading={override.isPending}
               onClick={submit("REJECTED_WITH_COMMENTS")}
             >
               <Icon name="close" className="text-error" /> Reject Sheet
@@ -130,7 +130,7 @@ export function ReviewDetail({
             <Button
               type="button"
               className="flex-1"
-              disabled={override.isPending}
+              loading={override.isPending}
               onClick={submit("APPROVED")}
             >
               <Icon name="check" /> Approve Sheet
