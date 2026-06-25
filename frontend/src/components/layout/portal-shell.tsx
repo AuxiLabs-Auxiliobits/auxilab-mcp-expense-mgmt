@@ -6,6 +6,7 @@ import { roleFromPath } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette";
 import { SessionManager } from "@/components/session-manager";
+import { AssistantWidget } from "@/features/assistant/assistant-widget";
 import { Sidebar } from "./sidebar";
 import { TopNav } from "./top-nav";
 
@@ -53,6 +54,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       </div>
       <CommandPalette />
       <SessionManager />
+      <AssistantWidget role={role} pathname={pathname} />
     </div>
   );
 }
