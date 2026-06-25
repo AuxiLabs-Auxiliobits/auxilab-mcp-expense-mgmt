@@ -77,6 +77,41 @@ returns a clear "you don't have permission" message.
 `suggest_policy_violations` — each tells the AI which tools/resources to use so answers stay
 grounded in real data.
 
+## AI Agents (multi-agent layer)
+
+In MCP, **the host is the agent runtime** — Claude Desktop / Cursor / ChatGPT do the LLM
+reasoning and tool selection. So the agents here are **MCP prompts** (role + allowed tools +
+workflow + guardrails) the host enacts using the tools above. No second LLM, no new
+infrastructure, and **no duplicated business logic** — every action still flows through the
+tools (RBAC/audit enforced by the API).
+
+**7 domain agents + orchestrator** (registered as prompts; `agents://catalog` lists the roster):
+
+| Agent | Does | Key tools |
+|---|---|---|
+| `employee_agent` | create/submit/track own expenses | create_expense, add_line_item, upload_receipt, submit/resubmit/withdraw |
+| `manager_agent` | review/approve/reject/return | get_pending_approvals, list_receipts, approve/reject/return, approve_sheet |
+| `finance_agent` | resolve routed sheets, KPIs | get_finance_queue, finance_decision/override, get_finance_kpis |
+| `admin_agent` | users, dashboards, health | list_users, get_user, server_health, get_dashboard_metrics |
+| `policy_agent` | policy Q&A + compliance | ask_policy, policy_checker, get_expense |
+| `audit_agent` | history + unusual activity | expense://{id}/history, my_activity, duplicate_detector |
+| `reporting_agent` | spend analytics + KPI reports | get_dashboard_metrics, get_spend_by_category, report_summariser |
+
+- **Orchestrator** prompt routes intent and coordinates multi-agent work; the deterministic
+  **`recommend_agent`** tool returns `{agent, confidence, rationale, suggested_tools}` for transparent routing.
+- **Explainability**: every agent reply ends with *Actions taken · Tools used · Data sources ·
+  Rationale · Confidence · Next steps*.
+- **Memory** is **host-owned** (the chat thread is the multi-turn memory; prompts instruct the
+  model to track pending actions and ask for clarification). The server stays stateless — no
+  per-user store to leak or scale.
+- **Human-in-the-loop**: the 7 destructive tools carry `destructiveHint`, so the host confirms
+  before an agent approves/rejects/returns/withdraws.
+
+### Use the agents from a client
+Prompts appear as slash-commands / "prompt" entries in the host. In Claude Desktop, pick the
+server's **`manager_agent`** prompt then say *“review my pending approvals”*; or start with
+**`orchestrator`** and let it route. Cursor/VS Code/Windsurf expose the same prompts + tools.
+
 ## Install
 
 From the monorepo root (the package depends on the sibling `expense-core`):

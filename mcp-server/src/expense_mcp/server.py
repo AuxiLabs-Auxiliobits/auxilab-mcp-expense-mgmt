@@ -31,6 +31,7 @@ from expense_mcp.tools import (  # noqa: E402,F401
 )
 from expense_mcp.resources import resources  # noqa: E402,F401
 from expense_mcp.prompts import prompts  # noqa: E402,F401
+from expense_mcp.agents import definitions as agent_definitions  # noqa: E402,F401
 
 # Back-compat re-exports (the engine tools were historically importable from `server`).
 from expense_mcp.tools.engine import (  # noqa: E402,F401
