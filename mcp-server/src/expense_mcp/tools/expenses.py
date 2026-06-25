@@ -120,3 +120,45 @@ def search_expenses(
         "total_amount": round(total_amount, 2),
         "results": page,
     }
+
+
+# --- draft cleanup + decision history + line-item edits ----------------------------------- #
+@mcp.tool(annotations=READ)
+def get_decisions(sheet_id: str) -> list[dict[str, Any]]:
+    """The decision/approval history for a sheet (who did what, when, with reasons)."""
+    return client.get(f"/sheets/{sheet_id}/decisions")
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+def discard_draft(sheet_id: str) -> dict[str, Any] | None:
+    """Permanently delete a DRAFT sheet. Only drafts can be discarded."""
+    return client.delete(f"/sheets/{sheet_id}")
+
+
+@mcp.tool(annotations=WRITE)
+def update_line_item(
+    sheet_id: str,
+    line_item_id: str,
+    amount: Decimal | None = None,
+    merchant: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    expense_date: str | None = None,
+    currency: str | None = None,
+    receipt_total: Decimal | None = None,
+    receipt_datetime: str | None = None,
+    tax: Decimal | None = None,
+) -> dict[str, Any]:
+    """Edit a line item on a DRAFT sheet. Only the provided fields change."""
+    body = {k: v for k, v in {
+        "amount": amount, "merchant": merchant, "description": description, "category": category,
+        "expense_date": expense_date, "currency": currency, "receipt_total": receipt_total,
+        "receipt_datetime": receipt_datetime, "tax": tax,
+    }.items() if v is not None}
+    return client.patch(f"/sheets/{sheet_id}/line-items/{line_item_id}", json=body)
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+def remove_line_item(sheet_id: str, line_item_id: str) -> dict[str, Any]:
+    """Remove a line item from a DRAFT sheet."""
+    return client.delete(f"/sheets/{sheet_id}/line-items/{line_item_id}")
