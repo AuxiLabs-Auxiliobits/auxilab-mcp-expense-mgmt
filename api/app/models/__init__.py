@@ -10,6 +10,7 @@ from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.models.notification import Notification
 from app.models.policy import AgencyPolicy
+from app.models.receipt_upload import ReceiptUpload
 from app.models.user import User
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "LineItem",
     "Notification",
     "AgencyPolicy",
+    "ReceiptUpload",
     "User",
 ]

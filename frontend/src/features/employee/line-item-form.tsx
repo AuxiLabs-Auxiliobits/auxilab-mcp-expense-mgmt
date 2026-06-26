@@ -5,9 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
-import { useReceiptUploads } from "@/data/receipt-uploads";
-import { uploadReceipt, scanReceipt, type ReceiptScan } from "@/data/api";
+import { useAddLineItem, useUpdateLineItem, useMyReceipts, queryKeys } from "@/data/hooks";
+import {
+  uploadReceipt,
+  scanReceipt,
+  attachReceiptFromLibrary,
+  type ReceiptScan,
+  type ReceiptUpload,
+} from "@/data/api";
 import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { baselinePolicy } from "@/data/mock";
 import {
@@ -77,11 +82,11 @@ export function LineItemDialog({
   const addLineItem = useAddLineItem();
   const updateLineItem = useUpdateLineItem();
   const qc = useQueryClient();
-  const { uploads, removeUpload } = useReceiptUploads();
+  const { data: myReceipts } = useMyReceipts();
   // Each entry carries optional `file` bytes (newly picked/dropped) and/or a `downloadUrl`
-  // (already on the server, edit mode) so we can show a real size + preview either way.
-  // `uploadId` is set when the entry was picked from the My Receipts pool, so we can
-  // retire it from that pool once it's successfully attached here.
+  // (already on the server: edit-mode attachments, or a My Receipts pick) so we can show a
+  // real size + preview either way. `uploadId` is set when the entry was picked from the My
+  // Receipts library, so on save we attach it server-side instead of re-uploading bytes.
   const [files, setFiles] = useState<
     (AttachmentInput & { file?: File; downloadUrl?: string; uploadId?: string })[]
   >([]);
@@ -250,29 +255,26 @@ export function LineItemDialog({
     e.target.value = "";
   }
 
-  /** Attach a receipt the employee already uploaded on the My Receipts page. */
-  function addFromUpload(u: (typeof uploads)[number]) {
-    if (files.some((f) => f.uploadId === u.id || f.file === u.file)) return;
-    const issue = fileIssue(u.file, baselinePolicy);
-    if (issue) {
-      toast.error(`${u.fileName}: ${issue}`);
-      return;
-    }
+  /** Attach a receipt the employee already uploaded on the My Receipts page. The bytes already
+   *  live on the server, so we only carry a reference (`uploadId`) + preview URL; the actual
+   *  attach happens on save via `attachReceiptFromLibrary`. */
+  function addFromUpload(u: ReceiptUpload) {
+    if (files.some((f) => f.uploadId === u.id)) return;
     setFiles((prev) => [
       ...prev,
       {
         fileName: u.fileName,
         fileType: u.fileType,
         sizeBytes: u.sizeBytes,
-        file: u.file,
+        downloadUrl: u.downloadUrl,
         uploadId: u.id,
       },
     ]);
   }
 
-  // My Receipts entries not already attached to this line item.
-  const availableUploads = uploads.filter(
-    (u) => !files.some((f) => f.uploadId === u.id || f.file === u.file),
+  // My Receipts entries not already added to this line item.
+  const availableUploads = (myReceipts ?? []).filter(
+    (u) => !files.some((f) => f.uploadId === u.id),
   );
 
   function onDrop(e: React.DragEvent) {
@@ -300,12 +302,14 @@ export function LineItemDialog({
         ? await updateLineItem.mutateAsync({ sheetId, lineItemId: item.id, input })
         : await addLineItem.mutateAsync({ sheetId, input });
 
-      // Upload the actual receipt bytes for any newly added files. On add, the new
-      // line item is the one in the returned sheet that wasn't an existing sibling.
-      const newFiles = files.filter((f) => f.file);
+      // Persist receipts. Two kinds: freshly picked/dropped files (upload the bytes) and
+      // picks from the My Receipts library (already on the server — attach by reference). On
+      // add, the new line item is the one in the returned sheet that wasn't an existing sibling.
+      const newFiles = files.filter((f) => f.file && !f.uploadId);
+      const libraryPicks = files.filter((f) => f.uploadId);
       let scanResult: ReceiptScan | null = null;
       let scannedId: string | undefined;
-      if (newFiles.length) {
+      if (newFiles.length || libraryPicks.length) {
         let targetId = item?.id;
         if (!targetId) {
           const known = new Set(siblings.map((s) => s.id));
@@ -315,9 +319,12 @@ export function LineItemDialog({
           for (const f of newFiles) {
             await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
           }
-          // A receipt picked from the My Receipts pool is now assigned — drop it.
-          for (const f of newFiles) if (f.uploadId) removeUpload(f.uploadId);
+          // A receipt picked from the My Receipts library moves onto this line item server-side.
+          for (const f of libraryPicks) {
+            await attachReceiptFromLibrary({ sheetId, lineItemId: targetId, receiptId: f.uploadId! });
+          }
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
+          if (libraryPicks.length) qc.invalidateQueries({ queryKey: queryKeys.myReceipts });
 
           // Scan the receipt (Document Intelligence) and reconcile against the entered
           // amount. Beyond setting a server-side Finance flag, the extracted headline is
@@ -608,7 +615,11 @@ export function LineItemDialog({
               <ul className="space-y-1 rounded border border-outline-variant bg-surface-container-low p-2">
                 {availableUploads.map((u) => (
                   <li key={u.id} className="flex items-center gap-2 rounded px-1 py-1">
-                    <ReceiptPreview file={u.file} fileName={u.fileName} fileType={u.fileType} />
+                    <ReceiptPreview
+                      downloadUrl={u.downloadUrl}
+                      fileName={u.fileName}
+                      fileType={u.fileType}
+                    />
                     <span className="flex-1 truncate text-body-sm">{u.fileName}</span>
                     <span className="font-mono text-label-sm text-on-surface-variant">
                       {formatSize(u.sizeBytes)}

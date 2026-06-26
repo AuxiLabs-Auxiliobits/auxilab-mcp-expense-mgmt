@@ -43,6 +43,7 @@ function screenLabel(pathname: string): string {
 
 export function AssistantWidget({ role, pathname }: { role: string; pathname: string }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -146,7 +147,10 @@ export function AssistantWidget({ role, pathname }: { role: string; pathname: st
           className={cn(
             "fixed z-50 flex flex-col overflow-hidden border border-outline-variant bg-surface text-on-surface shadow-2xl",
             "inset-0 rounded-none", // mobile: full-screen
-            "sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[600px] sm:max-h-[85vh] sm:w-[400px] sm:rounded-2xl",
+            "sm:inset-auto sm:bottom-6 sm:right-6 sm:max-h-[90vh] sm:rounded-2xl",
+            expanded
+              ? "sm:h-[90vh] sm:w-[680px]" // expanded: roomier reading/working area
+              : "sm:h-[600px] sm:max-h-[85vh] sm:w-[400px]",
           )}
           role="dialog"
           aria-label="AI Assistant"
@@ -160,6 +164,17 @@ export function AssistantWidget({ role, pathname }: { role: string; pathname: st
               <p className="truncate text-sm font-semibold">AI Assistant</p>
               <p className="truncate text-xs capitalize text-on-surface-variant">{role} workspace</p>
             </div>
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              aria-label={expanded ? "Collapse assistant" : "Expand assistant"}
+              title={expanded ? "Collapse" : "Expand"}
+              className="hidden rounded-full p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface sm:inline-flex"
+            >
+              <Icon
+                name={expanded ? "close_fullscreen" : "open_in_full"}
+                className="text-[18px]"
+              />
+            </button>
             <button
               onClick={exportConversation}
               aria-label="Export conversation"

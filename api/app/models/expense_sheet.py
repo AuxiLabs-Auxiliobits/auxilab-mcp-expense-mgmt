@@ -24,6 +24,9 @@ class ExpenseSheet(SQLModel, table=True):
     period: str | None = None  # "YYYY-MM" (month + year of the current year)
 
     submitted_at: datetime | None = None
+    # The manager who last advanced/returned the sheet out of manager review (SCOPING §6.2).
+    # Powers the manager's "Reviewed" history without scanning the audit log.
+    manager_decided_by: str | None = Field(default=None, index=True)
     finance_decision: FinanceDecision | None = None
     finance_decided_by: str | None = None
     policy_version_used: str | None = None  # pinned at submission (SCOPING §7)

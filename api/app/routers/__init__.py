@@ -13,6 +13,7 @@ from app.routers import (
     notifications,
     intake,
     policy,
+    receipts,
     reports,
     sheets,
 )
@@ -32,7 +33,7 @@ ALL_ROUTERS = [
     notifications.router,
     me.router,
     audit.router,
-    notifications.router,
     attachments.router,
+    receipts.router,
     assistant.router,
 ]

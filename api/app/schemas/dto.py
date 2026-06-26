@@ -174,6 +174,27 @@ class AttachmentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReceiptUploadOut(BaseModel):
+    """An unassigned receipt in the employee's library (My Receipts), not yet on a line item."""
+
+    id: str
+    filename: str | None = None
+    file_type: str
+    size: int
+    scan_status: str
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
+
+    model_config = {"from_attributes": True}
+
+
+class ReceiptAttachFromLibrary(BaseModel):
+    """Attach an existing library receipt to a line item (body for the attach route)."""
+
+    receipt_id: str
+
+
 class LineItemOut(BaseModel):
     id: str
     category: Category | None
@@ -219,6 +240,7 @@ class SheetOut(BaseModel):
     period: str | None
     finance_decision: FinanceDecision | None
     finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
+    manager_decided_by: str | None = None  # raw user id of the deciding manager (for "my reviews")
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
@@ -594,14 +616,28 @@ class SpendByCategoryOut(BaseModel):
 
 class FinanceKpisOut(BaseModel):
     """Real, deterministically-computed finance KPIs (SCOPING §4). AI-quality metrics that
-    require ground-truth labels (accuracy, false-positive rate, SLA) are intentionally omitted
-    here — the client fills those from its baseline until a metrics pipeline emits them."""
+    require ground-truth labels (approval accuracy, false-positive rate) are still omitted
+    here — they need a human-labelling pipeline, so the client fills those from its baseline.
+    Everything else below is now derived from the data we actually have (timestamps,
+    statuses, cited clauses)."""
 
     auto_approval_rate: float  # % of finance-reached sheets the LLM auto-approved
     manual_interventions: int  # sheets currently routed to a human
     policy_citations: int  # decisions that cited at least one policy clause
     policy_compliance_rate: float  # % of line items with no rejection / policy failure
     finance_reached: int  # denominator: sheets that reached a finance outcome
+
+    # Period-over-period movement, derived from the per-period auto-approval trend.
+    auto_approval_delta: float | None = None  # pts change vs the previous period
+    manual_interventions_delta: int | None = None  # change in routed sheets vs previous period
+
+    # Operational metrics from sheet timestamps / routing (no ground truth needed).
+    escalation_rate: float | None = None  # % of finance-reached sheets that went to a human
+    sla_compliance: float | None = None  # % resolved within the SLA target window
+    avg_resolution_hours: float | None = None  # mean submit→finance-decision time, hours
+
+    top_clause: str | None = None  # most-cited policy clause across decisions
+    trend: list[float] | None = None  # auto-approval rate per period (oldest→newest)
 
 
 # --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #

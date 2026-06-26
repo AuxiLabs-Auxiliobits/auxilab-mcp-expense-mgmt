@@ -37,14 +37,14 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
 
   const [open, setOpen] = useState(false);
   const [agencyId, setAgencyId] = useState("");
-  const [name, setName] = useState("");
-  const [version, setVersion] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
 
   const agencyList =
     agencies ?? (user?.agencyId ? [{ id: user.agencyId, name: user.agencyName ?? "My agency" }] : []);
-  const valid = agencyId && name.trim() && version.trim() && effectiveDate && fileName;
+  // The endpoint needs an agency + a file; the version is auto-assigned and the effective
+  // date is optional, so they don't gate submission.
+  const valid = !!agencyId && !!file;
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -54,30 +54,26 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
       toast.error(`${f.name}: ${issue}`);
       return;
     }
-    setFileName(f.name);
+    setFile(f);
   }
 
   async function submit() {
     const agency = agencyList.find((a) => a.id === agencyId);
-    if (!agency) return;
+    if (!agency || !file) return;
     const doc = await upload.mutateAsync({
       agencyId,
       agencyName: agency.name,
-      name: name.trim(),
-      version: version.trim(),
-      fileName,
-      effectiveDate,
-      createdBy: "sarah.okafor",
+      file,
+      effectiveDate: effectiveDate || undefined,
+      createdBy: user?.id ?? "",
     });
     toast.success(`${doc.name} ${doc.version} uploaded`, {
       description: "Draft created — awaiting a second approver to publish (maker-checker).",
     });
     setOpen(false);
     setAgencyId("");
-    setName("");
-    setVersion("");
     setEffectiveDate("");
-    setFileName("");
+    setFile(null);
   }
 
   return (
@@ -108,18 +104,8 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="pol-name">Document Name</Label>
-              <Input id="pol-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Crispin Finance Rules" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pol-version">Version</Label>
-              <Input id="pol-version" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="v2.2" />
-            </div>
-          </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pol-eff">Effective Date</Label>
+            <Label htmlFor="pol-eff">Effective Date (optional)</Label>
             <Input id="pol-eff" type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -130,9 +116,13 @@ export function PolicyUploadDialog({ trigger }: { trigger: React.ReactNode }) {
               className="flex w-full items-center gap-2 rounded border border-dashed border-outline-variant bg-surface-container-low px-4 py-3 text-on-surface-variant hover:border-secondary hover:text-primary"
             >
               <Icon name="upload_file" className="text-[20px]" />
-              <span className="text-body-sm">{fileName || "Click to attach (.pdf .docx …)"}</span>
+              <span className="text-body-sm">{file?.name || "Click to attach (.pdf .docx …)"}</span>
             </button>
             <input ref={fileRef} type="file" accept={baselinePolicy.allowed_extensions.join(",")} className="hidden" onChange={onPickFile} />
+            <p className="text-label-sm text-on-surface-variant">
+              The version is assigned automatically (next version for the agency). The file is stored
+              in the policy storage account, then indexed for RAG once a second approver publishes it.
+            </p>
           </div>
         </div>
 

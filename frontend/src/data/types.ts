@@ -202,6 +202,8 @@ export interface ExpenseSheet {
   updatedAt: string;
   financeDecision?: FinanceDecision;
   financeDecidedBy?: string;
+  /** User id of the manager who last advanced/returned this sheet (powers "Reviewed" history). */
+  managerDecidedBy?: string;
   policyVersionUsed?: string;
   routeReason?: RouteReason;
   routeReasonDetail?: string;

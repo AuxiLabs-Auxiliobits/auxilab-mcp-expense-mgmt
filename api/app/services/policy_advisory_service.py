@@ -10,21 +10,37 @@ is on but Foundry isn't), so the API runs without the Azure extras.
 
 from __future__ import annotations
 
+import logging
+
 from app.config import Settings
 from app.schemas.dto import PolicyAdvisoryClause, PolicyAdvisoryOut
+
+logger = logging.getLogger(__name__)
+
+
+def _search_credential(settings: Settings):
+    """Prefer the API key for local dev (no `az login` / managed identity needed); fall back to
+    `DefaultAzureCredential` in Azure. Importing `azure.identity` lazily keeps it an optional
+    dependency — only needed on the managed-identity path."""
+    if settings.search_api_key:
+        from azure.core.credentials import AzureKeyCredential  # noqa: PLC0415
+
+        return AzureKeyCredential(settings.search_api_key)
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+
+    return DefaultAzureCredential()
 
 
 def advisory(query: str, agency_id: str | None, settings: Settings) -> PolicyAdvisoryOut:
     if not settings.search_endpoint or not agency_id:
         return PolicyAdvisoryOut(clause=None)
     try:
-        from azure.identity import DefaultAzureCredential  # noqa: PLC0415
         from azure.search.documents import SearchClient  # noqa: PLC0415
 
         client = SearchClient(
             endpoint=settings.search_endpoint,
             index_name=settings.search_index_name,
-            credential=DefaultAzureCredential(),
+            credential=_search_credential(settings),
         )
         # Security trimming: only this agency's chunks (SCOPING §9). Pull the top few so the
         # LLM has enough context to summarise accurately.
@@ -51,6 +67,9 @@ def advisory(query: str, agency_id: str | None, settings: Settings) -> PolicyAdv
             )
         )
     except Exception:  # noqa: BLE001 — advisory is best-effort; never surface as an error
+        # Best-effort: still return no clause, but log the cause so a misconfigured Search /
+        # missing azure-identity / auth failure is diagnosable instead of a silent null.
+        logger.warning("policy advisory retrieval failed (agency=%s)", agency_id, exc_info=True)
         return PolicyAdvisoryOut(clause=None)
 
 
@@ -63,7 +82,10 @@ def _plain_language(query: str, excerpt: str, settings: Settings) -> str:
             from expense_core.llm.providers import AzureFoundryProvider  # noqa: PLC0415
 
             llm = AzureFoundryProvider(
-                endpoint=settings.foundry_endpoint, deployment=settings.foundry_chat_deployment
+                endpoint=settings.foundry_endpoint,
+                deployment=settings.foundry_chat_deployment,
+                api_key=settings.foundry_api_key or None,
+                api_version=settings.foundry_api_version,
             )
             out = llm.complete(
                 [

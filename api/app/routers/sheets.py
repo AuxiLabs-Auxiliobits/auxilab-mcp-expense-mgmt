@@ -23,6 +23,7 @@ from app.schemas.dto import (
     LineItemCreate,
     LineItemOut,
     LineItemUpdate,
+    ReceiptAttachFromLibrary,
     ReceiptScanOut,
     SheetCreate,
     SheetOut,
@@ -30,7 +31,7 @@ from app.schemas.dto import (
 )
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
-from app.services import receipt_scan_service, sheet_service
+from app.services import receipt_library_service, receipt_scan_service, sheet_service
 from app.storage import read_receipt_blob
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
@@ -344,6 +345,30 @@ async def upload_receipt(
         filename=file.filename or "receipt",
         data=data,
         file_type=file.content_type or "application/octet-stream",
+    )
+    return AttachmentOut.model_validate(att)
+
+
+@router.post(
+    "/{sheet_id}/line-items/{line_item_id}/receipt/from-library",
+    response_model=AttachmentOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Attach a receipt already in My Receipts to a line item",
+    responses={404: {"description": "Sheet, line item, or receipt not found"}},
+)
+async def attach_receipt_from_library(
+    sheet_id: str,
+    line_item_id: str,
+    body: ReceiptAttachFromLibrary,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+) -> AttachmentOut:
+    """Attach a receipt the employee previously uploaded to their library (My Receipts) to a
+    line item. The bytes move into a normal attachment and the library entry is removed."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    att = receipt_library_service.attach_to_line_item(
+        session, principal, sheet=sheet, item=item, receipt_id=body.receipt_id,
     )
     return AttachmentOut.model_validate(att)
 

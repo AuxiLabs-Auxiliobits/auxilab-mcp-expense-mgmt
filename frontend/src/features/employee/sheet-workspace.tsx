@@ -5,15 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  useDiscardDraft,
   useRemoveLineItem,
   useResubmitSheet,
   useSheet,
+  useSheetDecisions,
   useSubmitSheet,
   useUpdateSheet,
   useWithdrawSheet,
 } from "@/data/hooks";
 import { Input } from "@/components/ui/input";
-import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
+import type { DecisionEntry, ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AiCitation, CitedClause } from "@/components/shared/ai-citation";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Reveal } from "@/components/shared/reveal";
@@ -207,9 +217,11 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   const submitSheet = useSubmitSheet();
   const resubmitSheet = useResubmitSheet();
   const withdrawSheet = useWithdrawSheet();
+  const discardDraft = useDiscardDraft();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LineItem | undefined>();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   if (isLoading || !sheet) {
     return (
@@ -226,6 +238,7 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
 
   const editable = EDITABLE.includes(sheet.status);
+  const isDraft = sheet.status === "DRAFT";
   const isResubmit = NEEDS_FEEDBACK.includes(sheet.status);
   const inFlight = IN_FLIGHT.includes(sheet.status);
   const withdrawable = WITHDRAWABLE.includes(sheet.status);
@@ -271,6 +284,19 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
     await withdrawSheet.mutateAsync(sheetId);
     toast("Sheet withdrawn", { description: `“${sheet!.title}” pulled back to draft.` });
     router.push("/employee");
+  }
+  async function discard() {
+    const title = sheet!.title;
+    try {
+      await discardDraft.mutateAsync({ sheetId, employeeId: sheet!.employeeId });
+      setConfirmDiscard(false);
+      toast("Draft discarded", { description: `“${title}” was permanently deleted.` });
+      router.push("/employee/sheets");
+    } catch (e) {
+      toast.error("Couldn't discard the draft", {
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
+    }
   }
 
   const blocked = empty || errorCount > 0;
@@ -336,6 +362,17 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {isDraft && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDiscard(true)}
+                    className="border-error/40 text-error hover:bg-error-container hover:text-on-error-container"
+                    title="Permanently delete this draft"
+                  >
+                    <Icon name="delete" /> Discard Draft
+                  </Button>
+                )}
                 {inFlight && (
                   <Button
                     variant="outline"
@@ -576,6 +613,35 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
         item={editing}
         siblings={sheet.lineItems.filter((l) => l.id !== editing?.id)}
       />
+
+      <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard this draft?</DialogTitle>
+            <DialogDescription>
+              “{sheet.title}” and its {sheet.lineItems.length} line item
+              {sheet.lineItems.length === 1 ? "" : "s"} will be permanently deleted. This
+              can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDiscard(false)}
+              disabled={discardDraft.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={discard}
+              loading={discardDraft.isPending}
+              className="bg-error text-on-error hover:bg-error/90"
+            >
+              <Icon name="delete" /> Discard Draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -726,6 +792,12 @@ function Timeline({ steps }: { steps: TimelineStep[] }) {
 function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
   const decided = sheet.financeDecision != null;
   const routed = sheet.status === "FINANCE_MANUAL_REVIEW";
+  // Full chronological trail (manager → AI → finance actions). Skipped for drafts — a
+  // sheet that hasn't been submitted has no decisions yet.
+  const { data: decisions, isLoading: decisionsLoading } = useSheetDecisions(
+    sheet.status === "DRAFT" ? undefined : sheet.id,
+  );
+  const trail = decisions ?? [];
 
   return (
     <Card className="shadow-sm">
@@ -779,8 +851,54 @@ function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
         {sheet.citedClause && (
           <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
         )}
+
+        {/* Full chronological history — manager / AI / finance actions, oldest first. */}
+        {sheet.status !== "DRAFT" && (
+          <div className="border-t border-outline-variant pt-3">
+            <h3 className="mb-2 flex items-center gap-1.5 font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
+              <Icon name="history" className="text-[14px]" /> History
+            </h3>
+            {decisionsLoading ? (
+              <p className="text-body-sm text-on-surface-variant">Loading history…</p>
+            ) : trail.length === 0 ? (
+              <p className="text-body-sm text-on-surface-variant">No decisions recorded yet.</p>
+            ) : (
+              <ol className="space-y-2">
+                {trail.map((d) => (
+                  <DecisionTrailItem key={d.id} decision={d} />
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
       </div>
     </Card>
+  );
+}
+
+// One entry in the employee's decision trail (manager/AI/finance action + remark + citations).
+function DecisionTrailItem({ decision: d }: { decision: DecisionEntry }) {
+  return (
+    <li className="flex items-start gap-2.5 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-2">
+      <Icon name="check_circle" className="mt-0.5 shrink-0 text-[16px] text-secondary" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-body-sm font-medium text-on-surface">{d.action}</span>
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-label-sm uppercase text-on-surface-variant">
+            {d.actorRole}
+          </span>
+          <span className="font-mono text-label-sm text-on-surface-variant">
+            {formatRelative(d.timestamp)}
+          </span>
+        </div>
+        {d.reason && <p className="mt-0.5 text-body-sm text-on-surface-variant">{d.reason}</p>}
+        {d.citedClauses.length > 0 && (
+          <p className="mt-0.5 font-mono text-label-sm text-secondary">
+            Cited: {d.citedClauses.join(", ")}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 

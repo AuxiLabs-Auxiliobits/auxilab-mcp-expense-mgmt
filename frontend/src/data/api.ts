@@ -370,6 +370,83 @@ export function uploadReceipt(args: {
   );
 }
 
+// ── Receipt library (My Receipts) — unassigned uploads, persisted server-side ──────────────
+/** A receipt the employee uploaded but hasn't attached to a line item yet. Persisted on the
+ *  backend (survives refresh, shared across devices), unlike the old in-memory store. */
+export interface ReceiptUpload {
+  id: string;
+  fileName: string;
+  fileType: string;
+  sizeBytes: number;
+  scanStatus: string;
+  uploadedAt?: string;
+  downloadUrl: string; // auth'd API path to fetch the bytes
+}
+
+function mapReceiptUpload(r: Raw): ReceiptUpload {
+  return {
+    id: String(r.id ?? ""),
+    fileName: String(r.filename ?? "receipt"),
+    fileType: String(r.file_type ?? "application/octet-stream"),
+    sizeBytes: num(r.size),
+    scanStatus: String(r.scan_status ?? "pending"),
+    uploadedAt: (r.uploaded_at as string) ?? undefined,
+    downloadUrl: String(r.download_url ?? ""),
+  };
+}
+
+/** My unassigned receipts (the "From My Receipts" pool), newest first. */
+export function listMyReceipts(): Promise<ReceiptUpload[]> {
+  return backend(
+    () => apiGet<Raw[]>("/receipts").then((rows) => rows.map(mapReceiptUpload)),
+    () => delay([]),
+  );
+}
+
+/** Upload a receipt to the library without attaching it to a line item yet. */
+export function uploadReceiptToLibrary(file: File): Promise<ReceiptUpload> {
+  return backend(
+    () => {
+      const form = new FormData();
+      form.append("file", file);
+      return apiUpload<Raw>("/receipts", form).then(mapReceiptUpload);
+    },
+    () =>
+      delay({
+        id: `upload-${file.name}-${file.size}`,
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        scanStatus: "pending",
+        downloadUrl: "",
+      }),
+  );
+}
+
+/** Remove an unassigned receipt from the library. */
+export function deleteLibraryReceipt(id: string): Promise<void> {
+  return backend(
+    () => apiDelete<unknown>(`/receipts/${id}`).then(() => undefined),
+    () => delay(undefined),
+  );
+}
+
+/** Attach a library receipt to a line item (moves it out of the library). */
+export function attachReceiptFromLibrary(args: {
+  sheetId: string;
+  lineItemId: string;
+  receiptId: string;
+}): Promise<void> {
+  return backend(
+    () =>
+      apiPost<Raw>(
+        `/sheets/${args.sheetId}/line-items/${args.lineItemId}/receipt/from-library`,
+        { receipt_id: args.receiptId },
+      ).then(() => undefined),
+    () => delay(undefined),
+  );
+}
+
 export interface ReceiptScan {
   source: string; // document_intelligence | text | unavailable
   merchant?: string;
@@ -632,6 +709,19 @@ export async function withdrawSheet(sheetId: string): Promise<ExpenseSheet> {
   );
 }
 
+/** Permanently discard a DRAFT sheet (hard delete, owner + DRAFT only). 204 → void.
+ *  For an in-flight sheet use withdrawSheet (soft recall) instead. */
+export async function discardDraft(sheetId: string): Promise<void> {
+  return backend(
+    () => apiDelete<void>(`/sheets/${sheetId}`),
+    () => {
+      const idx = sheetStore.findIndex((s) => s.id === sheetId);
+      if (idx >= 0) sheetStore.splice(idx, 1);
+      return delay(undefined, 200);
+    },
+  );
+}
+
 export async function removeLineItem(args: {
   sheetId: string;
   lineItemId: string;
@@ -692,6 +782,7 @@ async function resubmitSheetMock(sheetId: string): Promise<ExpenseSheet> {
   sheet.version += 1;
   sheet.status = "IN_MANAGER_REVIEW";
   sheet.submittedAt = new Date().toISOString();
+  sheet.managerDecidedBy = undefined;
   sheet.financeDecision = undefined;
   sheet.financeDecidedBy = undefined;
   sheet.routeReason = undefined;
@@ -776,6 +867,7 @@ async function actOnLineItemMock(input: LineItemActionInput): Promise<ExpenseShe
   // so they can fix it and resubmit (SCOPING.md §6.2).
   if (input.action === "reject" || input.action === "request_info") {
     sheet.status = "RETURNED_TO_EMPLOYEE";
+    sheet.managerDecidedBy = input.actor?.id;
     sheet.updatedAt = new Date().toISOString();
   }
   // Audit each per-line-item verdict (SCOPING.md §6.2).
@@ -815,14 +907,21 @@ export function getActivityLog(scope: { role: Role; userId: string }) {
     const all = clone(auditLog);
     return delay(scope.role === "admin" ? all : all.filter((e) => e.actorId === scope.userId));
   };
-  // The backend audit endpoint is finance/admin-gated and already scopes the
-  // result by the caller's token (admin = org-wide, finance = own). Employee /
-  // manager have no such endpoint, so they keep the mock trail.
+  // Live scoping by endpoint (each is token-scoped server-side):
+  //   • finance/admin → /finance/audit  (admin = org-wide, finance = own)
+  //   • manager       → /activity       (agency-scoped — the whole agency's trail,
+  //                                       not just the manager's own actions)
+  //   • employee      → /audit/me        (own actions only)
   return backend(
-    () =>
-      scope.role === "finance" || scope.role === "admin"
-        ? apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit))
-        : apiGet<Raw[]>("/audit/me?limit=200").then((rows) => rows.map(mapAudit)),
+    () => {
+      if (scope.role === "finance" || scope.role === "admin")
+        return apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit));
+      if (scope.role === "manager")
+        return apiGet<Raw>("/activity?page=1&page_size=200").then((r) =>
+          Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
+        );
+      return apiGet<Raw[]>("/audit/me?limit=200").then((rows) => rows.map(mapAudit));
+    },
     mockLog,
   );
 }
@@ -895,6 +994,7 @@ async function approveSheetMock(input: {
   sheet.lineItems.forEach((li) => {
     if (li.managerStatus !== "MANAGER_REJECTED") li.managerStatus = "MANAGER_APPROVED";
   });
+  sheet.managerDecidedBy = input.actor?.id;
   if (input.actor) {
     logActivity({
       actorId: input.actor.id,
@@ -912,18 +1012,35 @@ async function approveSheetMock(input: {
   return delay(clone(sheet), 500);
 }
 
+/** Outcome of a bulk approval: the sheets that went through, plus the ids that
+ *  failed so the caller can report a partial result instead of an all-or-nothing
+ *  error when only some sheets fail. */
+export interface BulkApproveResult {
+  approved: ExpenseSheet[];
+  failed: string[];
+}
+
 /** Manager bulk-approve (SCOPING.md §8): approve every line item on each
- *  selected sheet, then run the AI Finance Approver on each. */
+ *  selected sheet, then run the AI Finance Approver on each. There's no bulk
+ *  endpoint server-side, so this fans out to the per-sheet route; we use
+ *  `allSettled` so one sheet failing doesn't discard the sheets that succeeded. */
 export async function managerBulkApprove(input: {
   ids: string[];
   actor?: { id: string; name: string };
-}): Promise<ExpenseSheet[]> {
+}): Promise<BulkApproveResult> {
   return backend(
-    // No bulk endpoint server-side — approve each sheet via the per-sheet route.
-    () =>
-      Promise.all(
+    async () => {
+      const settled = await Promise.allSettled(
         input.ids.map((id) => apiPost<Raw>(`/manager/sheets/${id}/approve`).then(mapSheet)),
-      ),
+      );
+      const approved: ExpenseSheet[] = [];
+      const failed: string[] = [];
+      settled.forEach((r, i) => {
+        if (r.status === "fulfilled") approved.push(r.value);
+        else failed.push(input.ids[i]);
+      });
+      return { approved, failed };
+    },
     () => managerBulkApproveMock(input),
   );
 }
@@ -931,14 +1048,19 @@ export async function managerBulkApprove(input: {
 async function managerBulkApproveMock(input: {
   ids: string[];
   actor?: { id: string; name: string };
-}): Promise<ExpenseSheet[]> {
-  const updated: ExpenseSheet[] = [];
+}): Promise<BulkApproveResult> {
+  const approved: ExpenseSheet[] = [];
+  const failed: string[] = [];
   for (const id of input.ids) {
     const sheet = sheetStore.find((s) => s.id === id);
-    if (!sheet) continue;
+    if (!sheet) {
+      failed.push(id);
+      continue;
+    }
     sheet.lineItems.forEach((li) => {
       li.managerStatus = "MANAGER_APPROVED";
     });
+    sheet.managerDecidedBy = input.actor?.id;
     if (input.actor) {
       logActivity({
         actorId: input.actor.id,
@@ -953,9 +1075,9 @@ async function managerBulkApproveMock(input: {
       });
     }
     runAgentApprover(sheet);
-    updated.push(clone(sheet));
+    approved.push(clone(sheet));
   }
-  return delay(updated, 600);
+  return delay({ approved, failed }, 600);
 }
 
 // ── Finance ──────────────────────────────────────────────────────────────────
@@ -1159,24 +1281,31 @@ export async function addAgency(input: OnboardAgencyInput): Promise<Agency> {
 export interface UploadPolicyInput {
   agencyId: string;
   agencyName: string;
-  name: string;
-  version: string;
-  fileName: string;
-  effectiveDate: string;
+  /** The actual policy document (PDF/DOCX…) — streamed to the storage account as multipart. */
+  file: File;
+  /** Optional; the backend stores it on the version and treats it as nullable. */
+  effectiveDate?: string;
+  /** The uploading user's id (the maker); the backend derives the real actor from the token. */
   createdBy: string;
 }
 
-/** Maker step: upload a new policy version → virus scan → extract → draft. */
+/**
+ * Maker step (SCOPING §7): upload a new policy version. The file is sent as multipart and the
+ * backend stores it in the policy storage account (Azure Blob, or local fallback offline),
+ * auto-assigns the next version, and creates an unpublished/unindexed draft. A *different*
+ * Finance/Admin then publishes it, which enqueues it for RAG ingestion (see publishPolicyDocument).
+ * The endpoint takes only the file + effective_date — name/version are server-managed.
+ */
 export async function uploadPolicyDocument(
   input: UploadPolicyInput,
 ): Promise<AgencyPolicyDocument> {
   return backend(
-    () =>
-      apiPost<Raw>(`/finance/policies/${input.agencyId}`, {
-        name: input.name,
-        version: input.version,
-        effective_date: input.effectiveDate,
-      }).then(mapPolicy),
+    () => {
+      const form = new FormData();
+      form.append("file", input.file);
+      if (input.effectiveDate) form.append("effective_date", input.effectiveDate);
+      return apiUpload<Raw>(`/finance/policies/${input.agencyId}`, form).then(mapPolicy);
+    },
     () => uploadPolicyDocumentMock(input),
   );
 }
@@ -1184,25 +1313,29 @@ export async function uploadPolicyDocument(
 async function uploadPolicyDocumentMock(
   input: UploadPolicyInput,
 ): Promise<AgencyPolicyDocument> {
+  // Mirror the server: next version = current max for the agency + 1; name derived from the file.
+  const nextVersion = policyStore.filter((d) => d.agencyId === input.agencyId).length + 1;
+  const version = `v${nextVersion}`;
+  const name = input.file.name.replace(/\.[^.]+$/, "");
   const doc: AgencyPolicyDocument = {
-    id: `POL-${input.agencyId}-${input.version}`,
+    id: `POL-${input.agencyId}-${version}`,
     agencyId: input.agencyId,
-    name: input.name,
-    version: input.version,
-    effectiveDate: input.effectiveDate,
-    indexedAt: new Date(2026, 5, 14).toISOString(),
+    name,
+    version,
+    effectiveDate: input.effectiveDate ?? "",
+    indexedAt: "", // draft is not indexed until published + ingested
     status: "draft",
     createdBy: input.createdBy,
   };
   policyStore.unshift(doc);
   auditLog.unshift({
     id: `AUD-${auditLog.length + 1}`,
-    actorId: "USR-SARAH",
-    actorName: "Sarah Okafor",
+    actorId: input.createdBy,
+    actorName: input.createdBy,
     actorRole: "finance",
     action: "POLICY_UPLOAD",
     entity: "AgencyPolicy",
-    summary: `${input.name} ${input.version} uploaded (${input.fileName}) — pending publish.`,
+    summary: `${name} ${version} uploaded (${input.file.name}) — pending publish.`,
     reference: "maker-checker: awaiting approval",
     timestamp: new Date(2026, 5, 14, 11, 10).toISOString(),
     severity: "info",

@@ -7,6 +7,7 @@ manager → own agency; finance/admin → all (optionally filtered to one agency
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 from sqlmodel import Session, select
@@ -136,6 +137,50 @@ _FINANCE_REACHED = {
 }
 
 
+# SLA target for resolving a sheet end-to-end (submission → finance decision).
+_SLA_TARGET_HOURS = 48.0
+
+
+def _auto_rate(reached: list[ExpenseSheet]) -> float:
+    """Auto-approval rate (%) over a set of finance-reached sheets."""
+    if not reached:
+        return 0.0
+    auto = sum(1 for s in reached if s.status is SheetStatus.FINANCE_APPROVED)
+    return round(100.0 * auto / len(reached), 1)
+
+
+def _auto_approval_trend(reached: list[ExpenseSheet], *, limit: int = 12) -> list[float]:
+    """Auto-approval rate per period (oldest→newest), last `limit` periods.
+
+    Periods are the sheet's "YYYY-MM"; sheets without one are skipped so the
+    trend only reflects datable activity."""
+    by_period: dict[str, list[ExpenseSheet]] = {}
+    for s in reached:
+        if s.period:
+            by_period.setdefault(s.period, []).append(s)
+    ordered = sorted(by_period.items())[-limit:]
+    return [_auto_rate(group) for _period, group in ordered]
+
+
+def _top_clause(session: Session) -> str | None:
+    """Most-frequently-cited policy clause across all finance decisions."""
+    counts: dict[str, int] = {}
+    for d in session.exec(select(Decision)).all():
+        if not d.cited_clauses:
+            continue
+        try:
+            clauses = json.loads(d.cited_clauses)
+        except (ValueError, TypeError):
+            continue
+        for clause in clauses if isinstance(clauses, list) else []:
+            ref = clause if isinstance(clause, str) else str(clause)
+            if ref:
+                counts[ref] = counts.get(ref, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
 def build_finance_kpis(session: Session, principal: Principal) -> FinanceKpisOut:
     """Deterministic finance KPIs over all sheets in the caller's scope (SCOPING §4)."""
     stmt = select(ExpenseSheet)
@@ -159,10 +204,50 @@ def build_finance_kpis(session: Session, principal: Principal) -> FinanceKpisOut
     compliant = sum(1 for i in items if _is_compliant(i))
     compliance_rate = round(100.0 * compliant / len(items), 1) if items else 100.0
 
+    # Escalation: any finance-reached sheet that wasn't auto-approved went to a human.
+    escalation_rate = (
+        round(100.0 * (len(reached) - auto_approved) / len(reached), 1) if reached else 0.0
+    )
+
+    # Resolution time + SLA: submit → last update (the finance decision) for resolved sheets.
+    resolution_hours = [
+        (s.updated_at - s.submitted_at).total_seconds() / 3600.0
+        for s in reached
+        if s.submitted_at and s.updated_at and s.updated_at >= s.submitted_at
+    ]
+    avg_resolution_hours = (
+        round(sum(resolution_hours) / len(resolution_hours), 1) if resolution_hours else None
+    )
+    sla_compliance = (
+        round(100.0 * sum(1 for h in resolution_hours if h <= _SLA_TARGET_HOURS) / len(resolution_hours), 1)
+        if resolution_hours
+        else None
+    )
+
+    # Period-over-period deltas from the auto-approval trend + manual routing by period.
+    trend = _auto_approval_trend(reached)
+    auto_approval_delta = round(trend[-1] - trend[-2], 1) if len(trend) >= 2 else None
+
+    manual_by_period: dict[str, int] = {}
+    for s in sheets:
+        if s.status is SheetStatus.FINANCE_MANUAL_REVIEW and s.period:
+            manual_by_period[s.period] = manual_by_period.get(s.period, 0) + 1
+    manual_periods = sorted(manual_by_period.items())
+    manual_interventions_delta = (
+        manual_periods[-1][1] - manual_periods[-2][1] if len(manual_periods) >= 2 else None
+    )
+
     return FinanceKpisOut(
         auto_approval_rate=auto_rate,
         manual_interventions=manual,
         policy_citations=citations,
         policy_compliance_rate=compliance_rate,
         finance_reached=len(reached),
+        auto_approval_delta=auto_approval_delta,
+        manual_interventions_delta=manual_interventions_delta,
+        escalation_rate=escalation_rate,
+        sla_compliance=sla_compliance,
+        avg_resolution_hours=avg_resolution_hours,
+        top_clause=_top_clause(session),
+        trend=trend or None,
     )

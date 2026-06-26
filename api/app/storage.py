@@ -76,6 +76,30 @@ def upload_receipt_blob(employee_id: str, filename: str, data: bytes) -> str:
     return f"{settings.storage_account_url.rstrip('/')}/{settings.receipt_container}/{blob_name}"
 
 
+def delete_receipt_blob(uri: str) -> None:
+    """Best-effort delete of a receipt blob (used when a library upload is attached or removed).
+    Never raises — an orphaned blob is preferable to a failed user action. Offline unlinks the
+    `file://` path; Azure deletes the blob with the API's Managed Identity."""
+    if not uri:
+        return
+    try:
+        if uri.startswith("file:"):
+            from urllib.parse import unquote, urlparse  # noqa: PLC0415
+
+            path = unquote(urlparse(uri).path)
+            if os.name == "nt" and path.startswith("/"):
+                path = path[1:]
+            Path(path).unlink(missing_ok=True)
+            return
+
+        from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+        from azure.storage.blob import BlobClient  # noqa: PLC0415
+
+        BlobClient.from_blob_url(uri, credential=DefaultAzureCredential()).delete_blob()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
+
 def read_receipt_blob(uri: str) -> bytes:
     """Read a receipt's bytes for streaming back to the UI. Offline resolves `file://`;
     Azure reads the blob with the API's Managed Identity (Blob Data Contributor)."""

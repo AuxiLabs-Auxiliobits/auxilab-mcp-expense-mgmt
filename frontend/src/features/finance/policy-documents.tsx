@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { usePolicyDocuments, usePublishPolicy } from "@/data/hooks";
+import { useCurrentUser, usePolicyDocuments, usePublishPolicy } from "@/data/hooks";
 import { PolicyViewer } from "@/components/shared/policy-viewer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,12 +17,15 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export function PolicyDocuments() {
+  const { data: user } = useCurrentUser("finance");
   const { data, isLoading } = usePolicyDocuments();
   const publish = usePublishPolicy();
 
   async function onPublish(id: string) {
     try {
-      const doc = await publish.mutateAsync({ id, publishedBy: "alex.rivera" });
+      // The publisher is the checker; the backend re-derives the actor from the token, and
+      // the maker-checker SoD (publisher ≠ uploader) is enforced server-side.
+      const doc = await publish.mutateAsync({ id, publishedBy: user?.id ?? "" });
       toast.success(`${doc.name} ${doc.version} published`, { description: "Re-indexed for RAG." });
     } catch {
       /* error toast handled globally (QueryClient mutationCache) */

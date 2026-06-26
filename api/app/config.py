@@ -17,9 +17,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_SQLITE_URL = f"sqlite:///{(_REPO_ROOT / 'expense.db').as_posix()}"
 
+# Anchor the .env to the api/ dir (this file is api/app/config.py) so it loads no matter
+# which directory uvicorn/pytest is launched from. A bare ".env" is resolved against the
+# current working directory, which silently drops config when started from the repo root.
+_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="APP_", env_file=str(_ENV_FILE), extra="ignore"
+    )
 
     environment: Literal["dev", "staging", "prod"] = "dev"
 

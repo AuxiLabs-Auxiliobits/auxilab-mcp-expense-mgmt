@@ -3,8 +3,13 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useCurrentUser, useEmployeeSheets } from "@/data/hooks";
-import { useReceiptUploads } from "@/data/receipt-uploads";
+import {
+  useCurrentUser,
+  useEmployeeSheets,
+  useMyReceipts,
+  useUploadReceiptToLibrary,
+  useDeleteLibraryReceipt,
+} from "@/data/hooks";
 import { apiBlob } from "@/data/http";
 import { fileIssue } from "@/lib/intake";
 import { baselinePolicy } from "@/data/mock";
@@ -50,18 +55,20 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 export default function EmployeeReceiptsPage() {
   const { data: user } = useCurrentUser("employee");
   const { data: sheets } = useEmployeeSheets(user?.id ?? "");
-  const { uploads, addUploads, removeUpload } = useReceiptUploads();
+  const { data: myReceipts } = useMyReceipts();
+  const uploadReceiptMut = useUploadReceiptToLibrary();
+  const deleteReceiptMut = useDeleteLibraryReceipt();
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<ReceiptRow | null>(null);
 
-  const uploaded: ReceiptRow[] = uploads.map((u) => ({
+  const uploaded: ReceiptRow[] = (myReceipts ?? []).map((u) => ({
     id: u.id,
     fileName: u.fileName,
-    merchant: "Manual upload",
+    merchant: "Unassigned upload",
     sheetId: "Unassigned",
-    scanStatus: "clean",
+    scanStatus: u.scanStatus || "pending",
     fileType: u.fileType,
-    file: u.file,
+    downloadUrl: u.downloadUrl,
     uploadId: u.id,
   }));
 
@@ -95,17 +102,24 @@ export default function EmployeeReceiptsPage() {
       valid.push(f);
     }
     if (!valid.length) return;
-    addUploads(valid);
-    toast.success(`${valid.length} receipt${valid.length === 1 ? "" : "s"} added`, {
-      description: "Preview/download here; pick it when you add a line item to a sheet.",
-    });
+    Promise.all(valid.map((f) => uploadReceiptMut.mutateAsync(f)))
+      .then(() =>
+        toast.success(`${valid.length} receipt${valid.length === 1 ? "" : "s"} added`, {
+          description: "Preview/download here; pick it when you add a line item to a sheet.",
+        }),
+      )
+      .catch(() => toast.error("Upload failed — please try again"));
   }
 
   function deleteUpload(r: ReceiptRow) {
     if (!r.uploadId) return;
-    removeUpload(r.uploadId);
-    setSelected((cur) => (cur?.id === r.id ? null : cur));
-    toast("Receipt removed", { description: r.fileName });
+    deleteReceiptMut.mutate(r.uploadId, {
+      onSuccess: () => {
+        setSelected((cur) => (cur?.id === r.id ? null : cur));
+        toast("Receipt removed", { description: r.fileName });
+      },
+      onError: () => toast.error("Couldn't remove the receipt"),
+    });
   }
 
   async function downloadReceipt(r: ReceiptRow) {
@@ -131,7 +145,7 @@ export default function EmployeeReceiptsPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="My Receipts" description="All receipts attached to your line items." tone="primary">
+      <PageHeader title="My Receipts" description="Receipts you've uploaded — unassigned ones can be attached when you add a line item." tone="primary">
         <input
           ref={fileRef}
           type="file"

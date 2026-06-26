@@ -204,6 +204,9 @@ def _llm(settings: Settings) -> LLMGateway:
         from expense_core.llm.providers import AzureFoundryProvider  # noqa: PLC0415
 
         return AzureFoundryProvider(
-            endpoint=settings.foundry_endpoint, deployment=settings.foundry_chat_deployment
+            endpoint=settings.foundry_endpoint,
+            deployment=settings.foundry_chat_deployment,
+            api_key=settings.foundry_api_key or None,
+            api_version=settings.foundry_api_version,
         )
     return LocalEchoProvider()

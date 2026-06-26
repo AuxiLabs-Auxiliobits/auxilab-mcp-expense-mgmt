@@ -134,7 +134,7 @@ function ConfidenceBar({ value }: { value?: number }) {
 }
 
 export function FinanceConsole() {
-  const { data: routed, isLoading } = useRoutedSheets();
+  const { data: routed, isLoading, refetch, isFetching } = useRoutedSheets();
   const { data: kpis } = useFinanceKpis();
   const { data: financeUser } = useCurrentUser("finance");
   const { data: activity } = useActivityLog("finance", financeUser?.id ?? "");
@@ -285,6 +285,14 @@ export function FinanceConsole() {
         <span className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface-container-highest px-3 py-1.5 font-mono text-label-md uppercase text-on-surface">
           <LiveDot /> AI engine active
         </span>
+        <Button
+          variant="outline"
+          onClick={() => refetch()}
+          loading={isFetching}
+          title="Pull in newly routed sheets without reloading"
+        >
+          <Icon name="refresh" /> Refresh
+        </Button>
         <Button variant="outline" onClick={() => exportSheets(rows)} disabled={!rows.length}>
           <Icon name="download" /> Export
         </Button>

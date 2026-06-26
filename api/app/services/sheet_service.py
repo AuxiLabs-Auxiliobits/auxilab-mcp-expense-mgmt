@@ -467,6 +467,7 @@ def _maybe_advance_after_manager(
         # Any rejection / info-request returns the whole sheet (SCOPING §6.2).
         assert_transition(sheet.status, SheetStatus.RETURNED_TO_EMPLOYEE)
         sheet.status = SheetStatus.RETURNED_TO_EMPLOYEE
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="RETURNED_TO_EMPLOYEE",
             entity=f"expense_sheet:{sheet.id}",
@@ -482,6 +483,7 @@ def _maybe_advance_after_manager(
         # All approved → advance to the finance (LLM) queue.
         assert_transition(sheet.status, SheetStatus.IN_FINANCE_REVIEW)
         sheet.status = SheetStatus.IN_FINANCE_REVIEW
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="ADVANCED_TO_FINANCE",
             entity=f"expense_sheet:{sheet.id}",

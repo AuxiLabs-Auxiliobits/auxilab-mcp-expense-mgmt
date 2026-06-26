@@ -26,6 +26,7 @@ export const queryKeys = {
   myAuditLog: (id: string) => ["my-audit", id] as const,
   activityLog: (role: Role, id: string) => ["activity-log", role, id] as const,
   notifications: (role: Role) => ["notifications", role] as const,
+  myReceipts: ["my-receipts"] as const,
 };
 
 // ── Session ──
@@ -60,6 +61,34 @@ export const useSheetDecisions = (sheetId: string | undefined) =>
     queryFn: () => api.getSheetDecisions(sheetId as string),
     enabled: !!sheetId,
   });
+
+// ── Receipt library (My Receipts) — persisted unassigned uploads ──
+export const useMyReceipts = () =>
+  useQuery({ queryKey: queryKeys.myReceipts, queryFn: api.listMyReceipts });
+
+export function useUploadReceiptToLibrary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadReceiptToLibrary(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.myReceipts }),
+  });
+}
+
+export function useDeleteLibraryReceipt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteLibraryReceipt(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.myReceipts }),
+  });
+}
+
+export function useAttachReceiptFromLibrary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.attachReceiptFromLibrary,
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.myReceipts }),
+  });
+}
 
 export function useCreateSheet() {
   const qc = useQueryClient();
@@ -103,8 +132,23 @@ export const useSubmitSheet = () => useSheetMutation(api.submitSheet);
 export const useResubmitSheet = () => useSheetMutation(api.resubmitSheet);
 export const useWithdrawSheet = () => useSheetMutation(api.withdrawSheet);
 
-export const useAllSheets = () =>
-  useQuery({ queryKey: queryKeys.allSheets, queryFn: api.getAllSheets });
+/** Discard a DRAFT sheet (hard delete). Takes the sheet's id + owner so we can drop it
+ *  from the caches it appears in; the DELETE itself returns no body. */
+export function useDiscardDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { sheetId: string; employeeId: string }) => api.discardDraft(args.sheetId),
+    onSuccess: (_void, { sheetId, employeeId }) => {
+      qc.removeQueries({ queryKey: queryKeys.sheet(sheetId) });
+      qc.invalidateQueries({ queryKey: queryKeys.employeeSheets(employeeId) });
+      qc.invalidateQueries({ queryKey: queryKeys.activeDraft(employeeId) });
+      qc.invalidateQueries({ queryKey: queryKeys.employeeKpis(employeeId) });
+    },
+  });
+}
+
+export const useAllSheets = (enabled = true) =>
+  useQuery({ queryKey: queryKeys.allSheets, queryFn: api.getAllSheets, enabled });
 
 // ── Manager ──
 export const useManagerQueue = (agencyId: string) =>
@@ -117,6 +161,8 @@ export function useLineItemAction() {
     onSuccess: (sheet) => {
       qc.setQueryData(queryKeys.sheet(sheet.id), sheet);
       qc.invalidateQueries({ queryKey: queryKeys.managerQueue(sheet.agencyId) });
+      // Backs the manager's "Reviewed" history + the finance/admin Expense Sheets screen.
+      qc.invalidateQueries({ queryKey: queryKeys.allSheets });
       qc.invalidateQueries({ queryKey: ["my-audit"] });
       qc.invalidateQueries({ queryKey: ["activity-log"] });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
@@ -167,8 +213,8 @@ export function useManagerBulkApprove() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.managerBulkApprove,
-    onSuccess: (sheets) => {
-      sheets.forEach((s) => qc.invalidateQueries({ queryKey: queryKeys.managerQueue(s.agencyId) }));
+    onSuccess: ({ approved }) => {
+      approved.forEach((s) => qc.invalidateQueries({ queryKey: queryKeys.managerQueue(s.agencyId) }));
       qc.invalidateQueries({ queryKey: queryKeys.routedSheets });
       qc.invalidateQueries({ queryKey: queryKeys.allSheets });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
