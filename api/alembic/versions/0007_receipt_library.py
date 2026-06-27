@@ -4,8 +4,8 @@ A per-employee, agency-scoped pool of receipts whose bytes are stored in Blob im
 but are not yet attached to a line item. Attaching one moves it into an `attachments` row
 and deletes the library row.
 
-Revision ID: 0006_receipt_library
-Revises: 0005_merge_heads
+Revision ID: 0007_receipt_library
+Revises: 0006_user_prefs
 Create Date: 2026-06-27
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0006_receipt_library"
-down_revision = "0005_merge_heads"
+revision = "0007_receipt_library"
+down_revision = "0006_user_prefs"
 branch_labels = None
 depends_on = None
 

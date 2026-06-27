@@ -36,12 +36,6 @@ export function PolicyDocuments() {
     <Card className="flex flex-col rounded-xl p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-headline-md font-bold text-on-surface">Agency Policy Documents</h3>
-        <button
-          aria-label="Manage policies"
-          className="rounded p-1 text-primary transition-colors hover:bg-surface-container-low"
-        >
-          <Icon name="settings" />
-        </button>
       </div>
       <p className="mb-4 text-body-sm text-on-surface-variant">
         RAG-indexed documents governing AI decisions per agency.
@@ -98,10 +92,6 @@ export function PolicyDocuments() {
               </div>
             ))}
       </div>
-
-      <button className="mt-4 w-full rounded border border-outline-variant py-2 text-body-sm font-semibold text-primary transition-colors hover:bg-surface-container-low">
-        View All Documents
-      </button>
     </Card>
   );
 }

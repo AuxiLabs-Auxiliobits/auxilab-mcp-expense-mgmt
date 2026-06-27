@@ -19,6 +19,7 @@ from app.models.line_item import LineItem
 from app.models.receipt_upload import ReceiptUpload
 from app.principal import Principal
 from app.services import audit_service, sheet_service
+from app.services.image_conversion import convert_heic_to_jpeg
 from app.storage import delete_receipt_blob, read_receipt_blob, upload_receipt_blob
 from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
 
@@ -54,6 +55,9 @@ def create(
         receipt_extension(filename)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    # Transcode HEIC → JPEG up front so the library preview and any later attach use JPEG.
+    filename, data, file_type = convert_heic_to_jpeg(filename, data, file_type)
 
     row = ReceiptUpload(
         owner_id=actor.subject_id,

@@ -46,6 +46,14 @@ function num(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Like `num`, but preserves "the backend didn't send this" as `null` instead of a
+ *  fabricated fallback — so the UI can show "—" rather than a misleading constant. */
+function numOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "string" ? parseFloat(v) : (v as number);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** snake_case request body for the line-item endpoints (frontend → backend). */
 function lineItemBody(input: LineItemInput) {
   return {
@@ -1097,20 +1105,21 @@ export function getFinanceKpis() {
     () =>
       apiGet<Raw>("/finance/kpis").then((r) => ({
         autoApprovalRate: num(r.auto_approval_rate, financeKpis.autoApprovalRate),
-        autoApprovalDelta: num(r.auto_approval_delta, financeKpis.autoApprovalDelta),
+        // Optional / period-dependent fields: surface them as `null` when the backend
+        // can't compute them (e.g. no resolved sheets yet) rather than masking the gap
+        // with a seeded constant — the UI renders "—" for a null.
+        autoApprovalDelta: numOrNull(r.auto_approval_delta),
         manualInterventions: num(r.manual_interventions, financeKpis.manualInterventions),
-        manualInterventionsDelta: num(
-          r.manual_interventions_delta,
-          financeKpis.manualInterventionsDelta,
-        ),
+        manualInterventionsDelta: numOrNull(r.manual_interventions_delta),
         policyCitations: num(r.policy_citations, financeKpis.policyCitations),
-        topClause: (r.top_clause as string) ?? financeKpis.topClause,
-        ragSyncedAgo: (r.rag_synced_ago as string) ?? financeKpis.ragSyncedAgo,
-        approvalAccuracy: num(r.approval_accuracy, financeKpis.approvalAccuracy),
+        topClause: (r.top_clause as string) ?? null,
+        // Not emitted by the backend KPI endpoint today → honest null, never a fake value.
+        ragSyncedAgo: (r.rag_synced_ago as string) ?? null,
+        approvalAccuracy: numOrNull(r.approval_accuracy),
         escalationRate: num(r.escalation_rate, financeKpis.escalationRate),
-        falsePositiveRate: num(r.false_positive_rate, financeKpis.falsePositiveRate),
-        slaCompliance: num(r.sla_compliance, financeKpis.slaCompliance),
-        avgResolutionHours: num(r.avg_resolution_hours, financeKpis.avgResolutionHours),
+        falsePositiveRate: numOrNull(r.false_positive_rate),
+        slaCompliance: numOrNull(r.sla_compliance),
+        avgResolutionHours: numOrNull(r.avg_resolution_hours),
         policyComplianceRate: num(r.policy_compliance_rate, financeKpis.policyComplianceRate),
         trend:
           Array.isArray(r.trend) && r.trend.length ? (r.trend as number[]) : autoApprovalTrend,

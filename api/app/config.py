@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     storage_account_url: str = ""
     servicebus_namespace: str = ""
 
+    # Azure AI Document Intelligence (prebuilt-receipt) — empty endpoint → offline text parse.
+    doc_intel_endpoint: str = ""
+    doc_intel_api_key: str = ""  # prefer Managed Identity; key only for local dev
+
+    # Microsoft Defender for Storage malware scanning (SCOPING §6.1). When True (default), a
+    # receipt whose scan-result tag is ABSENT fails closed at intake; set False only in envs
+    # where Defender isn't wired and you accept unscanned uploads. Offline (file:// blobs or no
+    # storage account) the scan is a no-op so the local flow runs with zero infra.
+    require_virus_scan: bool = True
+
     @property
     def azure_foundry_enabled(self) -> bool:
         return bool(self.foundry_endpoint)
@@ -91,6 +101,12 @@ class Settings(BaseSettings):
     # Stored under receipts/{employee_id}/<file>. Offline falls back to a local directory.
     receipt_container: str = "receipts"
     receipt_local_dir: str = "./receipt_uploads"  # offline fallback store
+
+    # --- SLA / aging escalation (SCOPING §6.4, §8) ------------------------ #
+    # Hours a sheet may wait in a review queue before it's flagged. Mirrors the portal's
+    # aging thresholds (frontend/src/lib/aging.ts): warning at 2 days, escalation at 5.
+    escalation_warning_hours: int = 48
+    escalation_critical_hours: int = 120
 
     @property
     def is_postgres(self) -> bool:

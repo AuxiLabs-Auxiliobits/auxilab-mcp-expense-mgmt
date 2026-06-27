@@ -8,11 +8,14 @@ import tempfile
 
 os.environ.setdefault("APP_ENVIRONMENT", "dev")
 os.environ.setdefault("APP_SEED_DEMO_DATA", "true")
-# Isolate tests from any live Azure endpoints configured in api/.env — scan/advisory must
-# run on their offline fallbacks deterministically (env vars override the .env file).
+# Isolate tests from any live Azure endpoints configured in api/.env — scan/advisory,
+# storage, and messaging must run on their offline fallbacks deterministically (env vars
+# override the .env file, and the Azure SDKs aren't installed in the test venv).
 os.environ["APP_DOC_INTEL_ENDPOINT"] = ""
 os.environ["APP_FOUNDRY_ENDPOINT"] = ""
 os.environ["APP_SEARCH_ENDPOINT"] = ""
+os.environ["APP_STORAGE_ACCOUNT_URL"] = ""
+os.environ["APP_SERVICEBUS_NAMESPACE"] = ""
 _db = os.path.join(tempfile.gettempdir(), "expense_api_test.db")
 if os.path.exists(_db):
     os.remove(_db)

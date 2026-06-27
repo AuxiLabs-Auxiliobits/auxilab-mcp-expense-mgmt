@@ -69,6 +69,35 @@ def notify_role_in_agency(
         )
 
 
+def notify_role(
+    session: Session,
+    *,
+    role: Role,
+    kind: str,
+    title: str,
+    body: str = "",
+    href: str | None = None,
+    icon: str = "notifications",
+    entity: str | None = None,
+) -> int:
+    """Notify every active user with `role` org-wide (e.g. all Finance reviewers, who aren't
+    agency-bound). Returns the number of recipients. Adds rows only — caller commits."""
+    recipients = session.exec(
+        select(User).where(
+            User.role == role,
+            User.is_active == True,  # noqa: E712
+        )
+    ).all()
+    for u in recipients:
+        session.add(
+            Notification(
+                recipient_id=u.id, agency_id=u.agency_id, kind=kind, icon=icon,
+                title=title, body=body, href=href, entity=entity,
+            )
+        )
+    return len(recipients)
+
+
 def list_for(session: Session, principal: Principal, *, limit: int = 50) -> list[Notification]:
     return list(
         session.exec(

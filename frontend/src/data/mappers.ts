@@ -116,7 +116,12 @@ export function mapSheet(r: Raw): ExpenseSheet {
     policyVersionUsed: r.policy_version_used ?? r.policy_version ?? undefined,
     routeReason: r.route_reason ?? undefined,
     routeReasonDetail: r.route_reason_detail ?? r.uncertainty_reason ?? undefined,
-    llmConfidence: r.confidence != null ? num(r.confidence) : undefined,
+    llmConfidence:
+      r.llm_confidence != null
+        ? num(r.llm_confidence)
+        : r.confidence != null
+          ? num(r.confidence)
+          : undefined,
     citedClause:
       Array.isArray(cited) && cited.length
         ? { policyName: cited[0].source ?? "Policy", text: cited[0].text ?? String(cited[0]) }

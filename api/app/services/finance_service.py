@@ -65,6 +65,20 @@ def apply_llm_decision(
     assert_transition(sheet.status, target)
     sheet.status = target
     sheet.finance_decision = decision
+    # Surface the approver's outcome on the sheet so the Finance review UI can show it
+    # without re-deriving from the decision trail (SCOPING §6.3).
+    sheet.llm_confidence = confidence
+    sheet.policy_version_used = policy_version
+    if decision is FinanceDecision.ROUTED_TO_HUMAN:
+        sheet.route_reason = "LOW_CONFIDENCE"
+        sheet.route_reason_detail = (
+            "; ".join(cited_clauses)
+            if cited_clauses
+            else f"Confidence {confidence:.0%} below the auto-approval threshold."
+        )
+    else:
+        sheet.route_reason = None
+        sheet.route_reason_detail = None
     sheet.updated_at = utcnow()
     session.add(sheet)
 

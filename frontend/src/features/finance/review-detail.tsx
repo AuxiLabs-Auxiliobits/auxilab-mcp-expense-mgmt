@@ -7,6 +7,7 @@ import { useCurrentUser, useFinanceOverride, useSheetDecisions, useSheetReceipts
 import { financeOverrideSchema, type FinanceOverrideValues } from "@/lib/schemas";
 import { CitedClause } from "@/components/shared/ai-citation";
 import { ReceiptViewer, ReceiptsLoading } from "@/components/shared/receipt-viewer";
+import { ReceiptScanDetails } from "@/components/shared/receipt-scan-details";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -98,7 +99,7 @@ export function ReviewDetail({
           )}
           {sheet.llmConfidence != null && (
             <p className="font-mono text-label-md text-on-surface-variant">
-              LLM confidence: {sheet.llmConfidence} · policy {sheet.policyVersionUsed}
+              LLM confidence: {Math.round(sheet.llmConfidence * 100)}% · policy {sheet.policyVersionUsed}
             </p>
           )}
         </div>
@@ -155,6 +156,37 @@ export function ReviewDetail({
         ) : (
           <ReceiptViewer attachments={receipts ?? []} emptyHint="No receipts were attached to this sheet." />
         )}
+      </div>
+
+      {/* Receipt scans — derived values per line item (Document Intelligence), Finance-only. */}
+      <div className="mt-6 border-t border-outline-variant pt-5">
+        <h4 className="mb-3 flex items-center gap-2 text-headline-md font-semibold text-on-surface">
+          <Icon name="document_scanner" className="text-secondary" /> Receipt Scans · Derived Values
+        </h4>
+        <div className="space-y-3">
+          {sheet.lineItems.map((li) => (
+            <div
+              key={li.id}
+              className="rounded-md border border-outline-variant bg-surface-container-lowest p-3"
+            >
+              <div className="flex items-start justify-between">
+                <span className="text-body-md font-medium text-on-surface">
+                  {li.description || li.merchant}
+                </span>
+                <span className="font-mono text-body-sm text-on-surface-variant">
+                  {formatCurrency(li.amount, li.currency)}
+                </span>
+              </div>
+              {li.needsHumanReview && (
+                <p className="mt-1 flex items-center gap-1.5 text-label-md text-tertiary">
+                  <Icon name="flag" className="text-[14px]" />
+                  Flagged for review{li.reviewReason ? ` · ${li.reviewReason}` : ""}
+                </p>
+              )}
+              <ReceiptScanDetails sheetId={sheet.id} lineItemId={li.id} currency={li.currency} />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Approval history — manager/finance/LLM actions + remarks, oldest first. */}

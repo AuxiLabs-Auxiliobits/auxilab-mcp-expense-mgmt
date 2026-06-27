@@ -241,6 +241,14 @@ class SheetOut(BaseModel):
     finance_decision: FinanceDecision | None
     finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
     manager_decided_by: str | None = None  # raw user id of the deciding manager (for "my reviews")
+
+    # LLM finance-approver outcome (SCOPING §6.3) — drives the Finance review drawer's
+    # "AI Decision Support" panel. Only populated once the approver has decided.
+    policy_version_used: str | None = None  # policy version the approver ran against
+    llm_confidence: float | None = None  # approver confidence (0..1)
+    route_reason: str | None = None  # why it was routed to a human (None if auto-decided)
+    route_reason_detail: str | None = None  # human-readable detail / cited clause text
+
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful

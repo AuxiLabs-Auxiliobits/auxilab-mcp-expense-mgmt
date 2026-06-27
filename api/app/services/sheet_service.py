@@ -17,6 +17,7 @@ from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
 from app.schemas.dto import LineItemCreate, LineItemUpdate, SheetCreate, SheetUpdate
 from app.services import audit_service, intake_service, notification_service
+from app.services.image_conversion import convert_heic_to_jpeg
 from app.services.state_machine import RESUBMITTABLE, assert_transition
 from app.storage import upload_receipt_blob
 from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
@@ -272,6 +273,9 @@ def attach_receipt(
         receipt_extension(filename)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    # Transcode HEIC → JPEG so the receipt previews in the browser and OCRs downstream.
+    filename, data, file_type = convert_heic_to_jpeg(filename, data, file_type)
 
     att = Attachment(
         line_item_id=item.id, blob_uri="", filename=filename, file_type=file_type, size=len(data)

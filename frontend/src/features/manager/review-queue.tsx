@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ReceiptViewer, ReceiptsLoading } from "@/components/shared/receipt-viewer";
+import { ReceiptScanDetails } from "@/components/shared/receipt-scan-details";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
@@ -663,6 +664,7 @@ function SheetDetail({
           <LineItemReviewCard
             key={item.id}
             item={item}
+            sheetId={sheet.id}
             disabled={readOnly || isOwnSheet || lineItemAction.isPending}
             approving={
               lineItemAction.isPending && lineItemAction.variables?.lineItemId === item.id
@@ -751,6 +753,7 @@ function SheetDetail({
 
 function LineItemReviewCard({
   item,
+  sheetId,
   disabled,
   approving = false,
   onApprove,
@@ -758,6 +761,7 @@ function LineItemReviewCard({
   onRequestInfo,
 }: {
   item: LineItem;
+  sheetId: string;
   disabled: boolean;
   approving?: boolean;
   onApprove: () => void;
@@ -823,6 +827,9 @@ function LineItemReviewCard({
             </p>
           </div>
         )}
+
+        {/* Manager-only: scan-derived values from the receipt (not shown to the employee). */}
+        <ReceiptScanDetails sheetId={sheetId} lineItemId={item.id} currency={item.currency} />
 
         {actionable && (
           <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/30 pt-3">

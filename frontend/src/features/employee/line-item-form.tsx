@@ -10,7 +10,6 @@ import {
   uploadReceipt,
   scanReceipt,
   attachReceiptFromLibrary,
-  type ReceiptScan,
   type ReceiptUpload,
 } from "@/data/api";
 import { ReceiptPreview } from "@/components/shared/receipt-preview";
@@ -23,7 +22,6 @@ import {
 } from "@/data/types";
 import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
 import { fileIssue, fileNote } from "@/lib/intake";
-import { formatCurrency } from "@/lib/format";
 import {
   policyPreview,
   policyAdvisory,
@@ -96,9 +94,9 @@ export function LineItemDialog({
   const [hasCamera, setHasCamera] = useState(false);
   const [policy, setPolicy] = useState<PolicyPreviewResult | null>(null);
   const [advisory, setAdvisory] = useState<PolicyAdvisory>({});
-  // Headline result of the post-save receipt scan (Document Intelligence). When set, the
-  // dialog stays open to show the extracted values for review instead of closing.
-  const [scan, setScan] = useState<ReceiptScan | null>(null);
+  // True while a debounced RAG advisory request is pending, so we can show a loader and keep
+  // the previous clause visible (dimmed) until the fresh response lands.
+  const [advisoryLoading, setAdvisoryLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -130,7 +128,6 @@ export function LineItemDialog({
   // Reset whenever the dialog opens (for add) or the edited item changes.
   useEffect(() => {
     if (!open) return;
-    setScan(null);
     setPickerOpen(false);
     if (item) {
       reset({
@@ -211,8 +208,11 @@ export function LineItemDialog({
     return () => clearTimeout(handle);
   }, [v.category, v.amount, v.merchant, v.description, v.expenseDate, v.receiptDatetime, files.length]);
 
-  // RAG advisory: the relevant agency policy clause (advisory only; empty offline).
+  // RAG advisory: the relevant agency policy clause (advisory only; empty offline). Debounced
+  // (600ms) so typing in the description/merchant fields doesn't fire a request per keystroke —
+  // only once the user pauses. `advisoryLoading` drives the loader while the call is in flight.
   useEffect(() => {
+    setAdvisoryLoading(true);
     const handle = setTimeout(() => {
       policyAdvisory({
         category: (v.category as ExpenseCategory) ?? undefined,
@@ -220,8 +220,9 @@ export function LineItemDialog({
         description: v.description ?? "",
       })
         .then(setAdvisory)
-        .catch(() => {});
-    }, 500);
+        .catch(() => {})
+        .finally(() => setAdvisoryLoading(false));
+    }, 600);
     return () => clearTimeout(handle);
   }, [v.category, v.merchant, v.description]);
 
@@ -307,8 +308,6 @@ export function LineItemDialog({
       // add, the new line item is the one in the returned sheet that wasn't an existing sibling.
       const newFiles = files.filter((f) => f.file && !f.uploadId);
       const libraryPicks = files.filter((f) => f.uploadId);
-      let scanResult: ReceiptScan | null = null;
-      let scannedId: string | undefined;
       if (newFiles.length || libraryPicks.length) {
         let targetId = item?.id;
         if (!targetId) {
@@ -326,51 +325,16 @@ export function LineItemDialog({
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
           if (libraryPicks.length) qc.invalidateQueries({ queryKey: queryKeys.myReceipts });
 
-          // Scan the receipt (Document Intelligence) and reconcile against the entered
-          // amount. Beyond setting a server-side Finance flag, the extracted headline is
-          // surfaced to the employee for review (below).
+          // Fire the receipt scan (Document Intelligence) so it reconciles against the
+          // entered amount and persists the derived values + Finance review flag server-side.
+          // The extraction is intentionally NOT surfaced to the employee — only manager and
+          // finance see the derived values, on their own review screens.
           try {
-            scanResult = await scanReceipt({ sheetId, lineItemId: targetId });
-            scannedId = targetId;
+            await scanReceipt({ sheetId, lineItemId: targetId });
           } catch {
             /* scan is best-effort; never block the save */
           }
         }
-      }
-
-      // Auto-fill fields the employee left blank from the scan and persist them onto the
-      // saved item. Never overwrite what the user typed; the amount is reconciled, not
-      // replaced. Only surface a review card when the scan actually extracted something.
-      if (scanResult && scannedId && (scanResult.merchant || scanResult.total != null)) {
-        const patch: Partial<typeof input> = {};
-        if (!values.merchant?.trim() && scanResult.merchant) patch.merchant = scanResult.merchant;
-        if (values.tax == null && scanResult.tax != null) patch.tax = scanResult.tax;
-        const scanDate = scanResult.receiptDatetime?.slice(0, 10);
-        if (!values.expenseDate && scanDate) patch.expenseDate = scanDate;
-
-        if (Object.keys(patch).length) {
-          if (patch.merchant) setValue("merchant", patch.merchant, { shouldValidate: true });
-          if (patch.tax != null) setValue("tax", patch.tax, { shouldValidate: true });
-          if (patch.expenseDate) setValue("expenseDate", patch.expenseDate, { shouldValidate: true });
-          try {
-            await updateLineItem.mutateAsync({
-              sheetId,
-              lineItemId: scannedId,
-              input: { ...input, ...patch },
-            });
-          } catch {
-            /* auto-fill persist is best-effort — the item is already saved */
-          }
-        }
-
-        setScan(scanResult);
-        toast.success("Receipt scanned", {
-          description:
-            scanResult.matchesEntered === false
-              ? `Receipt total ${scanResult.total} doesn't match the entered ${Number(values.amount)}.`
-              : "Extracted values are shown below for review.",
-        });
-        return; // keep the dialog open so the employee can review the extraction
       }
 
       toast.success(item ? "Line item updated" : "Line item added");
@@ -705,91 +669,49 @@ export function LineItemDialog({
             </div>
           )}
 
-          {/* RAG advisory — cited agency policy clause (advisory only, never blocks) */}
-          {advisory.clause && (
+          {/* RAG advisory — cited agency policy clause (advisory only, never blocks). Shows a
+              loader while a fresh response is in flight; keeps the previous clause visible
+              (dimmed) until it arrives. */}
+          {(advisory.clause ||
+            (advisoryLoading && (!!v.merchant?.trim() || !!v.description?.trim()))) && (
             <div className="space-y-1 rounded border border-secondary/30 bg-secondary-container/20 p-3">
               <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
                 <Icon name="smart_toy" className="text-[14px] text-secondary" />
-                AI note · {advisory.clause.source}
+                AI note{advisory.clause ? ` · ${advisory.clause.source}` : ""}
+                {advisoryLoading && (
+                  <Icon
+                    name="progress_activity"
+                    className="ml-auto animate-spin text-[14px] text-secondary"
+                    aria-label="Refreshing policy note"
+                  />
+                )}
               </p>
-              <p className="text-body-sm text-on-surface">{advisory.clause.text}</p>
-            </div>
-          )}
-
-          {/* Scanned receipt — headline extraction for review (Document Intelligence) */}
-          {scan && (
-            <div className="space-y-2 rounded border border-secondary/30 bg-secondary-container/20 p-3">
-              <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
-                <Icon name="document_scanner" className="text-[14px] text-secondary" />
-                Scanned from receipt
-              </p>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-body-sm">
-                {scan.merchant && (
-                  <>
-                    <dt className="text-on-surface-variant">Merchant</dt>
-                    <dd className="truncate text-on-surface">{scan.merchant}</dd>
-                  </>
-                )}
-                {scan.total != null && (
-                  <>
-                    <dt className="text-on-surface-variant">Total</dt>
-                    <dd className="font-mono tabular-nums text-on-surface">
-                      {formatCurrency(scan.total, "USD")}
-                    </dd>
-                  </>
-                )}
-                {scan.tax != null && (
-                  <>
-                    <dt className="text-on-surface-variant">Tax</dt>
-                    <dd className="font-mono tabular-nums text-on-surface">
-                      {formatCurrency(scan.tax, "USD")}
-                    </dd>
-                  </>
-                )}
-                {scan.receiptDatetime && (
-                  <>
-                    <dt className="text-on-surface-variant">Receipt date</dt>
-                    <dd className="text-on-surface">{scan.receiptDatetime.slice(0, 10)}</dd>
-                  </>
-                )}
-              </dl>
-              {scan.matchesEntered === false ? (
-                <p className="flex items-start gap-1.5 text-label-md text-error">
-                  <Icon name="warning" className="mt-px text-[14px]" />
-                  Doesn&apos;t match the entered amount
-                  {scan.delta != null ? ` (off by ${formatCurrency(Math.abs(scan.delta), "USD")})` : ""}.
-                  Finance will review.
+              {advisory.clause ? (
+                <p
+                  className={
+                    "text-body-sm text-on-surface transition-opacity " +
+                    (advisoryLoading ? "opacity-50" : "opacity-100")
+                  }
+                >
+                  {advisory.clause.text}
                 </p>
-              ) : scan.matchesEntered === true ? (
-                <p className="flex items-center gap-1.5 text-label-md text-tertiary">
-                  <Icon name="check_circle" className="text-[14px]" /> Matches the entered amount.
-                </p>
-              ) : null}
-              <p className="text-label-sm text-on-surface-variant">
-                Blank fields were filled from the receipt — review and edit if needed.
-              </p>
+              ) : (
+                <p className="text-body-sm text-on-surface-variant">Checking agency policy…</p>
+              )}
             </div>
           )}
 
           <DialogFooter>
-            {scan ? (
-              <Button type="button" onClick={() => onOpenChange(false)}>
-                Done
-              </Button>
-            ) : (
-              <>
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  loading={addLineItem.isPending || updateLineItem.isPending}
-                  disabled={!!blockingError || files.length === 0}
-                >
-                  {item ? "Save changes" : "Add line item"}
-                </Button>
-              </>
-            )}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={addLineItem.isPending || updateLineItem.isPending}
+              disabled={!!blockingError || files.length === 0}
+            >
+              {item ? "Save changes" : "Add line item"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
