@@ -9,6 +9,7 @@ from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.models.notification import Notification
+from app.models.password_reset import PasswordResetToken
 from app.models.policy import AgencyPolicy
 from app.models.user import User
 
@@ -21,6 +22,7 @@ __all__ = [
     "ExpenseSheet",
     "LineItem",
     "Notification",
+    "PasswordResetToken",
     "AgencyPolicy",
     "User",
 ]

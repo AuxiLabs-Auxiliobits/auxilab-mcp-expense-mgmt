@@ -288,6 +288,9 @@ export interface AppNotification {
   href?: string;
   timestamp: string;
   read: boolean;
+  archived?: boolean;
+  /** Loose originating-entity ref, e.g. "expense_sheet:<id>" — drives category inference. */
+  entity?: string;
   /** Who should see it (omit = all roles). */
   roles?: Role[];
 }

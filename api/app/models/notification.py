@@ -29,4 +29,6 @@ class Notification(SQLModel, table=True):
     entity: str | None = None
 
     read: bool = Field(default=False, index=True)
+    # Archived notifications are hidden from the default inbox but kept for history.
+    archived: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=utcnow, index=True)

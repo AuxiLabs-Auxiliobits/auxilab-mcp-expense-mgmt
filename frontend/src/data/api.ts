@@ -1086,12 +1086,19 @@ async function publishPolicyDocumentMock(args: {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-export function getNotifications(role: Role): Promise<AppNotification[]> {
+export function getNotifications(role: Role, includeArchived = false): Promise<AppNotification[]> {
   // Backend scopes by the caller's token (recipient or role); `role` filters the mock.
   return backend(
-    () => apiGet<Raw[]>("/notifications").then((rows) => rows.map(mapNotification)),
+    () =>
+      apiGet<Raw[]>(`/notifications${includeArchived ? "?include_archived=true" : ""}`).then(
+        (rows) => rows.map(mapNotification),
+      ),
     () => {
-      const list = notificationStore.filter((n) => !n.roles || n.roles.includes(role));
+      const list = notificationStore.filter(
+        (n) =>
+          (!n.roles || n.roles.includes(role)) &&
+          (includeArchived || !(n as { archived?: boolean }).archived),
+      );
       return delay(clone(list), 150);
     },
   );
@@ -1108,6 +1115,42 @@ export async function markNotificationsRead(role: Role): Promise<AppNotification
         clone(notificationStore.filter((n) => !n.roles || n.roles.includes(role))),
         150,
       );
+    },
+  );
+}
+
+export async function markOneNotificationRead(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/read`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id);
+      if (n) n.read = true;
+      return delay(undefined, 80);
+    },
+  );
+}
+
+export async function archiveNotification(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/archive`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id);
+      if (n) {
+        n.read = true;
+        (n as { archived?: boolean }).archived = true;
+      }
+      return delay(undefined, 80);
+    },
+  );
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  return backend(
+    () => apiDelete<Raw>(`/notifications/${id}`).then(() => undefined),
+    () => {
+      const i = notificationStore.findIndex((x) => x.id === id);
+      if (i >= 0) notificationStore.splice(i, 1);
+      return delay(undefined, 80);
     },
   );
 }

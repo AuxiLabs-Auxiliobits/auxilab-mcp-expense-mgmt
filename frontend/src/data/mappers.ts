@@ -191,6 +191,8 @@ export function mapNotification(r: Raw): AppNotification {
     href: r.href ?? undefined,
     timestamp: r.timestamp ?? r.created_at ?? new Date().toISOString(),
     read: Boolean(r.read ?? r.is_read ?? false),
+    archived: Boolean(r.archived ?? false),
+    entity: (r.entity as string) ?? undefined,
   };
 }
 

@@ -41,6 +41,31 @@ class MeOut(BaseModel):
     scope: str
 
 
+class MessageResponse(BaseModel):
+    message: str
+
+
+class LoginMethodsOut(BaseModel):
+    """How users sign in — drives the login UI (which buttons to show, where SSO users
+    reset their password). Global config, not per-user, so it never leaks account existence."""
+
+    password: bool
+    sso: bool
+    sso_label: str
+    sso_reset_url: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+    model_config = {"json_schema_extra": {"example": {"email": "employee@demo.local"}}}
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=1)
+
+
 # --- Line items / sheets --------------------------------------------------- #
 class LineItemCreate(BaseModel):
     category: Category | None = None  # the selected Expense Type
@@ -508,7 +533,9 @@ class NotificationOut(BaseModel):
     title: str
     body: str
     href: str | None
+    entity: str | None = None
     read: bool
+    archived: bool = False
     timestamp: datetime
 
     model_config = {"from_attributes": True}

@@ -426,3 +426,33 @@
     opacity: 0;
   }
 }
+
+/* Error shake — used by form validation / failed auth feedback. */
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-5px); }
+  40%, 60% { transform: translateX(5px); }
+}
+
+@layer utilities {
+  .animate-shake {
+    animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+}
+
+/* Auto-advance progress bar for the auth feature carousel (matches ROTATE_MS). */
+@keyframes auth-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@layer utilities {
+  .auth-progress-bar {
+    transform-origin: left;
+    animation: auth-progress 6s linear forwards;
+  }
+  .auth-progress-bar.is-paused {
+    animation-play-state: paused;
+  }
+}

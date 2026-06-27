@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import Keycloak from "next-auth/providers/keycloak";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "@/auth.config";
 import { usersByRole } from "@/data/mock";
@@ -30,6 +31,11 @@ const entraConfigured =
   !!process.env.AUTH_MICROSOFT_ENTRA_ID_ID &&
   !!process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER;
 
+// Keycloak is our locally-runnable OIDC stand-in (identical Auth-Code + PKCE + refresh
+// flow to Entra) — enabled only when configured, so it never breaks the default build.
+const keycloakConfigured =
+  !!process.env.AUTH_KEYCLOAK_ID && !!process.env.AUTH_KEYCLOAK_ISSUER;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
@@ -41,6 +47,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
             clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
             issuer: process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
+            // offline_access → refresh token (silent renewal); PKCE is on by default.
+            authorization: { params: { scope: "openid profile email offline_access" } },
+          }),
+        ]
+      : []),
+    ...(keycloakConfigured
+      ? [
+          Keycloak({
+            clientId: process.env.AUTH_KEYCLOAK_ID!,
+            clientSecret: process.env.AUTH_KEYCLOAK_SECRET,
+            issuer: process.env.AUTH_KEYCLOAK_ISSUER!,
+            authorization: { params: { scope: "openid profile email offline_access" } },
           }),
         ]
       : []),

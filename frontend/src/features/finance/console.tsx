@@ -50,52 +50,6 @@ function focusQueue() {
   document.getElementById("review-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/** Action-oriented triage tile — clickable variants filter the queue. */
-function TriageTile({
-  label,
-  value,
-  sub,
-  tone,
-  active,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: string;
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  const className = cn(
-    "flex flex-col items-start px-5 py-3.5 text-left transition-colors",
-    onClick && "cursor-pointer hover:bg-surface-container-low focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary",
-    active && "bg-primary-fixed/50",
-  );
-  const inner = (
-    <>
-      <span className="text-label-md font-medium text-on-surface-variant">{label}</span>
-      <span className={cn("mt-0.5 text-headline-md font-semibold tabular-nums text-on-surface", tone)}>
-        {value}
-      </span>
-      {onClick ? (
-        <span className="mt-0.5 flex items-center gap-0.5 text-label-sm font-medium text-secondary">
-          {active ? "Filtering" : "Filter queue"}
-          <Icon name="arrow_downward" className="text-[12px]" />
-        </span>
-      ) : (
-        sub && <span className="mt-0.5 text-label-sm text-on-surface-variant">{sub}</span>
-      )}
-    </>
-  );
-  return onClick ? (
-    <button type="button" onClick={onClick} aria-pressed={active} className={className}>
-      {inner}
-    </button>
-  ) : (
-    <div className={className}>{inner}</div>
-  );
-}
-
 /** Read-only AI performance metric (demoted from the action tiles). */
 function PerfStat({
   label,
@@ -145,12 +99,6 @@ export function FinanceConsole() {
   const [slaOnly, setSlaOnly] = useState(false);
 
   const all = useMemo(() => routed ?? [], [routed]);
-
-  // Triage signals.
-  const breaches = all.filter((s) => agingLevel(s.submittedAt).level === "escalation").length;
-  const warnings = all.filter((s) => agingLevel(s.submittedAt).level === "warning").length;
-  const oldestHours = all.reduce((m, s) => Math.max(m, agingLevel(s.submittedAt).hours), 0);
-  const oldestLabel = oldestHours >= 24 ? `${Math.floor(oldestHours / 24)}d` : `${oldestHours}h`;
 
   const counts = useMemo(
     () =>
@@ -297,36 +245,8 @@ export function FinanceConsole() {
         />
       </PageHeader>
 
-      {/* Triage strip — action-first metrics. The first two filter the queue. */}
-      <Card className="mt-6 grid grid-cols-2 divide-x divide-y divide-outline-variant sm:grid-cols-4 sm:divide-y-0">
-        <TriageTile
-          label="Pending review"
-          value={String(all.length)}
-          tone="text-on-surface"
-          active={!hasFilters}
-          onClick={() => {
-            setReason("all");
-            setQuery("");
-            setSlaOnly(false);
-            focusQueue();
-          }}
-        />
-        <TriageTile
-          label="SLA breaches"
-          value={String(breaches)}
-          tone={breaches ? "text-error" : undefined}
-          active={slaOnly}
-          onClick={() => {
-            setSlaOnly((v) => !v);
-            focusQueue();
-          }}
-        />
-        <TriageTile label="Approaching SLA" value={String(warnings)} sub="2–5 days old" tone={warnings ? "text-yellow-600" : undefined} />
-        <TriageTile label="Oldest in queue" value={all.length ? oldestLabel : "—"} sub="time waiting" />
-      </Card>
-
       {/* AI Approver performance — read-only analytics (demoted) */}
-      <Card className="mt-3 overflow-hidden">
+      <Card className="mt-6 overflow-hidden">
         <div className="flex items-center justify-between border-b border-outline-variant px-4 py-2">
           <h2 className="flex items-center gap-1.5 text-label-md font-semibold uppercase tracking-wider text-on-surface-variant">
             <Icon name="smart_toy" className="text-[16px] text-secondary" /> AI Approver performance · 30 days

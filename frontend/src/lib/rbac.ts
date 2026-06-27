@@ -36,6 +36,7 @@ const NAV: Record<Role, NavGroup[]> = {
       items: [
         { label: "My Expense Sheets", href: "/employee/sheets", icon: "description" },
         { label: "My Receipts", href: "/employee/receipts", icon: "receipt_long" },
+        { label: "Insights", href: "/employee/insights", icon: "insights" },
       ],
     },
     {
@@ -49,8 +50,9 @@ const NAV: Record<Role, NavGroup[]> = {
   manager: [
     { items: [{ label: "Review Queue", href: "/manager", icon: "fact_check" }] },
     {
-      title: "Policy",
+      title: "Insights",
       items: [
+        { label: "Team Insights", href: "/manager/insights", icon: "insights" },
         { label: "Policy Assistant", href: "/manager/assistant", icon: "smart_toy" },
       ],
     },
@@ -70,6 +72,7 @@ const NAV: Record<Role, NavGroup[]> = {
     {
       title: "Operations",
       items: [
+        { label: "Analytics", href: "/finance/insights", icon: "insights" },
         { label: "Expense Sheets", href: "/finance/sheets", icon: "description" },
         { label: "Audit Logs", href: "/finance/audit", icon: "history" },
       ],
@@ -88,6 +91,7 @@ const NAV: Record<Role, NavGroup[]> = {
     {
       title: "Operations",
       items: [
+        { label: "Analytics", href: "/finance/insights", icon: "insights" },
         { label: "Expense Sheets", href: "/finance/sheets", icon: "description" },
         { label: "Review Queue", href: "/manager", icon: "fact_check" },
         { label: "Audit Logs", href: "/finance/audit", icon: "history" },
