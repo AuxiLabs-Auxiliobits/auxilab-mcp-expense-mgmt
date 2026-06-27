@@ -15,7 +15,7 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
-from app.auth.base import AuthError, AuthProvider
+from app.auth.base import AuthError, AuthProvider, UserNotFoundError
 from app.principal import Principal, Role, scope_for
 
 _ph = PasswordHasher()
@@ -45,14 +45,13 @@ class DbAuthProvider(AuthProvider):
 
     async def authenticate(self, email: str, password: str) -> str:
         user = await self._users.get_by_email(email)
-        # Verify even when user is None to keep timing roughly constant.
+        # Always run a verify to keep timing constant regardless of whether the user exists.
         try:
-            if user is None:
-                _ph.verify(_DUMMY_HASH, password)
-                raise AuthError("invalid credentials")
-            _ph.verify(user.password_hash, password)
+            _ph.verify(user.password_hash if user else _DUMMY_HASH, password)
         except VerifyMismatchError as e:
             raise AuthError("invalid credentials") from e
+        if user is None:
+            raise UserNotFoundError("no account found for that email")
         if not user.is_active:
             raise AuthError("account disabled")
 

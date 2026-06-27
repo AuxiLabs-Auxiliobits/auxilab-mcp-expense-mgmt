@@ -1,8 +1,18 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import Keycloak from "next-auth/providers/keycloak";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "@/auth.config";
+
+class UserNotFoundError extends CredentialsSignin {
+  code = "user_not_found";
+}
+class InvalidPasswordError extends CredentialsSignin {
+  code = "invalid_password";
+}
+class AccountDisabledError extends CredentialsSignin {
+  code = "account_disabled";
+}
 import { usersByRole } from "@/data/mock";
 import type { Role } from "@/data/types";
 
@@ -87,7 +97,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ email, password }),
             });
-            if (!res.ok) return null;
+            if (!res.ok) {
+              if (res.status === 404) throw new UserNotFoundError();
+              if (res.status === 403) throw new AccountDisabledError();
+              throw new InvalidPasswordError();
+            }
             const token: string | undefined = (await res.json())?.access_token;
             if (!token) return null;
 

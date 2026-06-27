@@ -31,7 +31,7 @@ export function ResetPasswordCard() {
   const match = pw.length > 0 && pw === confirm;
   const canSubmit = !!token && allPass && match && !loading;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!canSubmit) return;
     setLoading(true);
@@ -138,31 +138,36 @@ export function ResetPasswordCard() {
               onClick={() => setShow((v) => !v)}
               aria-label={show ? "Hide password" : "Show password"}
               aria-pressed={show}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+              className="absolute inset-y-0 right-2 flex items-center rounded p-1 text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
             >
               <Icon name={show ? "visibility_off" : "visibility"} className="text-[18px]" />
             </button>
           </div>
         </div>
 
-        {/* Live complexity checklist */}
-        <ul id="pw-rules" className="grid grid-cols-2 gap-1.5">
-          {RULES.map((r) => {
-            const ok = r.test(pw);
-            return (
-              <li
-                key={r.label}
-                className={cn(
-                  "flex items-center gap-1.5 text-label-md transition-colors",
-                  ok ? "text-success-green" : "text-on-surface-variant",
-                )}
-              >
-                <Icon name={ok ? "check_circle" : "radio_button_unchecked"} className="text-[14px]" />
-                {r.label}
-              </li>
-            );
-          })}
-        </ul>
+        {/* Live complexity checklist — all rules visible, each ticks as met */}
+        {pw.length > 0 && (
+          <ul id="pw-rules" className="space-y-1.5">
+            {RULES.map((r) => {
+              const ok = r.test(pw);
+              return (
+                <li
+                  key={r.label}
+                  className={cn(
+                    "flex items-center gap-1.5 text-label-md transition-colors",
+                    ok ? "text-success-green" : "text-on-surface-variant",
+                  )}
+                >
+                  <Icon
+                    name={ok ? "check_circle" : "radio_button_unchecked"}
+                    className="shrink-0 text-[14px]"
+                  />
+                  {r.label}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
         <div className="space-y-1.5">
           <label htmlFor="confirm" className="block text-body-sm font-medium text-on-surface">

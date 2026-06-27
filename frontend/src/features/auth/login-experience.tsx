@@ -117,7 +117,13 @@ export function LoginExperience() {
       }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        showError("Invalid email or password. Please try again.");
+        if (res.error === "user_not_found") {
+          showError("No account found for this email address.");
+        } else if (res.error === "account_disabled") {
+          showError("This account has been deactivated. Please contact your administrator.");
+        } else {
+          showError("Incorrect password. Please try again.");
+        }
         setLoading(null);
         return;
       }

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
-from app.auth.base import AuthError, AuthProvider
+from app.auth.base import AuthError, AuthProvider, UserNotFoundError
 from app.auth.dependencies import current_principal, get_auth_provider
 from app.config import settings
 from app.rate_limit import limiter
@@ -49,6 +49,8 @@ async def login(
     in `entra` mode the token is minted by Entra's hosted login (ADR-001)."""
     try:
         token = await provider.authenticate(body.email, body.password)
+    except UserNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No account found for that email address.") from e
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
     return TokenResponse(access_token=token)
@@ -104,9 +106,14 @@ async def forgot_password(
     """Email a single-use, time-limited reset link for a local account. Always returns the
     same generic message (no user enumeration); SSO-only accounts get no link. In DEV only,
     the link is echoed back (`dev_reset_link`) so the flow is testable without an SMTP server."""
-    link = prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    try:
+        link = prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    except prs.UserNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+    except prs.SsoAccountError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     return MessageResponse(
-        message="If an account exists for that email, a password-reset link is on its way.",
+        message="A password-reset link is on its way. It is valid for 24 hours and can be used once.",
         dev_reset_link=link if settings.environment == "dev" else None,
     )
 
