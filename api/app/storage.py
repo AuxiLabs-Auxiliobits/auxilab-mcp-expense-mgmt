@@ -76,13 +76,50 @@ def upload_receipt_blob(employee_id: str, filename: str, data: bytes) -> str:
     return f"{settings.storage_account_url.rstrip('/')}/{settings.receipt_container}/{blob_name}"
 
 
-def read_blob(uri: str) -> bytes:
-    """Read a stored blob (policy or receipt) back by its URI.
+def delete_receipt_blob(uri: str) -> None:
+    """Best-effort delete of a receipt blob (used when a library upload is attached or removed).
+    Never raises — an orphaned blob is preferable to a failed user action. Offline unlinks the
+    `file://` path; Azure deletes the blob with the API's Managed Identity."""
+    if not uri:
+        return
+    try:
+        if uri.startswith("file:"):
+            from urllib.parse import unquote, urlparse  # noqa: PLC0415
 
-    Offline resolves `file://` URIs from disk. In Azure the API reads the receipt/policy
-    container with its Managed Identity (Blob Data Reader) and streams the bytes to the
-    authorized caller — the scope/RBAC check happens in the router before this is called.
-    """
+            path = unquote(urlparse(uri).path)
+            if os.name == "nt" and path.startswith("/"):
+                path = path[1:]
+            Path(path).unlink(missing_ok=True)
+            return
+
+        from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+        from azure.storage.blob import BlobClient  # noqa: PLC0415
+
+        BlobClient.from_blob_url(uri, credential=DefaultAzureCredential()).delete_blob()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
+
+def read_receipt_blob(uri: str) -> bytes:
+    """Read a receipt's bytes for streaming back to the UI. Offline resolves `file://`;
+    Azure reads the blob with the API's Managed Identity (Blob Data Contributor)."""
+    if uri.startswith("file:"):
+        from urllib.parse import unquote, urlparse  # noqa: PLC0415
+
+        path = unquote(urlparse(uri).path)
+        if os.name == "nt" and path.startswith("/"):
+            path = path[1:]
+        return Path(path).read_bytes()
+
+    from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+    from azure.storage.blob import BlobClient  # noqa: PLC0415
+
+    return BlobClient.from_blob_url(uri, credential=DefaultAzureCredential()).download_blob().readall()
+
+
+def read_policy_blob(uri: str) -> bytes:
+    """Read a policy document back (used by tests / local tooling). Offline only resolves
+    `file://` URIs; Azure URIs require the worker's Blob reader role."""
     if uri.startswith("file:"):
         from urllib.parse import urlparse, unquote  # noqa: PLC0415
 
@@ -103,4 +140,4 @@ def read_blob(uri: str) -> bytes:
 
 
 # Back-compat alias (policy docs read the same way).
-read_policy_blob = read_blob
+read_blob = read_policy_blob

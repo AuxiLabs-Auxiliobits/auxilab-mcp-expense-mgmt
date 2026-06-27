@@ -50,6 +50,56 @@ function focusQueue() {
   document.getElementById("review-queue")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/** KPI formatters — a null (backend couldn't compute it) renders as an em dash, never a fake value. */
+const pct = (v?: number | null) => (v == null ? "—" : `${v}%`);
+const hrs = (v?: number | null) => (v == null ? "—" : `${v}h`);
+
+/** Action-oriented triage tile — clickable variants filter the queue. */
+function TriageTile({
+  label,
+  value,
+  sub,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const className = cn(
+    "flex flex-col items-start px-5 py-3.5 text-left transition-colors",
+    onClick && "cursor-pointer hover:bg-surface-container-low focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary",
+    active && "bg-primary-fixed/50",
+  );
+  const inner = (
+    <>
+      <span className="text-label-md font-medium text-on-surface-variant">{label}</span>
+      <span className={cn("mt-0.5 text-headline-md font-semibold tabular-nums text-on-surface", tone)}>
+        {value}
+      </span>
+      {onClick ? (
+        <span className="mt-0.5 flex items-center gap-0.5 text-label-sm font-medium text-secondary">
+          {active ? "Filtering" : "Filter queue"}
+          <Icon name="arrow_downward" className="text-[12px]" />
+        </span>
+      ) : (
+        sub && <span className="mt-0.5 text-label-sm text-on-surface-variant">{sub}</span>
+      )}
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} aria-pressed={active} className={className}>
+      {inner}
+    </button>
+  ) : (
+    <div className={className}>{inner}</div>
+  );
+}
+
 /** Read-only AI performance metric (demoted from the action tiles). */
 function PerfStat({
   label,
@@ -88,7 +138,7 @@ function ConfidenceBar({ value }: { value?: number }) {
 }
 
 export function FinanceConsole() {
-  const { data: routed, isLoading } = useRoutedSheets();
+  const { data: routed, isLoading, refetch, isFetching } = useRoutedSheets();
   const { data: kpis } = useFinanceKpis();
   const { data: financeUser } = useCurrentUser("finance");
   const { data: activity } = useActivityLog("finance", financeUser?.id ?? "");
@@ -96,7 +146,8 @@ export function FinanceConsole() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState("all");
   const [query, setQuery] = useState("");
-  const [slaOnly, setSlaOnly] = useState(false);
+  // Aging filter driven by the triage tiles: escalation = SLA breaches, warning = approaching SLA.
+  const [aging, setAging] = useState<"all" | "escalation" | "warning">("all");
 
   const all = useMemo(() => routed ?? [], [routed]);
 
@@ -115,7 +166,7 @@ export function FinanceConsole() {
     const q = query.trim().toLowerCase();
     return all
       .filter((s) => reason === "all" || s.routeReason === reason)
-      .filter((s) => !slaOnly || agingLevel(s.submittedAt).level === "escalation")
+      .filter((s) => aging === "all" || agingLevel(s.submittedAt).level === aging)
       .filter(
         (s) =>
           !q ||
@@ -123,10 +174,10 @@ export function FinanceConsole() {
           s.agencyName.toLowerCase().includes(q) ||
           s.employeeName.toLowerCase().includes(q),
       );
-  }, [all, reason, query, slaOnly]);
+  }, [all, reason, query, aging]);
 
   const selected = all.find((s) => s.id === selectedId) ?? null;
-  const hasFilters = reason !== "all" || !!query || slaOnly;
+  const hasFilters = reason !== "all" || !!query || aging !== "all";
 
   function exportSheets(list: ExpenseSheet[]) {
     downloadCsv(
@@ -233,6 +284,14 @@ export function FinanceConsole() {
         <span className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface-container-highest px-3 py-1.5 font-mono text-label-md uppercase text-on-surface">
           <LiveDot /> AI engine active
         </span>
+        <Button
+          variant="outline"
+          onClick={() => refetch()}
+          loading={isFetching}
+          title="Pull in newly routed sheets without reloading"
+        >
+          <Icon name="refresh" /> Refresh
+        </Button>
         <Button variant="outline" onClick={() => exportSheets(rows)} disabled={!rows.length}>
           <Icon name="download" /> Export
         </Button>
@@ -245,6 +304,43 @@ export function FinanceConsole() {
         />
       </PageHeader>
 
+      {/* Triage strip — action-first metrics. The first two filter the queue. */}
+      <Card className="mt-6 grid grid-cols-2 divide-x divide-y divide-outline-variant sm:grid-cols-4 sm:divide-y-0">
+        <TriageTile
+          label="Pending review"
+          value={String(all.length)}
+          tone="text-on-surface"
+          active={!hasFilters}
+          onClick={() => {
+            setReason("all");
+            setQuery("");
+            setAging("all");
+            focusQueue();
+          }}
+        />
+        <TriageTile
+          label="SLA breaches"
+          value={String(breaches)}
+          tone={breaches ? "text-error" : undefined}
+          active={aging === "escalation"}
+          onClick={() => {
+            setAging((v) => (v === "escalation" ? "all" : "escalation"));
+            focusQueue();
+          }}
+        />
+        <TriageTile
+          label="Approaching SLA"
+          value={String(warnings)}
+          tone={warnings ? "text-yellow-600" : undefined}
+          active={aging === "warning"}
+          onClick={() => {
+            setAging((v) => (v === "warning" ? "all" : "warning"));
+            focusQueue();
+          }}
+        />
+        <TriageTile label="Oldest in queue" value={all.length ? oldestLabel : "—"} sub="time waiting" />
+      </Card>
+
       {/* AI Approver performance — read-only analytics (demoted) */}
       <Card className="mt-6 overflow-hidden">
         <div className="flex items-center justify-between border-b border-outline-variant px-4 py-2">
@@ -253,22 +349,23 @@ export function FinanceConsole() {
           </h2>
           {kpis && (
             <span className="hidden font-mono text-label-sm text-on-surface-variant sm:inline">
-              {kpis.manualInterventions} manual interventions · RAG synced {kpis.ragSyncedAgo}
+              {kpis.manualInterventions} manual interventions
+              {kpis.ragSyncedAgo ? ` · RAG synced ${kpis.ragSyncedAgo}` : ""}
             </span>
           )}
         </div>
         <div className="grid grid-cols-2 divide-x divide-y divide-outline-variant sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
           <PerfStat
             label="Auto-approval"
-            value={kpis ? `${kpis.autoApprovalRate}%` : "—"}
-            delta={kpis ? `▲ ${kpis.autoApprovalDelta}%` : undefined}
+            value={pct(kpis?.autoApprovalRate)}
+            delta={kpis?.autoApprovalDelta != null ? `▲ ${kpis.autoApprovalDelta}%` : undefined}
             deltaTone="text-success-green"
           />
-          <PerfStat label="Escalation rate" value={kpis ? `${kpis.escalationRate}%` : "—"} />
-          <PerfStat label="Approval accuracy" value={kpis ? `${kpis.approvalAccuracy}%` : "—"} />
-          <PerfStat label="False-positive" value={kpis ? `${kpis.falsePositiveRate}%` : "—"} />
-          <PerfStat label="SLA compliance" value={kpis ? `${kpis.slaCompliance}%` : "—"} />
-          <PerfStat label="Avg resolution" value={kpis ? `${kpis.avgResolutionHours}h` : "—"} />
+          <PerfStat label="Escalation rate" value={pct(kpis?.escalationRate)} />
+          <PerfStat label="Approval accuracy" value={pct(kpis?.approvalAccuracy)} />
+          <PerfStat label="False-positive" value={pct(kpis?.falsePositiveRate)} />
+          <PerfStat label="SLA compliance" value={pct(kpis?.slaCompliance)} />
+          <PerfStat label="Avg resolution" value={hrs(kpis?.avgResolutionHours)} />
         </div>
       </Card>
 
@@ -316,12 +413,12 @@ export function FinanceConsole() {
             </div>
             <div className="flex items-center gap-2">
               <SavedViewsMenu
-                storageKey="finance-console-views"
-                current={{ reason, query, slaOnly }}
+                storageKey="finance-console-views-v2"
+                current={{ reason, query, aging }}
                 onApply={(v) => {
                   setReason(v.reason ?? "all");
                   setQuery(v.query ?? "");
-                  setSlaOnly(!!v.slaOnly);
+                  setAging(v.aging ?? "all");
                 }}
               />
               <Button size="sm" variant="outline" onClick={() => exportSheets(rows)} disabled={!rows.length}>
@@ -368,12 +465,21 @@ export function FinanceConsole() {
                   </span>
                 </button>
               ))}
-              {slaOnly && (
+              {aging !== "all" && (
                 <button
-                  onClick={() => setSlaOnly(false)}
-                  className="flex h-7 items-center gap-1 rounded-md bg-error-container px-2.5 text-label-md font-medium text-error"
+                  onClick={() => setAging("all")}
+                  className={cn(
+                    "flex h-7 items-center gap-1 rounded-md px-2.5 text-label-md font-medium",
+                    aging === "escalation"
+                      ? "bg-error-container text-error"
+                      : "bg-yellow-500/10 text-yellow-600",
+                  )}
                 >
-                  <Icon name="priority_high" className="text-[13px]" /> SLA breaches
+                  <Icon
+                    name={aging === "escalation" ? "priority_high" : "schedule"}
+                    className="text-[13px]"
+                  />
+                  {aging === "escalation" ? "SLA breaches" : "Approaching SLA"}
                   <Icon name="close" className="text-[13px]" />
                 </button>
               )}

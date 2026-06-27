@@ -18,9 +18,28 @@ from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
-from app.services import audit_service
+from app.services import audit_service, notification_service
 from app.services.state_machine import assert_transition
 from expense_core.schemas.enums import FinanceDecision, SheetStatus
+
+
+def _notify_employee_outcome(session: Session, sheet: ExpenseSheet, approved: bool | None) -> None:
+    """Tell the submitter the finance outcome. `approved=None` → routed for manual review."""
+    title = sheet.title or "Expense sheet"
+    if approved is None:
+        kind, head, body = (
+            "info",
+            "Sent for finance review",
+            f"“{title}” was routed to a Finance reviewer for a closer look.",
+        )
+    elif approved:
+        kind, head, body = ("success", "Reimbursement approved", f"“{title}” was approved by Finance.")
+    else:
+        kind, head, body = ("error", "Sheet rejected", f"“{title}” was rejected by Finance.")
+    notification_service.notify(
+        session, recipient_id=sheet.employee_id, kind=kind, title=head, body=body,
+        href=f"/employee/sheets/{sheet.id}",
+    )
 
 
 def apply_llm_decision(
@@ -46,6 +65,20 @@ def apply_llm_decision(
     assert_transition(sheet.status, target)
     sheet.status = target
     sheet.finance_decision = decision
+    # Surface the approver's outcome on the sheet so the Finance review UI can show it
+    # without re-deriving from the decision trail (SCOPING §6.3).
+    sheet.llm_confidence = confidence
+    sheet.policy_version_used = policy_version
+    if decision is FinanceDecision.ROUTED_TO_HUMAN:
+        sheet.route_reason = "LOW_CONFIDENCE"
+        sheet.route_reason_detail = (
+            "; ".join(cited_clauses)
+            if cited_clauses
+            else f"Confidence {confidence:.0%} below the auto-approval threshold."
+        )
+    else:
+        sheet.route_reason = None
+        sheet.route_reason_detail = None
     sheet.updated_at = utcnow()
     session.add(sheet)
 
@@ -66,6 +99,12 @@ def apply_llm_decision(
         agency_id=sheet.agency_id,
         after={"model_version": model_version, "policy_version": policy_version,
                "cited_clauses": cited_clauses, "confidence": confidence},
+    )
+    _notify_employee_outcome(
+        session, sheet,
+        approved=True if decision is FinanceDecision.APPROVED
+        else False if decision is FinanceDecision.REJECTED_WITH_COMMENTS
+        else None,
     )
     session.commit()
     session.refresh(sheet)
@@ -94,6 +133,7 @@ def finance_human_decision(
         session, actor=actor, action=f"FINANCE_HUMAN_{target}",
         entity=f"expense_sheet:{sheet.id}", after={"reason": reason},
     )
+    _notify_employee_outcome(session, sheet, approved=approve)
     session.commit()
     session.refresh(sheet)
     return sheet
@@ -121,6 +161,7 @@ def override_decision(
         entity=f"expense_sheet:{sheet.id}",
         before={"status": before}, after={"status": sheet.status, "reason": reason},
     )
+    _notify_employee_outcome(session, sheet, approved=approve)
     session.commit()
     session.refresh(sheet)
     return sheet

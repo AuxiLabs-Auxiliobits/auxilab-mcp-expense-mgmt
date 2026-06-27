@@ -131,11 +131,48 @@ def test_edit_and_delete_line_item_while_draft(client):
     assert deleted.json()["line_items"] == []
 
 
-def test_withdraw_draft(client):
+def test_discard_draft(client):
     emp = login(client, "employee@demo.local")
     sheet = _draft(client, emp)
     assert client.delete(f"/sheets/{sheet['id']}", headers=auth(emp)).status_code == 204
     assert client.get(f"/sheets/{sheet['id']}", headers=auth(emp)).status_code == 404
+
+
+def test_withdraw_recalls_submitted_sheet(client):
+    emp = login(client, "employee@demo.local")
+    sheet = _draft(client, emp, line_items=[_line()])
+    li_id = sheet["line_items"][0]["id"]
+    assert _receipt(client, emp, sheet["id"], li_id).status_code == 201
+    submitted = client.post(f"/sheets/{sheet['id']}/submit", headers=auth(emp))
+    assert submitted.status_code == 200 and submitted.json()["status"] == "IN_MANAGER_REVIEW"
+
+    wd = client.post(f"/sheets/{sheet['id']}/withdraw", headers=auth(emp))
+    assert wd.status_code == 200, wd.text
+    assert wd.json()["status"] == "DRAFT"
+
+    # A plain DRAFT isn't in-flight → can't be withdrawn again.
+    assert client.post(f"/sheets/{sheet['id']}/withdraw", headers=auth(emp)).status_code == 409
+
+
+def test_withdraw_blocked_after_manager_approval(client):
+    emp = login(client, "employee@demo.local")
+    sheet = _draft(client, emp, line_items=[_line()])
+    li_id = sheet["line_items"][0]["id"]
+    assert _receipt(client, emp, sheet["id"], li_id).status_code == 201
+    assert client.post(f"/sheets/{sheet['id']}/submit", headers=auth(emp)).status_code == 200
+
+    # Manager approves the only line item → sheet advances to finance review.
+    mgr = login(client, "manager@demo.local")
+    approved = client.post(
+        f"/manager/sheets/{sheet['id']}/action",
+        json={"line_item_id": li_id, "action": "MANAGER_APPROVED"},
+        headers=auth(mgr),
+    )
+    assert approved.status_code == 200 and approved.json()["status"] == "IN_FINANCE_REVIEW"
+
+    # Now the employee can no longer withdraw it.
+    wd = client.post(f"/sheets/{sheet['id']}/withdraw", headers=auth(emp))
+    assert wd.status_code == 409, wd.text
 
 
 def test_other_expense_type_requires_free_text(client):

@@ -89,7 +89,7 @@ export interface User {
   email: string;
   role: Role;
   agencyId: string;
-  agencyName?: string;
+  agencyName?: string; // resolved from agencyId for display
   avatarUrl?: string;
 }
 
@@ -117,6 +117,7 @@ export interface Attachment {
   scanStatus: ScanStatus;
   ocrStatus: OcrStatus;
   uploadedAt?: string;
+  downloadUrl?: string;
 }
 
 /** One entry in a sheet's approval/decision history (manager/finance/LLM actions). */
@@ -159,6 +160,9 @@ export interface LineItem {
   managerReason?: string;
   policyStatus?: LineItemStatus;
   policyClauseRef?: string;
+  /** Receipt-scan flag for Finance: total unreadable or ≠ entered amount. */
+  needsHumanReview?: boolean;
+  reviewReason?: string;
   /** AI-surfaced intake/finance flag shown inline in the grids. */
   aiFlag?: {
     message: string;
@@ -198,6 +202,8 @@ export interface ExpenseSheet {
   updatedAt: string;
   financeDecision?: FinanceDecision;
   financeDecidedBy?: string;
+  /** User id of the manager who last advanced/returned this sheet (powers "Reviewed" history). */
+  managerDecidedBy?: string;
   policyVersionUsed?: string;
   routeReason?: RouteReason;
   routeReasonDetail?: string;

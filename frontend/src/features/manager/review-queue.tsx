@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  useAllSheets,
   useApproveSheet,
   useCurrentUser,
   useLineItemAction,
@@ -11,6 +12,7 @@ import {
   useSheetReceipts,
 } from "@/data/hooks";
 import { AGING_CLASS, agingLevel } from "@/lib/aging";
+import { SHEET_STATUS_META } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -33,14 +35,35 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ReceiptViewer, ReceiptsLoading } from "@/components/shared/receipt-viewer";
+import { ReceiptScanDetails } from "@/components/shared/receipt-scan-details";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ExpenseSheet, LineItem } from "@/data/types";
+import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
 
 type PendingAction = { action: "reject" | "request_info"; item: LineItem } | null;
 
 type SortKey = "oldest" | "newest" | "amount-high" | "amount-low";
 type FilterKey = "all" | "aging" | "urgent";
+type QueueView = "pending" | "reviewed";
+
+/** Statuses a sheet lands in *after* the manager has acted on it (SCOPING §6.2). */
+const REVIEWED_STATUSES = new Set<SheetStatus>([
+  "RETURNED_TO_EMPLOYEE", // manager rejected a line item / requested info → back to employee
+  "IN_FINANCE_REVIEW",
+  "FINANCE_MANUAL_REVIEW",
+  "FINANCE_APPROVED",
+  "FINANCE_REJECTED",
+  "APPROVED",
+  "REJECTED",
+  "PAID",
+]);
+
+/** The manager's own outcome on a reviewed sheet: returned = rejected/info, else approved. */
+function managerOutcome(status: SheetStatus): { label: string; tone: string; icon: string } {
+  return status === "RETURNED_TO_EMPLOYEE"
+    ? { label: "Returned", tone: "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20", icon: "undo" }
+    : { label: "Approved", tone: "bg-success-green/10 text-success-green border border-success-green/20", icon: "check_circle" };
+}
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "oldest", label: "Oldest first" },
@@ -89,19 +112,44 @@ function QueueStat({
 export function ReviewQueue() {
   const { data: user } = useCurrentUser("manager");
   const agencyId = user?.agencyId ?? "";
-  const { data: queue, isLoading } = useManagerQueue(agencyId);
+  const { data: queue, isLoading, refetch, isFetching } = useManagerQueue(agencyId);
+  const [view, setView] = useState<QueueView>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // True after the user explicitly returns to the queue, so the auto-select effect
   // below doesn't immediately re-open the first sheet (that defeated "Return to Queue").
   const [manualClear, setManualClear] = useState(false);
 
   const sheets = queue ?? [];
-  useEffect(() => {
-    if (manualClear) return;
-    if (sheets.length && (!selectedId || !sheets.some((s) => s.id === selectedId))) {
-      setSelectedId(sheets[0].id);
-    }
-  }, [sheets, selectedId, manualClear]);
+
+  const bulkApprove = useManagerBulkApprove();
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<SortKey>("oldest");
+  const [filterBy, setFilterBy] = useState<FilterKey>("all");
+
+  const isReviewed = view === "reviewed";
+
+  // "Reviewed" history = sheets *I personally* decided. `managerDecidedBy` is stamped
+  // server-side the moment a sheet leaves manager review (advanced to finance or returned to
+  // the employee), so this is exact even when several managers share an agency — and unbounded
+  // (no audit-window limit). The agency sheet list is agency-scoped server-side; fetched only
+  // when the tab is open.
+  const { data: allSheets, refetch: refetchReviewed, isFetching: reviewedFetching } =
+    useAllSheets(isReviewed);
+  const reviewedSheets = useMemo(
+    () =>
+      [...(allSheets ?? [])]
+        .filter(
+          (s) =>
+            s.agencyId === agencyId &&
+            REVIEWED_STATUSES.has(s.status) &&
+            !!user &&
+            s.managerDecidedBy === user.id,
+        )
+        .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
+    [allSheets, agencyId, user],
+  );
+
+  const reviewedLoading = reviewedFetching && reviewedSheets.length === 0;
 
   const selectSheet = (id: string) => {
     setManualClear(false);
@@ -111,13 +159,23 @@ export function ReviewQueue() {
     setManualClear(true);
     setSelectedId(null);
   };
+  const switchView = (next: QueueView) => {
+    setView(next);
+    setManualClear(true); // don't auto-open the first sheet after a tab switch
+    setSelectedId(null);
+    setCheckedIds(new Set());
+  };
 
-  const selected = sheets.find((s) => s.id === selectedId) ?? null;
+  // Auto-select the first pending sheet (only in the live queue, never in history).
+  useEffect(() => {
+    if (manualClear || isReviewed) return;
+    if (sheets.length && (!selectedId || !sheets.some((s) => s.id === selectedId))) {
+      setSelectedId(sheets[0].id);
+    }
+  }, [sheets, selectedId, manualClear, isReviewed]);
 
-  const bulkApprove = useManagerBulkApprove();
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<SortKey>("oldest");
-  const [filterBy, setFilterBy] = useState<FilterKey>("all");
+  const activeList = isReviewed ? reviewedSheets : sheets;
+  const selected = activeList.find((s) => s.id === selectedId) ?? null;
 
   const visibleSheets = [...sheets]
     .filter((s) => {
@@ -155,12 +213,30 @@ export function ReviewQueue() {
   async function runBulkApprove() {
     const ids = [...checkedIds];
     const actor = user ? { id: user.id, name: user.name } : undefined;
-    const results = await bulkApprove.mutateAsync({ ids, actor });
-    const routed = results.filter((s) => s.status === "FINANCE_MANUAL_REVIEW").length;
-    toast.success(`Approved ${ids.length} sheet${ids.length === 1 ? "" : "s"}`, {
-      description: routed
-        ? `AI Finance Approver auto-cleared ${ids.length - routed}, routed ${routed} to Finance.`
-        : "AI Finance Approver auto-cleared all of them.",
+    const { approved, failed } = await bulkApprove.mutateAsync({ ids, actor });
+    const routed = approved.filter((s) => s.status === "FINANCE_MANUAL_REVIEW").length;
+    const cleared = approved.length - routed;
+    const detail = routed
+      ? `AI Finance Approver auto-cleared ${cleared}, routed ${routed} to Finance.`
+      : "AI Finance Approver auto-cleared all of them.";
+
+    if (failed.length) {
+      // Some sheets went through, some didn't — report both rather than failing the lot.
+      // Drop the approved ones from the selection so a retry only re-runs the failures.
+      setCheckedIds(new Set(failed));
+      if (approved.length) {
+        toast.warning(
+          `Approved ${approved.length} of ${ids.length} sheets — ${failed.length} failed.`,
+          { description: `${detail} The failed sheet${failed.length === 1 ? " is" : "s are"} still selected — try again.` },
+        );
+      } else {
+        toast.error(`Couldn't approve ${failed.length} sheet${failed.length === 1 ? "" : "s"}. Please try again.`);
+      }
+      return;
+    }
+
+    toast.success(`Approved ${approved.length} sheet${approved.length === 1 ? "" : "s"}`, {
+      description: detail,
     });
     setCheckedIds(new Set());
   }
@@ -178,11 +254,45 @@ export function ReviewQueue() {
               AGENCY: {user?.agencyName || user?.agencyId?.replace("AGY-", "") || "—"}
             </span>
             <span className="text-body-sm text-on-surface-variant">
-              {sheets.length} sheet{sheets.length === 1 ? "" : "s"} pending approval
+              {isReviewed
+                ? `${reviewedSheets.length} sheet${reviewedSheets.length === 1 ? "" : "s"} you've reviewed`
+                : `${sheets.length} sheet${sheets.length === 1 ? "" : "s"} pending approval`}
             </span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {/* Pending ↔ Reviewed history toggle */}
+          <div className="flex rounded-md border border-outline-variant bg-surface-container-low p-0.5">
+            {(["pending", "reviewed"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => switchView(v)}
+                className={cn(
+                  "rounded px-3 py-1 text-label-md font-medium capitalize transition-colors",
+                  view === v
+                    ? "bg-surface-bright text-on-surface shadow-xs"
+                    : "text-on-surface-variant hover:text-on-surface",
+                )}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (isReviewed ? refetchReviewed() : refetch())}
+            loading={isReviewed ? reviewedFetching : isFetching}
+            title={
+              isReviewed
+                ? "Refresh your review history"
+                : "Pull in newly submitted sheets without reloading"
+            }
+          >
+            <Icon name="refresh" /> Refresh
+          </Button>
+          {!isReviewed && (
+          <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
@@ -221,6 +331,8 @@ export function ReviewQueue() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          </>
+          )}
         </div>
       </div>
 
@@ -237,12 +349,17 @@ export function ReviewQueue() {
         {/* Master list */}
         <div className="flex w-full flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest lg:h-full lg:w-1/3">
           <div className="flex items-center justify-between border-b border-outline-variant bg-surface-bright p-3">
-            <h3 className="text-body-lg font-semibold text-on-surface">Pending Sheets</h3>
-            <Badge className="bg-error-container text-error" pill={false}>
-              Needs Action
+            <h3 className="text-body-lg font-semibold text-on-surface">
+              {isReviewed ? "Reviewed Sheets" : "Pending Sheets"}
+            </h3>
+            <Badge
+              className={isReviewed ? "bg-surface-container-highest text-on-surface-variant" : "bg-error-container text-error"}
+              pill={false}
+            >
+              {isReviewed ? "History" : "Needs Action"}
             </Badge>
           </div>
-          {checkedIds.size > 0 && (
+          {!isReviewed && checkedIds.size > 0 && (
             <div className="flex items-center justify-between gap-2 border-b border-outline-variant bg-secondary-container/40 px-3 py-2">
               <span className="text-body-sm font-medium text-on-surface">
                 {checkedIds.size} selected
@@ -258,7 +375,27 @@ export function ReviewQueue() {
             </div>
           )}
           <div className="max-h-[55vh] flex-1 space-y-2 overflow-y-auto p-2 lg:max-h-none">
-            {isLoading ? (
+            {isReviewed ? (
+              reviewedLoading ? (
+                [0, 1, 2].map((i) => <Skeleton key={i} className="h-24 rounded" />)
+              ) : reviewedSheets.length === 0 ? (
+                <EmptyState
+                  icon="history"
+                  title="No reviewed sheets yet"
+                  description="Sheets you approve or return to the employee will appear here."
+                />
+              ) : (
+                reviewedSheets.map((sheet) => (
+                  <SheetListItem
+                    key={sheet.id}
+                    sheet={sheet}
+                    active={sheet.id === selectedId}
+                    onSelect={() => selectSheet(sheet.id)}
+                    decision={managerOutcome(sheet.status)}
+                  />
+                ))
+              )
+            ) : isLoading ? (
               [0, 1, 2].map((i) => <Skeleton key={i} className="h-24 rounded" />)
             ) : visibleSheets.length === 0 ? (
               <EmptyState
@@ -288,10 +425,18 @@ export function ReviewQueue() {
         {/* Detail */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest lg:h-full">
           {selected ? (
-            <SheetDetail sheet={selected} onReturn={returnToQueue} />
+            <SheetDetail sheet={selected} onReturn={returnToQueue} readOnly={isReviewed} />
           ) : (
             <div className="flex flex-1 items-center justify-center">
-              <EmptyState icon="fact_check" title="Select a sheet" description="Choose a pending sheet to review its line items." />
+              <EmptyState
+                icon="fact_check"
+                title="Select a sheet"
+                description={
+                  isReviewed
+                    ? "Choose a reviewed sheet to see its line items and your decision."
+                    : "Choose a pending sheet to review its line items."
+                }
+              />
             </div>
           )}
         </div>
@@ -306,12 +451,15 @@ function SheetListItem({
   checked,
   onToggle,
   onSelect,
+  decision,
 }: {
   sheet: ExpenseSheet;
   active: boolean;
-  checked: boolean;
-  onToggle: () => void;
+  checked?: boolean;
+  onToggle?: () => void;
   onSelect: () => void;
+  /** When set (history view), shows the manager's outcome instead of the selection checkbox + SLA. */
+  decision?: { label: string; tone: string; icon: string };
 }) {
   const aging = agingLevel(sheet.submittedAt);
   return (
@@ -330,14 +478,16 @@ function SheetListItem({
       {active && <span className="absolute left-0 top-0 h-full w-1 bg-secondary" />}
       <div className="mb-1 flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={checked}
-            onClick={(e) => e.stopPropagation()}
-            onChange={onToggle}
-            className="h-4 w-4 rounded border-outline-variant text-secondary focus:ring-secondary"
-            aria-label={`Select ${sheet.title}`}
-          />
+          {onToggle && (
+            <input
+              type="checkbox"
+              checked={!!checked}
+              onClick={(e) => e.stopPropagation()}
+              onChange={onToggle}
+              className="h-4 w-4 rounded border-outline-variant text-secondary focus:ring-secondary"
+              aria-label={`Select ${sheet.title}`}
+            />
+          )}
           <span className="font-mono text-label-md text-on-surface-variant">{sheet.period}</span>
         </div>
         <span className="text-body-sm font-semibold text-on-surface">
@@ -353,25 +503,50 @@ function SheetListItem({
       </div>
       <div className="mt-2 flex items-center justify-between border-t border-outline-variant/30 pt-2">
         <span className="flex items-center gap-2">
-          <Icon name="pending_actions" className="text-[14px] text-error" />
+          <Icon
+            name={decision ? "fact_check" : "pending_actions"}
+            className={cn("text-[14px]", decision ? "text-on-surface-variant" : "text-error")}
+          />
           <span className="text-label-sm text-on-surface-variant">{sheet.lineItems.length} Items</span>
         </span>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold",
-            AGING_CLASS[aging.level],
-          )}
-          title={`Aging: ${aging.label}`}
-        >
-          <Icon name={aging.level === "escalation" ? "priority_high" : "schedule"} className="text-[12px]" />
-          {aging.label}
-        </span>
+        {decision ? (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold",
+              decision.tone,
+            )}
+            title={`You ${decision.label.toLowerCase()} this sheet`}
+          >
+            <Icon name={decision.icon} className="text-[12px]" />
+            {decision.label}
+          </span>
+        ) : (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold",
+              AGING_CLASS[aging.level],
+            )}
+            title={`Aging: ${aging.label}`}
+          >
+            <Icon name={aging.level === "escalation" ? "priority_high" : "schedule"} className="text-[12px]" />
+            {aging.label}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () => void }) {
+function SheetDetail({
+  sheet,
+  onReturn,
+  readOnly = false,
+}: {
+  sheet: ExpenseSheet;
+  onReturn: () => void;
+  /** History view: render the sheet without any review actions. */
+  readOnly?: boolean;
+}) {
   const { data: user } = useCurrentUser("manager");
   const lineItemAction = useLineItemAction();
   const approveSheet = useApproveSheet();
@@ -413,15 +588,15 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
   async function approveEntireSheet() {
     const updated = await approveSheet.mutateAsync({ sheetId: sheet.id, actor });
     if (updated.status === "FINANCE_MANUAL_REVIEW") {
-      toast.warning(`"${sheet.title}" routed to Finance for manual review`, {
+      toast.warning(`“${sheet.title}” routed to Finance for manual review`, {
         description: updated.routeReasonDetail,
       });
     } else if (updated.status === "FINANCE_APPROVED") {
-      toast.success(`"${sheet.title}" auto-approved by the AI Finance Approver`, {
+      toast.success(`“${sheet.title}” auto-approved by the AI Finance Approver`, {
         description: `Confidence ${Math.round((updated.llmConfidence ?? 0) * 100)}%.`,
       });
     } else {
-      toast.success(`"${sheet.title}" sent to Finance`);
+      toast.success(`“${sheet.title}” sent to Finance`);
     }
   }
 
@@ -444,9 +619,21 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
             <div className="text-headline-md text-on-surface">
               {formatCurrency(sheet.total, sheet.currency)}
             </div>
-            <span className="inline-block rounded-full bg-error-container px-2 py-0.5 text-[11px] font-semibold text-error">
-              Pending Review
-            </span>
+            {readOnly ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                  SHEET_STATUS_META[sheet.status].badgeClass,
+                )}
+              >
+                <Icon name={SHEET_STATUS_META[sheet.status].icon} className="text-[13px]" />
+                {SHEET_STATUS_META[sheet.status].label}
+              </span>
+            ) : (
+              <span className="inline-block rounded-full bg-error-container px-2 py-0.5 text-[11px] font-semibold text-error">
+                Pending Review
+              </span>
+            )}
           </div>
         </div>
 
@@ -477,7 +664,8 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
           <LineItemReviewCard
             key={item.id}
             item={item}
-            disabled={isOwnSheet || lineItemAction.isPending}
+            sheetId={sheet.id}
+            disabled={readOnly || isOwnSheet || lineItemAction.isPending}
             approving={
               lineItemAction.isPending && lineItemAction.variables?.lineItemId === item.id
             }
@@ -503,16 +691,18 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
       {/* Footer */}
       <div className="flex justify-end gap-3 border-t border-outline-variant bg-surface-bright p-4">
         <Button variant="outline" onClick={onReturn}>
-          <Icon name="arrow_back" /> Return to Queue
+          <Icon name="arrow_back" /> {readOnly ? "Back" : "Return to Queue"}
         </Button>
-        <Button
-          disabled={!allApproved || isOwnSheet}
-          loading={approveSheet.isPending}
-          onClick={approveEntireSheet}
-          title={allApproved ? undefined : "Complete line item reviews first"}
-        >
-          <Icon name="done_all" /> Approve Entire Sheet
-        </Button>
+        {!readOnly && (
+          <Button
+            disabled={!allApproved || isOwnSheet}
+            loading={approveSheet.isPending}
+            onClick={approveEntireSheet}
+            title={allApproved ? undefined : "Complete line item reviews first"}
+          >
+            <Icon name="done_all" /> Approve Entire Sheet
+          </Button>
+        )}
       </div>
 
       {/* Reason dialog */}
@@ -563,6 +753,7 @@ function SheetDetail({ sheet, onReturn }: { sheet: ExpenseSheet; onReturn: () =>
 
 function LineItemReviewCard({
   item,
+  sheetId,
   disabled,
   approving = false,
   onApprove,
@@ -570,6 +761,7 @@ function LineItemReviewCard({
   onRequestInfo,
 }: {
   item: LineItem;
+  sheetId: string;
   disabled: boolean;
   approving?: boolean;
   onApprove: () => void;
@@ -635,6 +827,9 @@ function LineItemReviewCard({
             </p>
           </div>
         )}
+
+        {/* Manager-only: scan-derived values from the receipt (not shown to the employee). */}
+        <ReceiptScanDetails sheetId={sheetId} lineItemId={item.id} currency={item.currency} />
 
         {actionable && (
           <div className="mt-3 flex justify-end gap-2 border-t border-outline-variant/30 pt-3">

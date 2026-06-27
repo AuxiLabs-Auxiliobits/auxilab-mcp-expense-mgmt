@@ -131,9 +131,9 @@ async def me(
     return MeOut(
         subject_id=principal.subject_id,
         email=principal.email,
-        role=str(principal.role),
+        name=(user.name if user else None) or principal.email or principal.subject_id,
+        role=principal.role,
         agency_id=principal.agency_id,
         agency_name=agency.name if agency else None,
-        name=user.name if user else None,
-        scope=str(principal.scope),
+        scope=principal.scope,
     )

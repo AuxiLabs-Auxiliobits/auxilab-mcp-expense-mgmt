@@ -1,67 +1,88 @@
-"""Notification center API: per-item read/archive/delete, archived filtering, recipient RBAC."""
+"""Notifications (emit on workflow transitions) + user preferences round-trip."""
 
 from __future__ import annotations
 
-from sqlmodel import Session
+from datetime import date
 
-from app.db import engine
-from app.models.notification import Notification
 from tests.conftest import auth, login
 
-
-def _subject_id(client, token: str) -> str:
-    return client.get("/auth/me", headers=auth(token)).json()["subject_id"]
-
-
-def _seed(recipient_id: str, title: str = "Expense returned") -> str:
-    with Session(engine) as s:
-        n = Notification(
-            recipient_id=recipient_id, kind="warning", icon="undo",
-            title=title, body="Please fix and resubmit.", href="/employee/sheets/abc",
-            entity="expense_sheet:abc",
-        )
-        s.add(n)
-        s.commit()
-        s.refresh(n)
-        return n.id
+THIS_MONTH = date.today().replace(day=1).isoformat()
+PERIOD = THIS_MONTH[:7]
+_counter = iter(range(8000, 8999))
 
 
-def test_list_read_archive_delete_flow(client):
-    token = login(client, "employee@demo.local")
-    uid = _subject_id(client, token)
-    nid = _seed(uid)
+def _submit_sheet(client, token):
+    n = next(_counter)
+    sheet = client.post(
+        "/sheets",
+        json={
+            "title": f"Notif {n}",
+            "period": PERIOD,
+            "line_items": [
+                {
+                    "category": "Travel - Ground",
+                    "amount": f"{n}.00",
+                    "currency": "USD",
+                    "merchant": "Uber",
+                    "description": "ride",
+                    "expense_date": THIS_MONTH,
+                    "receipt_datetime": f"{THIS_MONTH}T1{n % 9}:00:00",
+                    "receipt_total": f"{n}.00",
+                    "tax": "0.00",
+                }
+            ],
+        },
+        headers=auth(token),
+    ).json()
+    li = sheet["line_items"][0]["id"]
+    client.post(
+        f"/sheets/{sheet['id']}/line-items/{li}/receipt",
+        files={"file": ("r.pdf", b"%PDF-1.4 x", "application/pdf")},
+        headers=auth(token),
+    )
+    assert client.post(f"/sheets/{sheet['id']}/submit", headers=auth(token)).status_code == 200
+    return sheet, li
 
-    # appears, unread
-    rows = client.get("/notifications", headers=auth(token)).json()
-    assert any(r["id"] == nid and r["read"] is False for r in rows)
 
-    # mark one read
-    r = client.post(f"/notifications/{nid}/read", headers=auth(token))
-    assert r.status_code == 200 and r.json()["read"] is True
-
-    # archive → hidden by default, visible with include_archived
-    client.post(f"/notifications/{nid}/archive", headers=auth(token))
-    default = client.get("/notifications", headers=auth(token)).json()
-    assert all(r["id"] != nid for r in default)
-    witharch = client.get("/notifications?include_archived=true", headers=auth(token)).json()
-    assert any(r["id"] == nid and r["archived"] is True for r in witharch)
-
-    # delete
-    assert client.delete(f"/notifications/{nid}", headers=auth(token)).status_code == 200
-    after = client.get("/notifications?include_archived=true", headers=auth(token)).json()
-    assert all(r["id"] != nid for r in after)
+def test_notifications_requires_auth(client):
+    assert client.get("/notifications").status_code == 401
 
 
-def test_recipient_rbac(client):
-    """A user can never read/mutate another user's notification (404, not 403 — no existence leak)."""
+def test_submit_notifies_manager(client):
     emp = login(client, "employee@demo.local")
+    _submit_sheet(client, emp)
     mgr = login(client, "manager@demo.local")
-    emp_id = _subject_id(client, emp)
-    nid = _seed(emp_id, "Private note")
+    notifs = client.get("/notifications", headers=auth(mgr)).json()
+    assert any("review" in n["title"].lower() for n in notifs)
 
-    # manager cannot mark-read, archive, or delete the employee's notification
-    assert client.post(f"/notifications/{nid}/read", headers=auth(mgr)).status_code == 404
-    assert client.post(f"/notifications/{nid}/archive", headers=auth(mgr)).status_code == 404
-    assert client.delete(f"/notifications/{nid}", headers=auth(mgr)).status_code == 404
-    # and never sees it in their own list
-    assert all(r["id"] != nid for r in client.get("/notifications", headers=auth(mgr)).json())
+
+def test_manager_approval_notifies_employee_then_mark_read(client):
+    emp = login(client, "employee@demo.local")
+    sheet, li = _submit_sheet(client, emp)
+    mgr = login(client, "manager@demo.local")
+    client.post(
+        f"/manager/sheets/{sheet['id']}/action",
+        json={"line_item_id": li, "action": "MANAGER_APPROVED"},
+        headers=auth(mgr),
+    )
+    notifs = client.get("/notifications", headers=auth(emp)).json()
+    assert any(n["kind"] == "success" for n in notifs), notifs
+
+    after = client.post("/notifications/read", headers=auth(emp)).json()
+    assert after and all(n["read"] for n in after)
+
+
+def test_preferences_roundtrip(client):
+    emp = login(client, "employee@demo.local")
+    assert client.get("/me/preferences", headers=auth(emp)).json()["preferences"] == {}
+
+    put = client.put(
+        "/me/preferences",
+        json={"preferences": {"emailDigest": True, "push": False}},
+        headers=auth(emp),
+    )
+    assert put.status_code == 200
+    assert put.json()["preferences"]["emailDigest"] is True
+
+    got = client.get("/me/preferences", headers=auth(emp)).json()["preferences"]
+    assert got["push"] is False

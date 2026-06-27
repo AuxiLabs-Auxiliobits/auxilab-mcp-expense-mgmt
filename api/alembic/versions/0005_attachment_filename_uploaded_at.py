@@ -1,7 +1,7 @@
 """Add attachment filename + uploaded_at (receipt visibility for manager/finance).
 
-Revision ID: 0004_attachment_meta
-Revises: 0003_notifications
+Revision ID: 0005_attachment_meta
+Revises: 0004_lineitem_human_review
 Create Date: 2026-06-24
 """
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0004_attachment_meta"
-down_revision = "0003_notifications"
+revision = "0005_attachment_meta"
+down_revision = "0004_lineitem_human_review"
 branch_labels = None
 depends_on = None
 

@@ -17,6 +17,7 @@ from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
 from app.schemas.dto import LineItemCreate, LineItemUpdate, SheetCreate, SheetUpdate
 from app.services import audit_service, intake_service, notification_service
+from app.services.image_conversion import convert_heic_to_jpeg
 from app.services.state_machine import RESUBMITTABLE, assert_transition
 from app.storage import upload_receipt_blob
 from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
@@ -61,6 +62,19 @@ def _assert_editable(sheet: ExpenseSheet) -> None:
         )
 
 
+def _assert_in_period(sheet: ExpenseSheet, expense_date) -> None:
+    """A line item's expense date must fall within the sheet's expense-period month
+    ('YYYY-MM'); otherwise it's rejected (change req)."""
+    if sheet.period and expense_date and expense_date.strftime("%Y-%m") != sheet.period:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"expense date {expense_date.isoformat()} is outside the sheet period "
+                f"{sheet.period} — line items must be in the sheet's month"
+            ),
+        )
+
+
 def _build_line_item(sheet: ExpenseSheet, data: LineItemCreate) -> LineItem:
     return LineItem(
         sheet_id=sheet.id, employee_id=sheet.employee_id,
@@ -85,6 +99,7 @@ def create_draft(session: Session, actor: Principal, data: SheetCreate) -> Expen
     session.add(sheet)
     session.flush()  # assign sheet.id
     for li in data.line_items:
+        _assert_in_period(sheet, li.expense_date)
         session.add(_build_line_item(sheet, li))
     audit_service.record(
         session, actor=actor, action="SHEET_DRAFTED", entity=f"expense_sheet:{sheet.id}",
@@ -131,6 +146,48 @@ def delete_draft(session: Session, sheet: ExpenseSheet, actor: Principal) -> Non
     session.commit()
 
 
+# Submitted sheets the owner can pull back to DRAFT (recall, not delete) — only while still
+# awaiting the manager. Once a manager has acted (finance review onward) recall is closed.
+_RECALLABLE = {
+    SheetStatus.SUBMITTED,
+    SheetStatus.IN_MANAGER_REVIEW,
+}
+
+
+def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
+    """Withdraw an in-flight sheet back to DRAFT so the owner can edit/resubmit. Clears the
+    submission + all manager/finance verdicts (it'll be re-reviewed from scratch). Removes it
+    from the manager/finance queues by virtue of the DRAFT status."""
+    _assert_owner(actor, sheet)
+    if sheet.status not in _RECALLABLE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"cannot withdraw a sheet in status {sheet.status}",
+        )
+    items = _line_items(session, sheet.id)
+    before = sheet.status
+    sheet.status = SheetStatus.DRAFT
+    sheet.submitted_at = None
+    sheet.finance_decision = None
+    sheet.finance_decided_by = None
+    for item in items:
+        item.manager_status = LineItemStatus.PENDING_MANAGER
+        item.manager_actor_id = None
+        item.manager_reason = None
+        item.policy_status = None
+        item.policy_clause_ref = None
+        session.add(item)
+    sheet.updated_at = utcnow()
+    session.add(sheet)
+    audit_service.record(
+        session, actor=actor, action="SHEET_RECALLED", entity=f"expense_sheet:{sheet.id}",
+        before={"status": before}, after={"status": sheet.status},
+    )
+    session.commit()
+    session.refresh(sheet)
+    return sheet
+
+
 def withdraw_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
     """Soft-withdraw a DRAFT (SCOPING §5.1). Unlike delete_draft this preserves the sheet and
     its line items for the audit trail, moving it to the terminal WITHDRAWN state. Owner-only,
@@ -159,6 +216,7 @@ def add_line_item(
 ) -> LineItem:
     _assert_owner(actor, sheet)
     _assert_editable(sheet)
+    _assert_in_period(sheet, data.expense_date)
     item = _build_line_item(sheet, data)
     session.add(item)
     session.commit()
@@ -178,6 +236,8 @@ def update_line_item(
 ) -> LineItem:
     _assert_owner(actor, sheet)
     _assert_editable(sheet)
+    if data.expense_date is not None:
+        _assert_in_period(sheet, data.expense_date)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     session.add(item)
@@ -213,6 +273,9 @@ def attach_receipt(
         receipt_extension(filename)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    # Transcode HEIC → JPEG so the receipt previews in the browser and OCRs downstream.
+    filename, data, file_type = convert_heic_to_jpeg(filename, data, file_type)
 
     att = Attachment(
         line_item_id=item.id, blob_uri="", filename=filename, file_type=file_type, size=len(data)
@@ -408,6 +471,7 @@ def _maybe_advance_after_manager(
         # Any rejection / info-request returns the whole sheet (SCOPING §6.2).
         assert_transition(sheet.status, SheetStatus.RETURNED_TO_EMPLOYEE)
         sheet.status = SheetStatus.RETURNED_TO_EMPLOYEE
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="RETURNED_TO_EMPLOYEE",
             entity=f"expense_sheet:{sheet.id}",
@@ -423,6 +487,7 @@ def _maybe_advance_after_manager(
         # All approved → advance to the finance (LLM) queue.
         assert_transition(sheet.status, SheetStatus.IN_FINANCE_REVIEW)
         sheet.status = SheetStatus.IN_FINANCE_REVIEW
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="ADVANCED_TO_FINANCE",
             entity=f"expense_sheet:{sheet.id}",

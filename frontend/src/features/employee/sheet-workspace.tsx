@@ -5,15 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  useDiscardDraft,
   useRemoveLineItem,
   useResubmitSheet,
   useSheet,
+  useSheetDecisions,
   useSubmitSheet,
   useUpdateSheet,
   useWithdrawSheet,
 } from "@/data/hooks";
 import { Input } from "@/components/ui/input";
-import type { ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
+import type { DecisionEntry, ExpenseSheet, LineItem, SheetStatus } from "@/data/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AiCitation, CitedClause } from "@/components/shared/ai-citation";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Reveal } from "@/components/shared/reveal";
@@ -31,7 +41,14 @@ import {
 } from "@/lib/status";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { LineItemDialog } from "./line-item-form";
+
+function fmtBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
 
 const EDITABLE: SheetStatus[] = [
   "DRAFT",
@@ -50,6 +67,9 @@ const IN_FLIGHT: SheetStatus[] = [
   "IN_FINANCE_REVIEW",
   "FINANCE_MANUAL_REVIEW",
 ];
+// Withdraw is only allowed before the manager approves it (queued / in manager review).
+// Once it advances to finance, it can't be recalled.
+const WITHDRAWABLE: SheetStatus[] = ["SUBMITTED", "IN_MANAGER_REVIEW"];
 
 // ── Decision timeline model ──────────────────────────────────────────────────
 type StepState = "done" | "active" | "error" | "upcoming";
@@ -197,9 +217,11 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   const submitSheet = useSubmitSheet();
   const resubmitSheet = useResubmitSheet();
   const withdrawSheet = useWithdrawSheet();
+  const discardDraft = useDiscardDraft();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LineItem | undefined>();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   if (isLoading || !sheet) {
     return (
@@ -216,8 +238,10 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
 
   const editable = EDITABLE.includes(sheet.status);
+  const isDraft = sheet.status === "DRAFT";
   const isResubmit = NEEDS_FEEDBACK.includes(sheet.status);
   const inFlight = IN_FLIGHT.includes(sheet.status);
+  const withdrawable = WITHDRAWABLE.includes(sheet.status);
   const errorCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "error").length;
   const warningCount = sheet.lineItems.filter((li) => li.aiFlag?.severity === "warning").length;
   const missingReceipts = sheet.lineItems.filter((li) => li.attachments.length === 0).length;
@@ -246,20 +270,33 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
   }
   async function submit() {
     await submitSheet.mutateAsync(sheetId);
-    toast.success("Submitted for manager review");
+    toast.success(`“${sheet!.title}” submitted for manager review`);
     router.push("/employee");
   }
   async function resubmit() {
-    await resubmitSheet.mutateAsync(sheetId);
-    toast.success("Resubmitted for review", {
-      description: "Your sheet is back with your manager.",
+    const result = await resubmitSheet.mutateAsync(sheetId);
+    toast.success(`“${result.title}” resubmitted (v${result.version})`, {
+      description: "Restarted from manager review.",
     });
     router.push("/employee");
   }
   async function withdraw() {
     await withdrawSheet.mutateAsync(sheetId);
-    toast("Sheet withdrawn", { description: "It's been pulled from review." });
+    toast("Sheet withdrawn", { description: `“${sheet!.title}” pulled back to draft.` });
     router.push("/employee");
+  }
+  async function discard() {
+    const title = sheet!.title;
+    try {
+      await discardDraft.mutateAsync({ sheetId, employeeId: sheet!.employeeId });
+      setConfirmDiscard(false);
+      toast("Draft discarded", { description: `“${title}” was permanently deleted.` });
+      router.push("/employee/sheets");
+    } catch (e) {
+      toast.error("Couldn't discard the draft", {
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
+    }
   }
 
   const blocked = empty || errorCount > 0;
@@ -325,12 +362,29 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {isDraft && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDiscard(true)}
+                    className="border-error/40 text-error hover:bg-error-container hover:text-on-error-container"
+                    title="Permanently delete this draft"
+                  >
+                    <Icon name="delete" /> Discard Draft
+                  </Button>
+                )}
                 {inFlight && (
                   <Button
                     variant="outline"
                     size="sm"
                     loading={withdrawSheet.isPending}
+                    disabled={!withdrawable}
                     onClick={withdraw}
+                    title={
+                      withdrawable
+                        ? "Withdraw this sheet back to draft"
+                        : "Can't withdraw — the manager has already approved it"
+                    }
                   >
                     <Icon name="cancel_presentation" /> Withdraw
                   </Button>
@@ -339,8 +393,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   isResubmit ? (
                     <Button
                       onClick={resubmit}
-                      disabled={blocked}
                       loading={primaryPending}
+                      disabled={blocked}
                       aria-label="Resubmit sheet for review"
                     >
                       <Icon name="restart_alt" /> Resubmit Sheet
@@ -348,8 +402,8 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
                   ) : (
                     <Button
                       onClick={submit}
-                      disabled={blocked}
                       loading={primaryPending}
+                      disabled={blocked}
                       aria-label="Submit sheet for review"
                     >
                       <Icon name="send" /> Submit for Review
@@ -555,9 +609,39 @@ export function SheetWorkspace({ sheetId }: { sheetId: string }) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         sheetId={sheet.id}
+        period={sheet.period}
         item={editing}
         siblings={sheet.lineItems.filter((l) => l.id !== editing?.id)}
       />
+
+      <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard this draft?</DialogTitle>
+            <DialogDescription>
+              “{sheet.title}” and its {sheet.lineItems.length} line item
+              {sheet.lineItems.length === 1 ? "" : "s"} will be permanently deleted. This
+              can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDiscard(false)}
+              disabled={discardDraft.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={discard}
+              loading={discardDraft.isPending}
+              className="bg-error text-on-error hover:bg-error/90"
+            >
+              <Icon name="delete" /> Discard Draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -708,6 +792,12 @@ function Timeline({ steps }: { steps: TimelineStep[] }) {
 function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
   const decided = sheet.financeDecision != null;
   const routed = sheet.status === "FINANCE_MANUAL_REVIEW";
+  // Full chronological trail (manager → AI → finance actions). Skipped for drafts — a
+  // sheet that hasn't been submitted has no decisions yet.
+  const { data: decisions, isLoading: decisionsLoading } = useSheetDecisions(
+    sheet.status === "DRAFT" ? undefined : sheet.id,
+  );
+  const trail = decisions ?? [];
 
   return (
     <Card className="shadow-sm">
@@ -761,8 +851,54 @@ function DecisionPanel({ sheet }: { sheet: ExpenseSheet }) {
         {sheet.citedClause && (
           <CitedClause policyName={sheet.citedClause.policyName} text={sheet.citedClause.text} />
         )}
+
+        {/* Full chronological history — manager / AI / finance actions, oldest first. */}
+        {sheet.status !== "DRAFT" && (
+          <div className="border-t border-outline-variant pt-3">
+            <h3 className="mb-2 flex items-center gap-1.5 font-mono text-label-sm uppercase tracking-wider text-on-surface-variant">
+              <Icon name="history" className="text-[14px]" /> History
+            </h3>
+            {decisionsLoading ? (
+              <p className="text-body-sm text-on-surface-variant">Loading history…</p>
+            ) : trail.length === 0 ? (
+              <p className="text-body-sm text-on-surface-variant">No decisions recorded yet.</p>
+            ) : (
+              <ol className="space-y-2">
+                {trail.map((d) => (
+                  <DecisionTrailItem key={d.id} decision={d} />
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
       </div>
     </Card>
+  );
+}
+
+// One entry in the employee's decision trail (manager/AI/finance action + remark + citations).
+function DecisionTrailItem({ decision: d }: { decision: DecisionEntry }) {
+  return (
+    <li className="flex items-start gap-2.5 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-2">
+      <Icon name="check_circle" className="mt-0.5 shrink-0 text-[16px] text-secondary" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-body-sm font-medium text-on-surface">{d.action}</span>
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-label-sm uppercase text-on-surface-variant">
+            {d.actorRole}
+          </span>
+          <span className="font-mono text-label-sm text-on-surface-variant">
+            {formatRelative(d.timestamp)}
+          </span>
+        </div>
+        {d.reason && <p className="mt-0.5 text-body-sm text-on-surface-variant">{d.reason}</p>}
+        {d.citedClauses.length > 0 && (
+          <p className="mt-0.5 font-mono text-label-sm text-secondary">
+            Cited: {d.citedClauses.join(", ")}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 
@@ -875,7 +1011,7 @@ function LineItemRow({
           <p className="mt-1 text-body-sm text-on-surface-variant">{item.description}</p>
         )}
 
-        {editable && item.managerReason && (
+        {item.managerReason && (
           <div className="mt-2 flex items-start gap-2 rounded border border-error/20 bg-error-container/40 p-2 text-body-sm text-on-surface">
             <Icon name="comment" className="mt-0.5 text-[16px] text-error" />
             <span>
@@ -891,14 +1027,27 @@ function LineItemRow({
           {!editable && item.policyStatus && (
             <StatusBadge meta={LINE_ITEM_STATUS_META[item.policyStatus]} className="rounded-md" />
           )}
+          {!editable && item.needsHumanReview && (
+            <span
+              title={item.reviewReason ?? "Receipt scan flagged for review"}
+              className="inline-flex items-center gap-1 rounded border border-tertiary/40 bg-tertiary/10 px-2 py-0.5 font-mono text-label-sm text-tertiary"
+            >
+              <Icon name="flag" className="text-[12px]" /> Needs finance review
+            </span>
+          )}
           {hasReceipt ? (
             item.attachments.map((a) => (
               <span
                 key={a.id}
-                className="inline-flex items-center gap-1 rounded border border-outline-variant px-2 py-0.5 font-mono text-label-sm text-on-surface-variant"
+                className="inline-flex items-center gap-1.5 rounded border border-outline-variant p-1 pr-2 font-mono text-label-sm text-on-surface-variant"
               >
-                <Icon name="attachment" className="text-[12px]" />
-                {a.fileName}
+                <ReceiptPreview
+                  downloadUrl={a.downloadUrl}
+                  fileName={a.fileName}
+                  fileType={a.fileType}
+                />
+                <span className="max-w-[14rem] truncate">{a.fileName}</span>
+                {a.sizeBytes > 0 && <span className="text-on-surface-variant/70">{fmtBytes(a.sizeBytes)}</span>}
               </span>
             ))
           ) : (

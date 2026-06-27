@@ -3,7 +3,7 @@ items, view own/permitted sheets, submit and resubmit."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlmodel import Session, select
 
 from app.auth.dependencies import current_principal, require
@@ -16,19 +16,23 @@ from app.models.line_item import LineItem
 from app.principal import Principal
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
+from app.config import settings
 from app.schemas.dto import (
     AttachmentOut,
     DecisionOut,
     LineItemCreate,
     LineItemOut,
     LineItemUpdate,
+    ReceiptAttachFromLibrary,
+    ReceiptScanOut,
     SheetCreate,
     SheetOut,
     SheetUpdate,
 )
 from app.serializers import decision_to_out
 from app.serializers import sheet_to_out as _to_out
-from app.services import sheet_service
+from app.services import receipt_library_service, receipt_scan_service, sheet_service
+from app.storage import read_receipt_blob
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 
@@ -178,11 +182,30 @@ async def update_sheet(
     return _to_out(session, sheet, policy=policy)
 
 
+@router.delete(
+    "/{sheet_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Discard a draft sheet (hard delete)",
+)
+async def discard_draft(
+    sheet_id: str,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+) -> None:
+    """Permanently discard a DRAFT sheet and its line items. Owner-only, DRAFT-only. For a
+    soft withdraw that preserves the audit trail, use POST /sheets/{id}/withdraw instead."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    sheet_service.delete_draft(session, sheet, principal)
+
+
 @router.post(
     "/{sheet_id}/withdraw",
     response_model=SheetOut,
-    summary="Withdraw a draft sheet (soft — moves it to WITHDRAWN, keeps the record)",
-    responses={404: {"description": "Sheet not found"}, 409: {"description": "Only DRAFT sheets can be withdrawn"}},
+    summary="Withdraw a submitted sheet back to DRAFT (recall)",
+    responses={
+        404: {"description": "Sheet not found"},
+        409: {"description": "Sheet is not in a withdrawable state"},
+    },
 )
 async def withdraw_sheet(
     sheet_id: str,
@@ -190,21 +213,11 @@ async def withdraw_sheet(
     session: Session = Depends(get_session),
     policy: BaselinePolicy = Depends(get_policy),
 ) -> SheetOut:
-    """Withdraw an in-progress draft. The sheet and its line items are preserved (audit trail)
-    and the sheet moves to the terminal WITHDRAWN state. Use DELETE to hard-discard instead."""
+    """Recall an in-flight sheet (submitted / in review) back to the employee as a DRAFT —
+    clears verdicts and removes it from the manager/finance queues."""
     sheet = sheet_service.get_sheet_or_404(session, sheet_id)
-    sheet = sheet_service.withdraw_sheet(session, sheet, principal)
+    sheet = sheet_service.recall_sheet(session, sheet, principal)
     return _to_out(session, sheet, policy=policy)
-
-
-@router.delete("/{sheet_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Discard a draft sheet (hard delete)")
-async def discard_sheet(
-    sheet_id: str,
-    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
-    session: Session = Depends(get_session),
-) -> None:
-    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
-    sheet_service.delete_draft(session, sheet, principal)
 
 
 @router.post(
@@ -334,3 +347,86 @@ async def upload_receipt(
         file_type=file.content_type or "application/octet-stream",
     )
     return AttachmentOut.model_validate(att)
+
+
+@router.post(
+    "/{sheet_id}/line-items/{line_item_id}/receipt/from-library",
+    response_model=AttachmentOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Attach a receipt already in My Receipts to a line item",
+    responses={404: {"description": "Sheet, line item, or receipt not found"}},
+)
+async def attach_receipt_from_library(
+    sheet_id: str,
+    line_item_id: str,
+    body: ReceiptAttachFromLibrary,
+    principal: Principal = Depends(require(Capability.SUBMIT_OWN_SHEET)),
+    session: Session = Depends(get_session),
+) -> AttachmentOut:
+    """Attach a receipt the employee previously uploaded to their library (My Receipts) to a
+    line item. The bytes move into a normal attachment and the library entry is removed."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    att = receipt_library_service.attach_to_line_item(
+        session, principal, sheet=sheet, item=item, receipt_id=body.receipt_id,
+    )
+    return AttachmentOut.model_validate(att)
+
+
+@router.post(
+    "/{sheet_id}/line-items/{line_item_id}/scan",
+    response_model=ReceiptScanOut,
+    summary="Scan the line item's receipt (Document Intelligence) and reconcile",
+    responses={404: {"description": "Sheet, line item, or receipt not found"}},
+)
+async def scan_receipt(
+    sheet_id: str,
+    line_item_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> ReceiptScanOut:
+    """OCR + extract the most-recent receipt on a line item and reconcile against the entered
+    amount. Live with Azure Document Intelligence; offline it parses text receipts and returns
+    `source="unavailable"` for binary files with no OCR configured."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    attachments = session.exec(
+        select(Attachment).where(Attachment.line_item_id == item.id)
+    ).all()
+    if not attachments:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no receipt attached to scan")
+    result = receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)
+    # Persist the review flag for Finance (employee UI shows nothing).
+    item.needs_human_review = result.human_intervention_required
+    item.review_reason = result.detail if result.human_intervention_required else None
+    session.add(item)
+    session.commit()
+    return result
+
+
+@router.get(
+    "/{sheet_id}/line-items/{line_item_id}/receipts/{attachment_id}/file",
+    summary="Download/preview a receipt's bytes (scope-checked)",
+    responses={404: {"description": "Sheet, line item, or attachment not found"}},
+)
+async def download_receipt(
+    sheet_id: str,
+    line_item_id: str,
+    attachment_id: str,
+    principal: Principal = Depends(current_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Stream a receipt back for inline preview/download. The browser can't send the bearer
+    token on a plain navigation, so the client fetches this with auth and renders a blob."""
+    sheet = sheet_service.get_sheet_or_404(session, sheet_id)
+    rbac_scope.assert_can_view_sheet(principal, sheet)
+    item = sheet_service.get_line_item_or_404(session, sheet, line_item_id)
+    att = session.get(Attachment, attachment_id)
+    if att is None or att.line_item_id != item.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="attachment not found")
+    try:
+        data = read_receipt_blob(att.blob_uri)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"receipt unavailable: {exc}") from exc
+    return Response(content=data, media_type=att.file_type or "application/octet-stream")

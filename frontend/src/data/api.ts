@@ -22,6 +22,7 @@ import {
   apiGet,
   apiPatch,
   apiPost,
+  apiPut,
   apiUpload,
   backend,
 } from "./http";
@@ -43,6 +44,14 @@ type Raw = Record<string, unknown>;
 function num(v: unknown, fallback = 0): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** Like `num`, but preserves "the backend didn't send this" as `null` instead of a
+ *  fabricated fallback — so the UI can show "—" rather than a misleading constant. */
+function numOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "string" ? parseFloat(v) : (v as number);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** snake_case request body for the line-item endpoints (frontend → backend). */
@@ -369,6 +378,206 @@ export function uploadReceipt(args: {
   );
 }
 
+// ── Receipt library (My Receipts) — unassigned uploads, persisted server-side ──────────────
+/** A receipt the employee uploaded but hasn't attached to a line item yet. Persisted on the
+ *  backend (survives refresh, shared across devices), unlike the old in-memory store. */
+export interface ReceiptUpload {
+  id: string;
+  fileName: string;
+  fileType: string;
+  sizeBytes: number;
+  scanStatus: string;
+  uploadedAt?: string;
+  downloadUrl: string; // auth'd API path to fetch the bytes
+}
+
+function mapReceiptUpload(r: Raw): ReceiptUpload {
+  return {
+    id: String(r.id ?? ""),
+    fileName: String(r.filename ?? "receipt"),
+    fileType: String(r.file_type ?? "application/octet-stream"),
+    sizeBytes: num(r.size),
+    scanStatus: String(r.scan_status ?? "pending"),
+    uploadedAt: (r.uploaded_at as string) ?? undefined,
+    downloadUrl: String(r.download_url ?? ""),
+  };
+}
+
+/** My unassigned receipts (the "From My Receipts" pool), newest first. */
+export function listMyReceipts(): Promise<ReceiptUpload[]> {
+  return backend(
+    () => apiGet<Raw[]>("/receipts").then((rows) => rows.map(mapReceiptUpload)),
+    () => delay([]),
+  );
+}
+
+/** Upload a receipt to the library without attaching it to a line item yet. */
+export function uploadReceiptToLibrary(file: File): Promise<ReceiptUpload> {
+  return backend(
+    () => {
+      const form = new FormData();
+      form.append("file", file);
+      return apiUpload<Raw>("/receipts", form).then(mapReceiptUpload);
+    },
+    () =>
+      delay({
+        id: `upload-${file.name}-${file.size}`,
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        scanStatus: "pending",
+        downloadUrl: "",
+      }),
+  );
+}
+
+/** Remove an unassigned receipt from the library. */
+export function deleteLibraryReceipt(id: string): Promise<void> {
+  return backend(
+    () => apiDelete<unknown>(`/receipts/${id}`).then(() => undefined),
+    () => delay(undefined),
+  );
+}
+
+/** Attach a library receipt to a line item (moves it out of the library). */
+export function attachReceiptFromLibrary(args: {
+  sheetId: string;
+  lineItemId: string;
+  receiptId: string;
+}): Promise<void> {
+  return backend(
+    () =>
+      apiPost<Raw>(
+        `/sheets/${args.sheetId}/line-items/${args.lineItemId}/receipt/from-library`,
+        { receipt_id: args.receiptId },
+      ).then(() => undefined),
+    () => delay(undefined),
+  );
+}
+
+export interface ReceiptScan {
+  source: string; // document_intelligence | text | unavailable
+  merchant?: string;
+  total?: number;
+  tax?: number;
+  receiptDatetime?: string; // ISO datetime extracted from the receipt
+  reconciles?: boolean;
+  delta?: number;
+  matchesEntered?: boolean;
+  detail?: string;
+}
+
+/** Live receipt scan + reconciliation (Document Intelligence). Backend-only; null in mock. */
+export function scanReceipt(args: { sheetId: string; lineItemId: string }): Promise<ReceiptScan | null> {
+  return backend(
+    () =>
+      apiPost<Raw>(`/sheets/${args.sheetId}/line-items/${args.lineItemId}/scan`).then((r) => ({
+        source: String(r.source ?? "unavailable"),
+        merchant: (r.merchant as string) ?? undefined,
+        total: r.total != null ? num(r.total) : undefined,
+        tax: r.tax != null ? num(r.tax) : undefined,
+        receiptDatetime: (r.receipt_datetime as string) ?? undefined,
+        reconciles: (r.reconciles as boolean) ?? undefined,
+        delta: r.delta != null ? num(r.delta) : undefined,
+        matchesEntered: (r.matches_entered as boolean) ?? undefined,
+        detail: (r.detail as string) ?? undefined,
+      })),
+    async () => null,
+  );
+}
+
+export interface PolicyPreviewResult {
+  status: string; // pass | warn | fail
+  violations: { code: string; message: string; field?: string }[];
+}
+
+/** Authoritative deterministic policy check for the line-item form (Crispin policy). */
+export function policyPreview(input: {
+  category?: ExpenseCategory;
+  amount: number;
+  currency?: Currency;
+  merchant?: string;
+  description?: string;
+  expenseDate?: string;
+  receiptDatetime?: string;
+  receiptTotal?: number;
+  hasReceipt?: boolean;
+}): Promise<PolicyPreviewResult> {
+  return backend(
+    () =>
+      apiPost<Raw>("/intake/policy-check", {
+        category: input.category,
+        amount: input.amount,
+        currency: input.currency ?? "USD",
+        merchant: input.merchant ?? "",
+        description: input.description ?? "",
+        expense_date: input.expenseDate || null,
+        receipt_datetime: input.receiptDatetime || null,
+        receipt_total: input.receiptTotal ?? null,
+        has_receipt: input.hasReceipt ?? false,
+      }).then((r) => ({
+        status: String(r.status ?? "pass"),
+        violations: Array.isArray(r.violations)
+          ? r.violations.map((v: Raw) => ({
+              code: String(v.code ?? ""),
+              message: String(v.message ?? ""),
+              field: (v.field as string) ?? undefined,
+            }))
+          : [],
+      })),
+    // Offline: run the client validator so the form still shows policy checks.
+    async () => {
+      const issues = validateLineItem(
+        {
+          merchant: input.merchant ?? "",
+          description: input.description ?? "",
+          category: (input.category ?? "Other") as ExpenseCategory,
+          amount: input.amount,
+          currency: (input.currency ?? "USD") as Currency,
+          expenseDate: input.expenseDate ?? "",
+          receiptDatetime: input.receiptDatetime || undefined,
+          attachments: input.hasReceipt
+            ? [{ fileName: "receipt", fileType: "", sizeBytes: 1 }]
+            : [],
+        },
+        baselinePolicy,
+        [],
+      );
+      const hasError = issues.some((i) => i.level === "error");
+      return {
+        status: hasError ? "fail" : issues.length ? "warn" : "pass",
+        violations: issues.map((i) => ({ code: i.clauseRef, message: i.message })),
+      };
+    },
+  );
+}
+
+export interface PolicyAdvisory {
+  clause?: { source: string; text: string };
+}
+
+/** RAG advisory: the most relevant agency policy clause (advisory only). Empty offline. */
+export function policyAdvisory(input: {
+  category?: ExpenseCategory;
+  merchant?: string;
+  description?: string;
+}): Promise<PolicyAdvisory> {
+  return backend(
+    () =>
+      apiPost<Raw>("/intake/policy-advisory", {
+        category: input.category,
+        merchant: input.merchant ?? "",
+        description: input.description ?? "",
+      }).then((r) => {
+        const c = r.clause as Raw | null;
+        return c
+          ? { clause: { source: String(c.source ?? "Policy"), text: String(c.text ?? "") } }
+          : {};
+      }),
+    async () => ({}),
+  );
+}
+
 // ── Line items (employee editing) ────────────────────────────────────────────
 
 export interface AttachmentInput {
@@ -508,6 +717,19 @@ export async function withdrawSheet(sheetId: string): Promise<ExpenseSheet> {
   );
 }
 
+/** Permanently discard a DRAFT sheet (hard delete, owner + DRAFT only). 204 → void.
+ *  For an in-flight sheet use withdrawSheet (soft recall) instead. */
+export async function discardDraft(sheetId: string): Promise<void> {
+  return backend(
+    () => apiDelete<void>(`/sheets/${sheetId}`),
+    () => {
+      const idx = sheetStore.findIndex((s) => s.id === sheetId);
+      if (idx >= 0) sheetStore.splice(idx, 1);
+      return delay(undefined, 200);
+    },
+  );
+}
+
 export async function removeLineItem(args: {
   sheetId: string;
   lineItemId: string;
@@ -558,7 +780,7 @@ export function submitSheet(sheetId: string): Promise<ExpenseSheet> {
  */
 export async function resubmitSheet(sheetId: string): Promise<ExpenseSheet> {
   return backend(
-    () => apiPost<Raw>(`/sheets/${sheetId}/resubmit`).then(mapSheet),
+    () => apiPost<Raw>(`/sheets/${sheetId}/submit`).then(mapSheet),
     () => resubmitSheetMock(sheetId),
   );
 }
@@ -568,6 +790,7 @@ async function resubmitSheetMock(sheetId: string): Promise<ExpenseSheet> {
   sheet.version += 1;
   sheet.status = "IN_MANAGER_REVIEW";
   sheet.submittedAt = new Date().toISOString();
+  sheet.managerDecidedBy = undefined;
   sheet.financeDecision = undefined;
   sheet.financeDecidedBy = undefined;
   sheet.routeReason = undefined;
@@ -652,6 +875,7 @@ async function actOnLineItemMock(input: LineItemActionInput): Promise<ExpenseShe
   // so they can fix it and resubmit (SCOPING.md §6.2).
   if (input.action === "reject" || input.action === "request_info") {
     sheet.status = "RETURNED_TO_EMPLOYEE";
+    sheet.managerDecidedBy = input.actor?.id;
     sheet.updatedAt = new Date().toISOString();
   }
   // Audit each per-line-item verdict (SCOPING.md §6.2).
@@ -691,15 +915,66 @@ export function getActivityLog(scope: { role: Role; userId: string }) {
     const all = clone(auditLog);
     return delay(scope.role === "admin" ? all : all.filter((e) => e.actorId === scope.userId));
   };
-  // The backend audit endpoint is finance/admin-gated and already scopes the
-  // result by the caller's token (admin = org-wide, finance = own). Employee /
-  // manager have no such endpoint, so they keep the mock trail.
+  // Live scoping by endpoint (each is token-scoped server-side):
+  //   • finance/admin → /finance/audit  (admin = org-wide, finance = own)
+  //   • manager       → /activity       (agency-scoped — the whole agency's trail,
+  //                                       not just the manager's own actions)
+  //   • employee      → /audit/me        (own actions only)
   return backend(
-    () =>
-      scope.role === "finance" || scope.role === "admin"
-        ? apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit))
-        : apiGet<Raw[]>("/audit/me?limit=200").then((rows) => rows.map(mapAudit)),
+    () => {
+      if (scope.role === "finance" || scope.role === "admin")
+        return apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit));
+      if (scope.role === "manager")
+        return apiGet<Raw>("/activity?page=1&page_size=200").then((r) =>
+          Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
+        );
+      return apiGet<Raw[]>("/audit/me?limit=200").then((rows) => rows.map(mapAudit));
+    },
     mockLog,
+  );
+}
+
+// ── Activity feed (role-scoped audit trail, paginated + filtered) ─────────────
+export interface ActivityParams {
+  page?: number;
+  pageSize?: number;
+  action?: string;
+  q?: string;
+}
+export interface ActivityPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** GET /activity — the backend scopes by the caller's role (employee→own, manager→agency,
+ *  finance/admin→all). Offline falls back to paging/filtering the mock trail. */
+export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
+  return backend(
+    () => {
+      const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+      if (params.action) qs.set("action", params.action);
+      if (params.q) qs.set("q", params.q);
+      return apiGet<Raw>(`/activity?${qs.toString()}`).then((r) => ({
+        items: Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
+        total: num(r.total),
+        page: num(r.page, page),
+        pageSize: num(r.page_size, pageSize),
+      }));
+    },
+    () => {
+      const ql = (params.q ?? "").toLowerCase();
+      const all = clone(auditLog).filter(
+        (e) =>
+          (!params.action || e.action === params.action) &&
+          (!ql || `${e.summary} ${e.action} ${e.entity ?? ""}`.toLowerCase().includes(ql)),
+      );
+      const start = (page - 1) * pageSize;
+      return delay({ items: all.slice(start, start + pageSize), total: all.length, page, pageSize });
+    },
   );
 }
 
@@ -727,6 +1002,7 @@ async function approveSheetMock(input: {
   sheet.lineItems.forEach((li) => {
     if (li.managerStatus !== "MANAGER_REJECTED") li.managerStatus = "MANAGER_APPROVED";
   });
+  sheet.managerDecidedBy = input.actor?.id;
   if (input.actor) {
     logActivity({
       actorId: input.actor.id,
@@ -744,18 +1020,35 @@ async function approveSheetMock(input: {
   return delay(clone(sheet), 500);
 }
 
+/** Outcome of a bulk approval: the sheets that went through, plus the ids that
+ *  failed so the caller can report a partial result instead of an all-or-nothing
+ *  error when only some sheets fail. */
+export interface BulkApproveResult {
+  approved: ExpenseSheet[];
+  failed: string[];
+}
+
 /** Manager bulk-approve (SCOPING.md §8): approve every line item on each
- *  selected sheet, then run the AI Finance Approver on each. */
+ *  selected sheet, then run the AI Finance Approver on each. There's no bulk
+ *  endpoint server-side, so this fans out to the per-sheet route; we use
+ *  `allSettled` so one sheet failing doesn't discard the sheets that succeeded. */
 export async function managerBulkApprove(input: {
   ids: string[];
   actor?: { id: string; name: string };
-}): Promise<ExpenseSheet[]> {
+}): Promise<BulkApproveResult> {
   return backend(
-    // No bulk endpoint server-side — approve each sheet via the per-sheet route.
-    () =>
-      Promise.all(
+    async () => {
+      const settled = await Promise.allSettled(
         input.ids.map((id) => apiPost<Raw>(`/manager/sheets/${id}/approve`).then(mapSheet)),
-      ),
+      );
+      const approved: ExpenseSheet[] = [];
+      const failed: string[] = [];
+      settled.forEach((r, i) => {
+        if (r.status === "fulfilled") approved.push(r.value);
+        else failed.push(input.ids[i]);
+      });
+      return { approved, failed };
+    },
     () => managerBulkApproveMock(input),
   );
 }
@@ -763,14 +1056,19 @@ export async function managerBulkApprove(input: {
 async function managerBulkApproveMock(input: {
   ids: string[];
   actor?: { id: string; name: string };
-}): Promise<ExpenseSheet[]> {
-  const updated: ExpenseSheet[] = [];
+}): Promise<BulkApproveResult> {
+  const approved: ExpenseSheet[] = [];
+  const failed: string[] = [];
   for (const id of input.ids) {
     const sheet = sheetStore.find((s) => s.id === id);
-    if (!sheet) continue;
+    if (!sheet) {
+      failed.push(id);
+      continue;
+    }
     sheet.lineItems.forEach((li) => {
       li.managerStatus = "MANAGER_APPROVED";
     });
+    sheet.managerDecidedBy = input.actor?.id;
     if (input.actor) {
       logActivity({
         actorId: input.actor.id,
@@ -785,9 +1083,9 @@ async function managerBulkApproveMock(input: {
       });
     }
     runAgentApprover(sheet);
-    updated.push(clone(sheet));
+    approved.push(clone(sheet));
   }
-  return delay(updated, 600);
+  return delay({ approved, failed }, 600);
 }
 
 // ── Finance ──────────────────────────────────────────────────────────────────
@@ -807,20 +1105,21 @@ export function getFinanceKpis() {
     () =>
       apiGet<Raw>("/finance/kpis").then((r) => ({
         autoApprovalRate: num(r.auto_approval_rate, financeKpis.autoApprovalRate),
-        autoApprovalDelta: num(r.auto_approval_delta, financeKpis.autoApprovalDelta),
+        // Optional / period-dependent fields: surface them as `null` when the backend
+        // can't compute them (e.g. no resolved sheets yet) rather than masking the gap
+        // with a seeded constant — the UI renders "—" for a null.
+        autoApprovalDelta: numOrNull(r.auto_approval_delta),
         manualInterventions: num(r.manual_interventions, financeKpis.manualInterventions),
-        manualInterventionsDelta: num(
-          r.manual_interventions_delta,
-          financeKpis.manualInterventionsDelta,
-        ),
+        manualInterventionsDelta: numOrNull(r.manual_interventions_delta),
         policyCitations: num(r.policy_citations, financeKpis.policyCitations),
-        topClause: (r.top_clause as string) ?? financeKpis.topClause,
-        ragSyncedAgo: (r.rag_synced_ago as string) ?? financeKpis.ragSyncedAgo,
-        approvalAccuracy: num(r.approval_accuracy, financeKpis.approvalAccuracy),
+        topClause: (r.top_clause as string) ?? null,
+        // Not emitted by the backend KPI endpoint today → honest null, never a fake value.
+        ragSyncedAgo: (r.rag_synced_ago as string) ?? null,
+        approvalAccuracy: numOrNull(r.approval_accuracy),
         escalationRate: num(r.escalation_rate, financeKpis.escalationRate),
-        falsePositiveRate: num(r.false_positive_rate, financeKpis.falsePositiveRate),
-        slaCompliance: num(r.sla_compliance, financeKpis.slaCompliance),
-        avgResolutionHours: num(r.avg_resolution_hours, financeKpis.avgResolutionHours),
+        falsePositiveRate: numOrNull(r.false_positive_rate),
+        slaCompliance: numOrNull(r.sla_compliance),
+        avgResolutionHours: numOrNull(r.avg_resolution_hours),
         policyComplianceRate: num(r.policy_compliance_rate, financeKpis.policyComplianceRate),
         trend:
           Array.isArray(r.trend) && r.trend.length ? (r.trend as number[]) : autoApprovalTrend,
@@ -991,24 +1290,31 @@ export async function addAgency(input: OnboardAgencyInput): Promise<Agency> {
 export interface UploadPolicyInput {
   agencyId: string;
   agencyName: string;
-  name: string;
-  version: string;
-  fileName: string;
-  effectiveDate: string;
+  /** The actual policy document (PDF/DOCX…) — streamed to the storage account as multipart. */
+  file: File;
+  /** Optional; the backend stores it on the version and treats it as nullable. */
+  effectiveDate?: string;
+  /** The uploading user's id (the maker); the backend derives the real actor from the token. */
   createdBy: string;
 }
 
-/** Maker step: upload a new policy version → virus scan → extract → draft. */
+/**
+ * Maker step (SCOPING §7): upload a new policy version. The file is sent as multipart and the
+ * backend stores it in the policy storage account (Azure Blob, or local fallback offline),
+ * auto-assigns the next version, and creates an unpublished/unindexed draft. A *different*
+ * Finance/Admin then publishes it, which enqueues it for RAG ingestion (see publishPolicyDocument).
+ * The endpoint takes only the file + effective_date — name/version are server-managed.
+ */
 export async function uploadPolicyDocument(
   input: UploadPolicyInput,
 ): Promise<AgencyPolicyDocument> {
   return backend(
-    () =>
-      apiPost<Raw>(`/finance/policies/${input.agencyId}`, {
-        name: input.name,
-        version: input.version,
-        effective_date: input.effectiveDate,
-      }).then(mapPolicy),
+    () => {
+      const form = new FormData();
+      form.append("file", input.file);
+      if (input.effectiveDate) form.append("effective_date", input.effectiveDate);
+      return apiUpload<Raw>(`/finance/policies/${input.agencyId}`, form).then(mapPolicy);
+    },
     () => uploadPolicyDocumentMock(input),
   );
 }
@@ -1016,25 +1322,29 @@ export async function uploadPolicyDocument(
 async function uploadPolicyDocumentMock(
   input: UploadPolicyInput,
 ): Promise<AgencyPolicyDocument> {
+  // Mirror the server: next version = current max for the agency + 1; name derived from the file.
+  const nextVersion = policyStore.filter((d) => d.agencyId === input.agencyId).length + 1;
+  const version = `v${nextVersion}`;
+  const name = input.file.name.replace(/\.[^.]+$/, "");
   const doc: AgencyPolicyDocument = {
-    id: `POL-${input.agencyId}-${input.version}`,
+    id: `POL-${input.agencyId}-${version}`,
     agencyId: input.agencyId,
-    name: input.name,
-    version: input.version,
-    effectiveDate: input.effectiveDate,
-    indexedAt: new Date(2026, 5, 14).toISOString(),
+    name,
+    version,
+    effectiveDate: input.effectiveDate ?? "",
+    indexedAt: "", // draft is not indexed until published + ingested
     status: "draft",
     createdBy: input.createdBy,
   };
   policyStore.unshift(doc);
   auditLog.unshift({
     id: `AUD-${auditLog.length + 1}`,
-    actorId: "USR-SARAH",
-    actorName: "Sarah Okafor",
+    actorId: input.createdBy,
+    actorName: input.createdBy,
     actorRole: "finance",
     action: "POLICY_UPLOAD",
     entity: "AgencyPolicy",
-    summary: `${input.name} ${input.version} uploaded (${input.fileName}) — pending publish.`,
+    summary: `${name} ${version} uploaded (${input.file.name}) — pending publish.`,
     reference: "maker-checker: awaiting approval",
     timestamp: new Date(2026, 5, 14, 11, 10).toISOString(),
     severity: "info",
@@ -1119,39 +1429,23 @@ export async function markNotificationsRead(role: Role): Promise<AppNotification
   );
 }
 
-export async function markOneNotificationRead(id: string): Promise<void> {
+// ── User settings / preferences ──────────────────────────────────────────────
+export type UserPreferences = Record<string, boolean | string | number>;
+
+export function getPreferences(): Promise<UserPreferences> {
   return backend(
-    () => apiPost<Raw>(`/notifications/${id}/read`).then(() => undefined),
-    () => {
-      const n = notificationStore.find((x) => x.id === id);
-      if (n) n.read = true;
-      return delay(undefined, 80);
-    },
+    () => apiGet<Raw>("/me/preferences").then((r) => (r.preferences as UserPreferences) ?? {}),
+    () => delay({}, 100),
   );
 }
 
-export async function archiveNotification(id: string): Promise<void> {
+export function updatePreferences(prefs: UserPreferences): Promise<UserPreferences> {
   return backend(
-    () => apiPost<Raw>(`/notifications/${id}/archive`).then(() => undefined),
-    () => {
-      const n = notificationStore.find((x) => x.id === id);
-      if (n) {
-        n.read = true;
-        (n as { archived?: boolean }).archived = true;
-      }
-      return delay(undefined, 80);
-    },
-  );
-}
-
-export async function deleteNotification(id: string): Promise<void> {
-  return backend(
-    () => apiDelete<Raw>(`/notifications/${id}`).then(() => undefined),
-    () => {
-      const i = notificationStore.findIndex((x) => x.id === id);
-      if (i >= 0) notificationStore.splice(i, 1);
-      return delay(undefined, 80);
-    },
+    () =>
+      apiPut<Raw>("/me/preferences", { preferences: prefs }).then(
+        (r) => (r.preferences as UserPreferences) ?? {},
+      ),
+    () => delay(clone(prefs), 100),
   );
 }
 
@@ -1166,6 +1460,7 @@ export interface MeProfile {
   subjectId: string;
   role: Role;
   agencyId?: string;
+  agencyName?: string;
   email?: string;
   name?: string;
 }
@@ -1175,6 +1470,7 @@ export function getMe(): Promise<MeProfile> {
     subjectId: String(r.subject_id ?? r.id ?? ""),
     role: String(r.role ?? "employee").toLowerCase() as Role,
     agencyId: (r.agency_id as string) ?? undefined,
+    agencyName: (r.agency_name as string) ?? undefined,
     email: (r.email as string) ?? undefined,
     name: (r.name as string) ?? undefined,
   }));

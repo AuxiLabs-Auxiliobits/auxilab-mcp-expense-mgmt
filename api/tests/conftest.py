@@ -11,6 +11,14 @@ os.environ.setdefault("APP_SEED_DEMO_DATA", "true")
 # Pin local-password mode for the suite regardless of the dev .env (which may be entra/hybrid).
 # OIDC/hybrid behaviour is covered by tests that construct those providers explicitly.
 os.environ.setdefault("APP_AUTH_PROVIDER", "db")
+# Isolate tests from any live Azure endpoints configured in api/.env — scan/advisory,
+# storage, and messaging must run on their offline fallbacks deterministically (env vars
+# override the .env file, and the Azure SDKs aren't installed in the test venv).
+os.environ["APP_DOC_INTEL_ENDPOINT"] = ""
+os.environ["APP_FOUNDRY_ENDPOINT"] = ""
+os.environ["APP_SEARCH_ENDPOINT"] = ""
+os.environ["APP_STORAGE_ACCOUNT_URL"] = ""
+os.environ["APP_SERVICEBUS_NAMESPACE"] = ""
 _db = os.path.join(tempfile.gettempdir(), "expense_api_test.db")
 if os.path.exists(_db):
     os.remove(_db)

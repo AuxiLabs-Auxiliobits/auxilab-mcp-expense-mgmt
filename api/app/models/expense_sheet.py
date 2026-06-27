@@ -24,12 +24,29 @@ class ExpenseSheet(SQLModel, table=True):
     period: str | None = None  # "YYYY-MM" (month + year of the current year)
 
     submitted_at: datetime | None = None
+    # The manager who last advanced/returned the sheet out of manager review (SCOPING §6.2).
+    # Powers the manager's "Reviewed" history without scanning the audit log.
+    manager_decided_by: str | None = Field(default=None, index=True)
     finance_decision: FinanceDecision | None = None
     finance_decided_by: str | None = None
     policy_version_used: str | None = None  # pinned at submission (SCOPING §7)
 
+    # LLM finance-approver outcome surfaced to the Finance review UI (SCOPING §6.3). Recorded
+    # by apply_llm_decision when the approver decides; `route_reason*` are only set when the
+    # sheet is routed to a human (FINANCE_MANUAL_REVIEW).
+    llm_confidence: float | None = None
+    route_reason: str | None = None  # LOW_CONFIDENCE | AMBIGUOUS_CLAUSE | MISSING_POLICY | NUMERIC_DISAGREEMENT
+    route_reason_detail: str | None = None
+
     # Optimistic-locking guard against concurrent edits (SCOPING §8).
     row_version: int = Field(default=1)
+
+    # SLA / aging escalation (SCOPING §6.4, §8). The highest level already alerted on for the
+    # sheet's *current* wait, and when. The escalation job treats a prior alert as stale once
+    # `updated_at` moves past `last_escalated_at` (i.e. the sheet changed stage), so aging
+    # restarts per stage without every transition having to reset these.
+    last_escalation_level: int = Field(default=0)
+    last_escalated_at: datetime | None = None
 
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

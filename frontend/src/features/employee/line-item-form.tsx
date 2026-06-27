@@ -5,8 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { useAddLineItem, useUpdateLineItem, queryKeys } from "@/data/hooks";
-import { uploadReceipt } from "@/data/api";
+import { useAddLineItem, useUpdateLineItem, useMyReceipts, queryKeys } from "@/data/hooks";
+import {
+  uploadReceipt,
+  scanReceipt,
+  attachReceiptFromLibrary,
+  type ReceiptUpload,
+} from "@/data/api";
+import { ReceiptPreview } from "@/components/shared/receipt-preview";
 import { baselinePolicy } from "@/data/mock";
 import {
   EXPENSE_CATEGORIES,
@@ -15,7 +21,13 @@ import {
   type LineItem,
 } from "@/data/types";
 import { lineItemSchema, type LineItemValues } from "@/lib/schemas";
-import { fileIssue, fileNote, validateLineItem } from "@/lib/intake";
+import { fileIssue, fileNote } from "@/lib/intake";
+import {
+  policyPreview,
+  policyAdvisory,
+  type PolicyPreviewResult,
+  type PolicyAdvisory,
+} from "@/data/api";
 import type { AttachmentInput } from "@/data/api";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -53,23 +65,41 @@ export function LineItemDialog({
   open,
   onOpenChange,
   sheetId,
+  period,
   item,
   siblings,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sheetId: string;
+  /** Sheet's expense period ("YYYY-MM") — constrains the expense date to that month. */
+  period?: string;
   item?: LineItem;
   siblings: LineItem[];
 }) {
   const addLineItem = useAddLineItem();
   const updateLineItem = useUpdateLineItem();
   const qc = useQueryClient();
-  // Each entry carries optional `file` bytes — present for newly picked/dropped files,
-  // absent for attachments already on the server (edit mode).
-  const [files, setFiles] = useState<(AttachmentInput & { file?: File })[]>([]);
+  const { data: myReceipts } = useMyReceipts();
+  // Each entry carries optional `file` bytes (newly picked/dropped) and/or a `downloadUrl`
+  // (already on the server: edit-mode attachments, or a My Receipts pick) so we can show a
+  // real size + preview either way. `uploadId` is set when the entry was picked from the My
+  // Receipts library, so on save we attach it server-side instead of re-uploading bytes.
+  const [files, setFiles] = useState<
+    (AttachmentInput & { file?: File; downloadUrl?: string; uploadId?: string })[]
+  >([]);
   const [dragging, setDragging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Only offer the camera on touch devices — `capture` is a no-op on desktop.
+  const [hasCamera, setHasCamera] = useState(false);
+  const [policy, setPolicy] = useState<PolicyPreviewResult | null>(null);
+  const [advisory, setAdvisory] = useState<PolicyAdvisory>({});
+  // True while a debounced RAG advisory request is pending, so we can show a loader and keep
+  // the previous clause visible (dimmed) until the fresh response lands.
+  const [advisoryLoading, setAdvisoryLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -98,6 +128,7 @@ export function LineItemDialog({
   // Reset whenever the dialog opens (for add) or the edited item changes.
   useEffect(() => {
     if (!open) return;
+    setPickerOpen(false);
     if (item) {
       reset({
         merchant: item.merchant,
@@ -115,6 +146,7 @@ export function LineItemDialog({
           fileName: a.fileName,
           fileType: a.fileType,
           sizeBytes: a.sizeBytes,
+          downloadUrl: a.downloadUrl,
         })),
       );
     } else {
@@ -123,23 +155,83 @@ export function LineItemDialog({
     }
   }, [open, item, reset]);
 
+  useEffect(() => {
+    setHasCamera(window.matchMedia?.("(pointer: coarse)").matches ?? false);
+  }, []);
+
   const v = watch();
-  const liveIssues = validateLineItem(
-    {
-      merchant: v.merchant ?? "",
-      description: v.description ?? "",
-      category: (v.category as ExpenseCategory) ?? "Other",
-      categoryOther: v.categoryOther,
-      amount: Number(v.amount) || 0,
-      currency: "USD" as Currency,
-      expenseDate: v.expenseDate ?? "",
-      receiptDatetime: v.receiptDatetime || undefined,
-      tax: v.tax != null ? Number(v.tax) : undefined,
-      attachments: files,
-    },
-    baselinePolicy,
-    siblings,
-  );
+
+  // Restrict the expense date to the sheet's period month (backend enforces this too).
+  const dateBounds = period
+    ? (() => {
+        const [y, m] = period.split("-").map(Number);
+        const last = new Date(y, m, 0).getDate();
+        return { min: `${period}-01`, max: `${period}-${String(last).padStart(2, "0")}` };
+      })()
+    : undefined;
+
+  // The receipt date must equal the expense date (time may differ). Keep the receipt
+  // datetime's day pinned to the expense date whenever it changes, preserving the time.
+  useEffect(() => {
+    if (!v.expenseDate) return;
+    const time = v.receiptDatetime?.slice(11, 16) || "12:00";
+    const synced = `${v.expenseDate}T${time}`;
+    if (synced !== v.receiptDatetime) {
+      setValue("receiptDatetime", synced, { shouldValidate: true });
+    }
+    // Intentionally keyed on expenseDate only — editing the time shouldn't re-pin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.expenseDate]);
+
+  // Live, authoritative policy check from the backend (engine `check_policy`) — debounced as
+  // the user types. Offline it falls back to the client validator (see api.policyPreview).
+  useEffect(() => {
+    const amount = Number(v.amount);
+    if (!amount || amount <= 0) {
+      setPolicy(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      policyPreview({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        amount,
+        currency: "USD",
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+        expenseDate: v.expenseDate || undefined,
+        receiptDatetime: v.receiptDatetime || undefined,
+        hasReceipt: files.length > 0,
+      })
+        .then(setPolicy)
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [v.category, v.amount, v.merchant, v.description, v.expenseDate, v.receiptDatetime, files.length]);
+
+  // RAG advisory: the relevant agency policy clause (advisory only; empty offline). Debounced
+  // (600ms) so typing in the description/merchant fields doesn't fire a request per keystroke —
+  // only once the user pauses. `advisoryLoading` drives the loader while the call is in flight.
+  useEffect(() => {
+    setAdvisoryLoading(true);
+    const handle = setTimeout(() => {
+      policyAdvisory({
+        category: (v.category as ExpenseCategory) ?? undefined,
+        merchant: v.merchant ?? "",
+        description: v.description ?? "",
+      })
+        .then(setAdvisory)
+        .catch(() => {})
+        .finally(() => setAdvisoryLoading(false));
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [v.category, v.merchant, v.description]);
+
+  const policyStatus = policy?.status ?? "pass";
+  const liveIssues = (policy?.violations ?? []).map((vi) => ({
+    level: policyStatus === "fail" ? ("error" as const) : ("warning" as const),
+    message: vi.message,
+    clauseRef: vi.code,
+  }));
 
   function acceptFiles(picked: File[]) {
     const accepted: (AttachmentInput & { file?: File })[] = [];
@@ -161,8 +253,30 @@ export function LineItemDialog({
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     acceptFiles(Array.from(e.target.files ?? []));
-    if (fileRef.current) fileRef.current.value = "";
+    e.target.value = "";
   }
+
+  /** Attach a receipt the employee already uploaded on the My Receipts page. The bytes already
+   *  live on the server, so we only carry a reference (`uploadId`) + preview URL; the actual
+   *  attach happens on save via `attachReceiptFromLibrary`. */
+  function addFromUpload(u: ReceiptUpload) {
+    if (files.some((f) => f.uploadId === u.id)) return;
+    setFiles((prev) => [
+      ...prev,
+      {
+        fileName: u.fileName,
+        fileType: u.fileType,
+        sizeBytes: u.sizeBytes,
+        downloadUrl: u.downloadUrl,
+        uploadId: u.id,
+      },
+    ]);
+  }
+
+  // My Receipts entries not already added to this line item.
+  const availableUploads = (myReceipts ?? []).filter(
+    (u) => !files.some((f) => f.uploadId === u.id),
+  );
 
   function onDrop(e: React.DragEvent) {
     // Without this, the browser navigates to the dropped file (opens a new tab).
@@ -189,10 +303,12 @@ export function LineItemDialog({
         ? await updateLineItem.mutateAsync({ sheetId, lineItemId: item.id, input })
         : await addLineItem.mutateAsync({ sheetId, input });
 
-      // Upload the actual receipt bytes for any newly added files. On add, the new
-      // line item is the one in the returned sheet that wasn't an existing sibling.
-      const newFiles = files.filter((f) => f.file);
-      if (newFiles.length) {
+      // Persist receipts. Two kinds: freshly picked/dropped files (upload the bytes) and
+      // picks from the My Receipts library (already on the server — attach by reference). On
+      // add, the new line item is the one in the returned sheet that wasn't an existing sibling.
+      const newFiles = files.filter((f) => f.file && !f.uploadId);
+      const libraryPicks = files.filter((f) => f.uploadId);
+      if (newFiles.length || libraryPicks.length) {
         let targetId = item?.id;
         if (!targetId) {
           const known = new Set(siblings.map((s) => s.id));
@@ -202,7 +318,22 @@ export function LineItemDialog({
           for (const f of newFiles) {
             await uploadReceipt({ sheetId, lineItemId: targetId, file: f.file! });
           }
+          // A receipt picked from the My Receipts library moves onto this line item server-side.
+          for (const f of libraryPicks) {
+            await attachReceiptFromLibrary({ sheetId, lineItemId: targetId, receiptId: f.uploadId! });
+          }
           qc.invalidateQueries({ queryKey: queryKeys.sheet(sheetId) });
+          if (libraryPicks.length) qc.invalidateQueries({ queryKey: queryKeys.myReceipts });
+
+          // Fire the receipt scan (Document Intelligence) so it reconciles against the
+          // entered amount and persists the derived values + Finance review flag server-side.
+          // The extraction is intentionally NOT surfaced to the employee — only manager and
+          // finance see the derived values, on their own review screens.
+          try {
+            await scanReceipt({ sheetId, lineItemId: targetId });
+          } catch {
+            /* scan is best-effort; never block the save */
+          }
         }
       }
 
@@ -311,6 +442,8 @@ export function LineItemDialog({
                 value={v.expenseDate}
                 onChange={(val) => setValue("expenseDate", val, { shouldValidate: true })}
                 placeholder="Select date"
+                min={dateBounds?.min}
+                max={dateBounds?.max}
               />
               {errors.expenseDate && <p className="text-label-md text-error">{errors.expenseDate.message}</p>}
             </div>
@@ -330,8 +463,18 @@ export function LineItemDialog({
                 mode="datetime"
                 value={v.receiptDatetime}
                 onChange={(val) => setValue("receiptDatetime", val, { shouldValidate: true })}
-                placeholder="Optional"
+                placeholder={v.expenseDate ? "Pick the time" : "Set the expense date first"}
+                // Pinned to the expense date — only the time of day is selectable.
+                min={v.expenseDate || dateBounds?.min}
+                max={v.expenseDate || dateBounds?.max}
               />
+              {errors.receiptDatetime ? (
+                <p className="text-label-md text-error">{errors.receiptDatetime.message}</p>
+              ) : (
+                <p className="text-label-md text-on-surface-variant">
+                  Same day as the expense date; set the time from the receipt.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="li-tax">Tax / VAT</Label>
@@ -386,6 +529,72 @@ export function LineItemDialog({
               className="hidden"
               onChange={onPickFiles}
             />
+            {/* On mobile these open the photo library / camera directly; on desktop
+                they fall back to the file dialog. */}
+            <input
+              ref={galleryRef}
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onPickFiles}
+            />
+
+            {/* Other ways to attach: device gallery, camera, or a receipt already
+                uploaded on the My Receipts page. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => galleryRef.current?.click()}>
+                <Icon name="photo_library" /> Gallery
+              </Button>
+              {hasCamera && (
+                <Button type="button" variant="outline" size="sm" onClick={() => cameraRef.current?.click()}>
+                  <Icon name="photo_camera" /> Camera
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={availableUploads.length === 0}
+                onClick={() => setPickerOpen((o) => !o)}
+                title={
+                  availableUploads.length === 0
+                    ? "No unassigned receipts in My Receipts"
+                    : "Pick a receipt you already uploaded"
+                }
+              >
+                <Icon name="receipt_long" /> From My Receipts ({availableUploads.length})
+              </Button>
+            </div>
+
+            {pickerOpen && availableUploads.length > 0 && (
+              <ul className="space-y-1 rounded border border-outline-variant bg-surface-container-low p-2">
+                {availableUploads.map((u) => (
+                  <li key={u.id} className="flex items-center gap-2 rounded px-1 py-1">
+                    <ReceiptPreview
+                      downloadUrl={u.downloadUrl}
+                      fileName={u.fileName}
+                      fileType={u.fileType}
+                    />
+                    <span className="flex-1 truncate text-body-sm">{u.fileName}</span>
+                    <span className="font-mono text-label-sm text-on-surface-variant">
+                      {formatSize(u.sizeBytes)}
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => addFromUpload(u)}>
+                      <Icon name="add" /> Add
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {files.length > 0 && (
               <ul className="space-y-1">
                 {files.map((f, i) => {
@@ -396,7 +605,12 @@ export function LineItemDialog({
                       className="rounded border border-outline-variant bg-surface-container-lowest px-3 py-2"
                     >
                       <div className="flex items-center gap-2">
-                        <Icon name="description" className="text-[18px] text-secondary" />
+                        <ReceiptPreview
+                          file={f.file}
+                          downloadUrl={f.downloadUrl}
+                          fileName={f.fileName}
+                          fileType={f.fileType}
+                        />
                         <span className="flex-1 truncate text-body-sm">{f.fileName}</span>
                         <span className="font-mono text-label-sm text-on-surface-variant">
                           {formatSize(f.sizeBytes)}
@@ -419,6 +633,12 @@ export function LineItemDialog({
                   );
                 })}
               </ul>
+            )}
+            {files.length === 0 && (
+              <p className="flex items-center gap-1 text-label-md text-error">
+                <Icon name="error" className="text-[14px]" />
+                A receipt is required to save this line item.
+              </p>
             )}
           </div>
 
@@ -449,11 +669,47 @@ export function LineItemDialog({
             </div>
           )}
 
+          {/* RAG advisory — cited agency policy clause (advisory only, never blocks). Shows a
+              loader while a fresh response is in flight; keeps the previous clause visible
+              (dimmed) until it arrives. */}
+          {(advisory.clause ||
+            (advisoryLoading && (!!v.merchant?.trim() || !!v.description?.trim()))) && (
+            <div className="space-y-1 rounded border border-secondary/30 bg-secondary-container/20 p-3">
+              <p className="flex items-center gap-1.5 font-mono text-label-md uppercase tracking-wide text-on-surface-variant">
+                <Icon name="smart_toy" className="text-[14px] text-secondary" />
+                AI note{advisory.clause ? ` · ${advisory.clause.source}` : ""}
+                {advisoryLoading && (
+                  <Icon
+                    name="progress_activity"
+                    className="ml-auto animate-spin text-[14px] text-secondary"
+                    aria-label="Refreshing policy note"
+                  />
+                )}
+              </p>
+              {advisory.clause ? (
+                <p
+                  className={
+                    "text-body-sm text-on-surface transition-opacity " +
+                    (advisoryLoading ? "opacity-50" : "opacity-100")
+                  }
+                >
+                  {advisory.clause.text}
+                </p>
+              ) : (
+                <p className="text-body-sm text-on-surface-variant">Checking agency policy…</p>
+              )}
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!blockingError} loading={isSubmitting}>
+            <Button
+              type="submit"
+              loading={addLineItem.isPending || updateLineItem.isPending}
+              disabled={!!blockingError || files.length === 0}
+            >
               {item ? "Save changes" : "Add line item"}
             </Button>
           </DialogFooter>

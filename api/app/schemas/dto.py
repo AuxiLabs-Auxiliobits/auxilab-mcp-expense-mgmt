@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.principal import Role
+from app.principal import Role, Scope
 from app.value_sets import normalize_currency, validate_period
 from expense_core.schemas.enums import Category, FinanceDecision, LineItemStatus, SheetStatus
 
@@ -29,16 +29,16 @@ class TokenResponse(BaseModel):
 
 
 class MeOut(BaseModel):
-    """The caller's identity for the UI: includes the display `name` and `agency_name`
-    resolved from the DB (the bare Principal/token carries only ids)."""
+    """Current user for the UI — the Principal plus the human-readable display name
+    (and agency name) so the frontend never has to fall back to the email address."""
 
     subject_id: str
     email: str
-    role: str
+    name: str
+    role: Role
     agency_id: str | None = None
     agency_name: str | None = None
-    name: str | None = None
-    scope: str
+    scope: Scope
 
 
 class MessageResponse(BaseModel):
@@ -194,15 +194,37 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
-    filename: str | None = None
+    filename: str | None = None  # original upload name (matches the Attachment model attr)
     file_type: str
     size: int
     blob_uri: str
     scan_status: str
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
     ocr_status: str | None = None
     uploaded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ReceiptUploadOut(BaseModel):
+    """An unassigned receipt in the employee's library (My Receipts), not yet on a line item."""
+
+    id: str
+    filename: str | None = None
+    file_type: str
+    size: int
+    scan_status: str
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
+
+    model_config = {"from_attributes": True}
+
+
+class ReceiptAttachFromLibrary(BaseModel):
+    """Attach an existing library receipt to a line item (body for the attach route)."""
+
+    receipt_id: str
 
 
 class LineItemOut(BaseModel):
@@ -219,7 +241,11 @@ class LineItemOut(BaseModel):
     tax: Decimal | None = None
     has_receipt: bool = False
     receipt_count: int = 0  # set by the serializer from attachments
+    needs_human_review: bool = False  # receipt scan flagged for Finance
+    review_reason: str | None = None
+    attachments: list["AttachmentOut"] = Field(default_factory=list)
     manager_status: LineItemStatus
+    manager_reason: str | None = None  # manager's note on reject / request-info (shown to employee)
     policy_status: LineItemStatus | None
 
     model_config = {"from_attributes": True}
@@ -246,6 +272,15 @@ class SheetOut(BaseModel):
     period: str | None
     finance_decision: FinanceDecision | None
     finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
+    manager_decided_by: str | None = None  # raw user id of the deciding manager (for "my reviews")
+
+    # LLM finance-approver outcome (SCOPING §6.3) — drives the Finance review drawer's
+    # "AI Decision Support" panel. Only populated once the approver has decided.
+    policy_version_used: str | None = None  # policy version the approver ran against
+    llm_confidence: float | None = None  # approver confidence (0..1)
+    route_reason: str | None = None  # why it was routed to a human (None if auto-decided)
+    route_reason_detail: str | None = None  # human-readable detail / cited clause text
+
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
@@ -303,6 +338,129 @@ class PeriodsOut(BaseModel):
 
     default: str  # the current month ('YYYY-MM') — preselect this
     periods: list[PeriodOption]
+
+
+# --- Live intake: policy preview + receipt scan (SCOPING §4, §6.1) ---------- #
+class PolicyPreviewRequest(BaseModel):
+    """A draft line item to dry-run against policy as the user types (no persistence)."""
+
+    category: Category | None = None
+    amount: Decimal = Field(gt=Decimal("0"))
+    currency: str = "USD"
+    merchant: str = ""
+    description: str = ""
+    expense_date: date | None = None
+    receipt_datetime: datetime | None = None
+    receipt_total: Decimal | None = None
+    has_receipt: bool = False
+
+
+class PolicyViolationOut(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
+class PolicyPreviewOut(BaseModel):
+    """Authoritative deterministic policy result for the line-item form (engine check_policy)."""
+
+    status: str  # pass | warn | fail
+    recommended_action: str
+    violations: list[PolicyViolationOut] = Field(default_factory=list)
+
+
+class PolicyAdvisoryRequest(BaseModel):
+    category: Category | None = None
+    merchant: str = ""
+    description: str = ""
+
+
+class AuditEntryOut(BaseModel):
+    """One audit-trail row, enriched with the actor's display name + a human summary."""
+
+    id: str
+    actor_id: str | None = None
+    actor_name: str | None = None
+    actor_role: str | None = None
+    agency_id: str | None = None
+    action: str
+    entity: str | None = None
+    summary: str
+    before: dict | None = None
+    after: dict | None = None
+    timestamp: datetime
+
+
+class ActivityPageOut(BaseModel):
+    """A page of audit entries scoped to the caller (employee→own, manager→agency, finance/
+    admin→all) with the total for pagination."""
+
+    items: list[AuditEntryOut] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+
+
+class NotificationOut(BaseModel):
+    id: str
+    kind: str  # info | success | warning | error
+    icon: str = "notifications"
+    title: str
+    body: str = ""
+    href: str | None = None
+    read: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PreferencesIn(BaseModel):
+    """Free-form user settings (e.g. notification toggles) owned by the Settings page."""
+
+    preferences: dict
+
+
+class PreferencesOut(BaseModel):
+    preferences: dict
+
+
+class PolicyAdvisoryClause(BaseModel):
+    source: str  # e.g. "Crispin policy v3"
+    text: str
+
+
+class PolicyAdvisoryOut(BaseModel):
+    """RAG advisory: the most relevant agency policy clause (LLM advises, never blocks).
+    `clause` is null offline / when AI Search isn't configured."""
+
+    clause: PolicyAdvisoryClause | None = None
+
+
+class ScanLineItem(BaseModel):
+    description: str
+    amount: Decimal
+
+
+class ReceiptScanOut(BaseModel):
+    """Result of scanning an uploaded receipt (Document Intelligence; offline fallback).
+
+    `source` is `document_intelligence` (live), `text` (offline text decode), or `unavailable`
+    (binary receipt with no OCR configured). Extracted numbers feed deterministic reconciliation
+    — the model never decides compliance (SCOPING §4)."""
+
+    source: str
+    merchant: str | None = None
+    total: Decimal | None = None
+    tax: Decimal | None = None
+    receipt_datetime: datetime | None = None
+    line_items: list[ScanLineItem] = Field(default_factory=list)
+    subtotal: Decimal | None = None
+    reconciles: bool | None = None  # Σ items + tax == receipt total
+    delta: Decimal | None = None
+    entered_amount: Decimal | None = None  # the line item's amount, for comparison
+    matches_entered: bool | None = None  # |receipt total − entered| ≤ tolerance
+    human_intervention_required: bool = False  # mismatch / unreadable → Finance reviews
+    detail: str | None = None
 
 
 # --- Reports (finance/manager dashboard, SCOPING §4 report summariser) ------ #
@@ -498,14 +656,28 @@ class SpendByCategoryOut(BaseModel):
 
 class FinanceKpisOut(BaseModel):
     """Real, deterministically-computed finance KPIs (SCOPING §4). AI-quality metrics that
-    require ground-truth labels (accuracy, false-positive rate, SLA) are intentionally omitted
-    here — the client fills those from its baseline until a metrics pipeline emits them."""
+    require ground-truth labels (approval accuracy, false-positive rate) are still omitted
+    here — they need a human-labelling pipeline, so the client fills those from its baseline.
+    Everything else below is now derived from the data we actually have (timestamps,
+    statuses, cited clauses)."""
 
     auto_approval_rate: float  # % of finance-reached sheets the LLM auto-approved
     manual_interventions: int  # sheets currently routed to a human
     policy_citations: int  # decisions that cited at least one policy clause
     policy_compliance_rate: float  # % of line items with no rejection / policy failure
     finance_reached: int  # denominator: sheets that reached a finance outcome
+
+    # Period-over-period movement, derived from the per-period auto-approval trend.
+    auto_approval_delta: float | None = None  # pts change vs the previous period
+    manual_interventions_delta: int | None = None  # change in routed sheets vs previous period
+
+    # Operational metrics from sheet timestamps / routing (no ground truth needed).
+    escalation_rate: float | None = None  # % of finance-reached sheets that went to a human
+    sla_compliance: float | None = None  # % resolved within the SLA target window
+    avg_resolution_hours: float | None = None  # mean submit→finance-decision time, hours
+
+    top_clause: str | None = None  # most-cited policy clause across decisions
+    trend: list[float] | None = None  # auto-approval rate per period (oldest→newest)
 
 
 # --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #
@@ -530,19 +702,3 @@ class AssistantAnswerOut(BaseModel):
     policy_version: str
     routed_to_human: bool = False
     model_version: str = "offline"
-
-
-# --- Notifications --------------------------------------------------------- #
-class NotificationOut(BaseModel):
-    id: str
-    kind: str
-    icon: str
-    title: str
-    body: str
-    href: str | None
-    entity: str | None = None
-    read: bool
-    archived: bool = False
-    timestamp: datetime
-
-    model_config = {"from_attributes": True}
