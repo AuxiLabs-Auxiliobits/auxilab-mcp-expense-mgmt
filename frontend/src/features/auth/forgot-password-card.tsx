@@ -21,6 +21,7 @@ export function ForgotPasswordCard() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<LoginMethods | null>(null);
+  const [devLink, setDevLink] = useState<string | null>(null); // dev-only: testable without SMTP
 
   // Detect SSO-only orgs → local reset isn't applicable.
   useEffect(() => {
@@ -42,6 +43,8 @@ export function ForgotPasswordCard() {
         body: JSON.stringify({ email }),
       });
       if (!res.ok) throw new Error();
+      const data = (await res.json().catch(() => ({}))) as { dev_reset_link?: string };
+      if (data?.dev_reset_link) setDevLink(data.dev_reset_link);
       setSent(true);
     } catch {
       setError("Unable to connect. Please try again.");
@@ -83,8 +86,20 @@ export function ForgotPasswordCard() {
         <h1 className="mt-4 text-headline-lg font-semibold text-on-surface">Check your email</h1>
         <p className="mt-2 text-body-sm text-on-surface-variant">
           If an account exists for <span className="font-medium text-on-surface">{email}</span>, a
-          password-reset link is on its way. It expires shortly and can be used once.
+          password-reset link is on its way. It is valid for 24 hours and can be used once.
         </p>
+        {devLink && (
+          <div className="mt-4 rounded-xl border border-dashed border-outline-variant bg-surface-container-low p-3">
+            <p className="mb-2 text-label-md font-medium uppercase tracking-wide text-on-surface-variant">
+              Dev mode · no SMTP configured
+            </p>
+            <Button asChild className="w-full" variant="outline">
+              <a href={devLink}>
+                <Icon name="vpn_key" /> Open reset link
+              </a>
+            </Button>
+          </div>
+        )}
         <BackToSignIn />
       </div>
     );

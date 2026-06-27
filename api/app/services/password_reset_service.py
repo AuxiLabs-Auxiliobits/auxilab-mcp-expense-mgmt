@@ -95,14 +95,16 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def request_reset(session: Session, settings: Settings, sender: EmailSender, email: str) -> None:
-    """Issue a reset link for a local account. Always returns None (no enumeration);
-    silently does nothing for unknown or SSO-only accounts."""
+def request_reset(session: Session, settings: Settings, sender: EmailSender, email: str) -> str | None:
+    """Issue a reset link for a local account; email it via `sender`. Returns the link so the
+    router can expose it in DEV only (for self-service testing without SMTP); callers MUST NOT
+    return it to clients outside dev (it would enable enumeration). Returns None for unknown or
+    SSO-only accounts (no link issued)."""
     user = session.exec(select(User).where(User.email == email.strip().lower())).first()
     # Only local accounts (with a password) get a reset link; SSO-only users have none.
     if user is None or not user.is_active or user.password_hash is None:
         logger.info("Reset requested for non-local/unknown email; no link issued.")
-        return
+        return None
 
     # Invalidate any outstanding tokens for this user (single live link at a time).
     for stale in session.exec(
@@ -123,19 +125,22 @@ def request_reset(session: Session, settings: Settings, sender: EmailSender, ema
     session.commit()
 
     link = f"{settings.app_base_url.rstrip('/')}/reset-password?token={raw}"
+    ttl = settings.reset_token_ttl_minutes
+    validity = f"{ttl // 60} hours" if ttl >= 60 and ttl % 60 == 0 else f"{ttl} minutes"
     sender.send(
         to=user.email,
         subject="Reset your Auxilab password",
         body=(
             f"Hi {user.name},\n\n"
             "We received a request to reset your Auxilab password. Use the link below "
-            f"(valid for {settings.reset_token_ttl_minutes} minutes, single use):\n\n"
+            f"(valid for {validity}, single use):\n\n"
             f"{link}\n\n"
             "If you didn't request this, you can safely ignore this email — your password "
             "won't change.\n\n— Auxilab Expense Management"
         ),
     )
     logger.info("Issued password-reset link to %s", user.email)
+    return link
 
 
 def reset_password(session: Session, settings: Settings, raw_token: str, new_password: str) -> None:

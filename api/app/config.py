@@ -95,8 +95,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     # Base URL the reset link points at (the frontend portal origin).
     app_base_url: str = "http://localhost:3000"
-    # Reset tokens are single-use and time-limited.
-    reset_token_ttl_minutes: int = 30
+    # Reset tokens are single-use and time-limited. 24 hours per product requirement.
+    reset_token_ttl_minutes: int = 24 * 60
     password_min_length: int = 10
 
     @property

@@ -102,10 +102,12 @@ async def forgot_password(
     request: Request, body: ForgotPasswordRequest, session: Session = Depends(get_session)
 ) -> MessageResponse:
     """Email a single-use, time-limited reset link for a local account. Always returns the
-    same generic message (no user enumeration); SSO-only accounts get no link."""
-    prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    same generic message (no user enumeration); SSO-only accounts get no link. In DEV only,
+    the link is echoed back (`dev_reset_link`) so the flow is testable without an SMTP server."""
+    link = prs.request_reset(session, settings, get_email_sender(settings), body.email)
     return MessageResponse(
-        message="If an account exists for that email, a password-reset link is on its way."
+        message="If an account exists for that email, a password-reset link is on its way.",
+        dev_reset_link=link if settings.environment == "dev" else None,
     )
 
 

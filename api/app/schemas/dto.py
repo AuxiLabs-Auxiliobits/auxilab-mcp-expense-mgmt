@@ -43,6 +43,9 @@ class MeOut(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+    # DEV-only: the password-reset link, echoed so the flow is testable without SMTP. Always
+    # None outside dev (exposing it in prod would enable account enumeration).
+    dev_reset_link: str | None = None
 
 
 class LoginMethodsOut(BaseModel):
