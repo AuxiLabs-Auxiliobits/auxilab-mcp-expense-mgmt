@@ -76,7 +76,8 @@ def resubmit_expense(sheet_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=DESTRUCTIVE)
 def withdraw_expense(sheet_id: str) -> dict[str, Any]:
-    """Withdraw a DRAFT sheet (soft — keeps the record, moves it to WITHDRAWN)."""
+    """Recall an in-flight sheet (submitted / in review) back to DRAFT so the owner can edit
+    and resubmit. Non-destructive — the sheet is kept. A plain DRAFT has nothing to recall."""
     return client.post(f"/sheets/{sheet_id}/withdraw")
 
 

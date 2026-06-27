@@ -26,7 +26,7 @@ from app.schemas.dto import (
     UserUpdate,
 )
 from app.serializers import agencies_to_out, agency_to_out
-from app.services import audit_service
+from app.services import audit_service, escalation_service
 from expense_core.schemas.enums import SheetStatus
 
 router = APIRouter(
@@ -340,3 +340,22 @@ async def deactivate_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+@router.post(
+    "/escalations/run",
+    summary="Run the SLA/aging escalation sweep now (alerts on sheets aging in review queues)",
+)
+async def run_escalations(
+    principal: Principal = Depends(require(Capability.MANAGE_AGENCY)),
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    """On-demand trigger for the aging/escalation sweep (SCOPING §6.4, §8). Normally run on a
+    schedule (`python -m app.jobs.escalation_job`); this lets an admin force a pass. Returns
+    the run summary: how many waiting sheets were scanned and newly raised to warning/critical."""
+    summary = escalation_service.run_escalations(session)
+    audit_service.record(
+        session, actor=principal, action="ESCALATION_SWEEP", after=summary.as_dict()
+    )
+    session.commit()
+    return summary.as_dict()

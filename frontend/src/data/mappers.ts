@@ -65,7 +65,7 @@ export function mapLineItem(r: Raw, sheetId = ""): LineItem {
           (a: Raw): import("./types").Attachment => ({
             id: String(a.id ?? ""),
             lineItemId: String(a.line_item_id ?? r.id ?? ""),
-            fileName: a.file_name ?? a.fileName ?? "receipt",
+            fileName: a.filename ?? a.file_name ?? a.fileName ?? "receipt",
             fileType: a.file_type ?? a.fileType ?? "application/octet-stream",
             sizeBytes: num(a.size ?? a.sizeBytes ?? 0),
             scanStatus: (a.scan_status ?? "clean") as import("./types").ScanStatus,
@@ -112,10 +112,16 @@ export function mapSheet(r: Raw): ExpenseSheet {
     updatedAt: asUtc(r.updated_at ?? r.updatedAt) ?? new Date().toISOString(),
     financeDecision: r.finance_decision ?? r.financeDecision ?? undefined,
     financeDecidedBy: r.finance_decided_by ?? undefined,
+    managerDecidedBy: r.manager_decided_by ?? r.managerDecidedBy ?? undefined,
     policyVersionUsed: r.policy_version_used ?? r.policy_version ?? undefined,
     routeReason: r.route_reason ?? undefined,
     routeReasonDetail: r.route_reason_detail ?? r.uncertainty_reason ?? undefined,
-    llmConfidence: r.confidence != null ? num(r.confidence) : undefined,
+    llmConfidence:
+      r.llm_confidence != null
+        ? num(r.llm_confidence)
+        : r.confidence != null
+          ? num(r.confidence)
+          : undefined,
     citedClause:
       Array.isArray(cited) && cited.length
         ? { policyName: cited[0].source ?? "Policy", text: cited[0].text ?? String(cited[0]) }
@@ -180,17 +186,22 @@ export function mapUser(r: Raw): User {
 }
 
 export function mapPolicy(r: Raw): AgencyPolicyDocument {
-  const status = String(r.status ?? "draft").toLowerCase();
+  // Backend status lifecycle is draft → published → indexed; the UI only renders
+  // draft / active / archived, so a published-or-indexed doc maps to "active" (live).
+  const raw = String(r.status ?? "draft").toLowerCase();
+  const status: AgencyPolicyDocument["status"] =
+    raw === "draft" ? "draft" : raw === "archived" ? "archived" : "active";
+  // The backend has no `name` and stores `version` as an integer; derive a display label.
+  const versionNum = r.version != null ? String(r.version) : "";
+  const version = r.name == null && /^\d+$/.test(versionNum) ? `v${versionNum}` : versionNum;
   return {
     id: String(r.id ?? ""),
     agencyId: String(r.agency_id ?? r.agencyId ?? ""),
-    name: r.name ?? "",
-    version: String(r.version ?? ""),
+    name: r.name ?? (version ? `Policy ${version}` : "Policy document"),
+    version,
     effectiveDate: r.effective_date ?? r.effectiveDate ?? "",
     indexedAt: r.indexed_at ?? r.indexedAt ?? "",
-    status: (status === "active" || status === "archived"
-      ? status
-      : "draft") as AgencyPolicyDocument["status"],
+    status,
     createdBy: r.created_by ?? r.createdBy ?? "",
     publishedBy: r.published_by ?? r.publishedBy ?? undefined,
   };

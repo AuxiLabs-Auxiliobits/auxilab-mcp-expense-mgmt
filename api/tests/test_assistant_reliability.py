@@ -162,9 +162,9 @@ def test_employee_submit_flow(client):
 
 
 def test_employee_withdraw_draft_flow(client):
-    """Withdraw is DRAFT-only in this app (draft → withdrawn)."""
+    """Withdraw recalls an in-flight sheet back to DRAFT so the owner can edit/resubmit."""
     et = login(client, "employee@demo.local")
-    _draft(client, et, "Withdraw Draft Flow")  # a plain draft
+    _submitted(client, et, "Withdraw Draft Flow")  # an in-flight (submitted) sheet
     l1 = chat(client, et, "show my expenses")
     ref = [i["ref"] for i in l1["context"]["last_list"] if i["title"] == "Withdraw Draft Flow"][0]
     done = chat(client, et, "yes", chat(client, et, f"withdraw {ref}", l1["context"])["context"])

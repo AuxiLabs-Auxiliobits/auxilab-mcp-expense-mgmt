@@ -1,9 +1,9 @@
 import { differenceInHours, parseISO } from "date-fns";
 
 /**
- * SLA / aging for queued items (SCOPING.md §6.4, §8). Anchored to the demo
- * "now" so the seeded dataset reads sensibly; swap `DEMO_NOW` for `new Date()`
- * against the real backend.
+ * SLA / aging for queued items (SCOPING.md §6.4, §8). Aging is measured against the
+ * real current time so live backend data reads correctly. `DEMO_NOW` is retained only
+ * for tests/storybook that need a fixed anchor — pass it explicitly as the second arg.
  */
 export const DEMO_NOW = new Date(2026, 5, 14, 12, 0, 0);
 
@@ -15,7 +15,7 @@ export interface Aging {
   label: string;
 }
 
-export function agingLevel(submittedAt?: string, now: Date = DEMO_NOW): Aging {
+export function agingLevel(submittedAt?: string, now: Date = new Date()): Aging {
   if (!submittedAt) return { level: "ok", hours: 0, label: "—" };
   const hours = Math.max(0, differenceInHours(now, parseISO(submittedAt)));
   const days = Math.floor(hours / 24);

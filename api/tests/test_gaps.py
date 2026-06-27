@@ -52,21 +52,22 @@ def _submitted_sheet(client, emp):
     return sheet["id"]
 
 
-# --- Gap B: withdraw ------------------------------------------------------- #
-def test_withdraw_draft_soft_sets_withdrawn(client):
-    emp = login(client, "employee@demo.local")
-    sheet = client.post("/sheets", json=_new_sheet_payload(), headers=auth(emp)).json()
-    r = client.post(f"/sheets/{sheet['id']}/withdraw", headers=auth(emp))
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "WITHDRAWN"
-    # Soft: the sheet still exists and is readable.
-    assert client.get(f"/sheets/{sheet['id']}", headers=auth(emp)).status_code == 200
-
-
-def test_withdraw_non_draft_conflicts(client):
+# --- Gap B: withdraw (recall an in-flight sheet back to DRAFT) -------------- #
+def test_withdraw_inflight_recalls_to_draft(client):
     emp = login(client, "employee@demo.local")
     sid = _submitted_sheet(client, emp)  # now IN_MANAGER_REVIEW
     r = client.post(f"/sheets/{sid}/withdraw", headers=auth(emp))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "DRAFT"
+    # Recall is non-destructive: the sheet still exists and is readable.
+    assert client.get(f"/sheets/{sid}", headers=auth(emp)).status_code == 200
+
+
+def test_withdraw_plain_draft_conflicts(client):
+    emp = login(client, "employee@demo.local")
+    sheet = client.post("/sheets", json=_new_sheet_payload(), headers=auth(emp)).json()
+    # A plain DRAFT isn't in-flight, so there's nothing to recall.
+    r = client.post(f"/sheets/{sheet['id']}/withdraw", headers=auth(emp))
     assert r.status_code == 409, r.text
 
 

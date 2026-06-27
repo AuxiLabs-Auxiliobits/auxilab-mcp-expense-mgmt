@@ -533,4 +533,4 @@ Receipt text samples (hotel/restaurant) generated for the Receipt Parser; policy
 ### G. Notes carried over from the origin brief
 - Suggested original parsing libs (pdfplumber / pytesseract) are **superseded** by **Azure AI Document Intelligence** for enterprise OCR/layout.
 - The MCP server core remains independently publishable as **`auxilab-mcp-expense-mgmt`** (PyPI + GitHub).
-- Prospect/business context: Expense Management is an Auxiliobits Finance-automation pillar; the platform targets mid-market CFOs and multi-agency groups.
+- Prospect/business context: Expense Management is an Auxiliobits Finance-automation pillar; the platform targets mid-market CFOs and multi-agency groups.x

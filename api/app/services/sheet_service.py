@@ -17,6 +17,7 @@ from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
 from app.schemas.dto import LineItemCreate, LineItemUpdate, SheetCreate, SheetUpdate
 from app.services import audit_service, intake_service, notification_service
+from app.services.image_conversion import convert_heic_to_jpeg
 from app.services.state_machine import RESUBMITTABLE, assert_transition
 from app.storage import upload_receipt_blob
 from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
@@ -145,12 +146,11 @@ def delete_draft(session: Session, sheet: ExpenseSheet, actor: Principal) -> Non
     session.commit()
 
 
-# Submitted/in-review sheets the owner can pull back to DRAFT (recall, not delete).
+# Submitted sheets the owner can pull back to DRAFT (recall, not delete) — only while still
+# awaiting the manager. Once a manager has acted (finance review onward) recall is closed.
 _RECALLABLE = {
     SheetStatus.SUBMITTED,
     SheetStatus.IN_MANAGER_REVIEW,
-    SheetStatus.IN_FINANCE_REVIEW,
-    SheetStatus.FINANCE_MANUAL_REVIEW,
 }
 
 
@@ -176,11 +176,18 @@ def recall_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> Exp
         item.manager_reason = None
         item.policy_status = None
         item.policy_clause_ref = None
-    sheet.status = SheetStatus.DRAFT
-    sheet.submitted_at = None
-    sheet.finance_decision = None
-    sheet.finance_decided_by = None
-        
+        session.add(item)
+    sheet.updated_at = utcnow()
+    session.add(sheet)
+    audit_service.record(
+        session, actor=actor, action="SHEET_RECALLED", entity=f"expense_sheet:{sheet.id}",
+        before={"status": before}, after={"status": sheet.status},
+    )
+    session.commit()
+    session.refresh(sheet)
+    return sheet
+
+
 def withdraw_sheet(session: Session, sheet: ExpenseSheet, actor: Principal) -> ExpenseSheet:
     """Soft-withdraw a DRAFT (SCOPING §5.1). Unlike delete_draft this preserves the sheet and
     its line items for the audit trail, moving it to the terminal WITHDRAWN state. Owner-only,
@@ -266,6 +273,9 @@ def attach_receipt(
         receipt_extension(filename)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    # Transcode HEIC → JPEG so the receipt previews in the browser and OCRs downstream.
+    filename, data, file_type = convert_heic_to_jpeg(filename, data, file_type)
 
     att = Attachment(
         line_item_id=item.id, blob_uri="", filename=filename, file_type=file_type, size=len(data)
@@ -461,6 +471,7 @@ def _maybe_advance_after_manager(
         # Any rejection / info-request returns the whole sheet (SCOPING §6.2).
         assert_transition(sheet.status, SheetStatus.RETURNED_TO_EMPLOYEE)
         sheet.status = SheetStatus.RETURNED_TO_EMPLOYEE
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="RETURNED_TO_EMPLOYEE",
             entity=f"expense_sheet:{sheet.id}",
@@ -476,6 +487,7 @@ def _maybe_advance_after_manager(
         # All approved → advance to the finance (LLM) queue.
         assert_transition(sheet.status, SheetStatus.IN_FINANCE_REVIEW)
         sheet.status = SheetStatus.IN_FINANCE_REVIEW
+        sheet.manager_decided_by = actor.subject_id
         audit_service.record(
             session, actor=actor, action="ADVANCED_TO_FINANCE",
             entity=f"expense_sheet:{sheet.id}",

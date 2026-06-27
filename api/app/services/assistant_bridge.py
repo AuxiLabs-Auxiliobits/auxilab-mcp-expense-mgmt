@@ -18,6 +18,7 @@ transient failure preserves it so "yes" retries.
 
 from __future__ import annotations
 
+import difflib
 import re
 from typing import Any, Callable
 
@@ -116,10 +117,14 @@ _LEADING_VERBS: dict[str, Callable] = {}  # populated after skill defs (see _ini
 def _route(low: str) -> Callable:
     head = re.findall(r"[a-z']+", low)[:3]
     for tok in head:
-        if tok in ("please", "pls", "can", "could", "you", "would", "kindly", "now"):
+        if tok in ("please", "pls", "can", "could", "you", "would", "kindly", "now", "hey", "hi"):
             continue
         if tok in _LEADING_VERBS:
             return _LEADING_VERBS[tok]
+        # Typo-tolerant imperative: "aprove 1", "submt the latest", "widthdraw" → nearest verb.
+        near = difflib.get_close_matches(tok, _LEADING_VERBS.keys(), n=1, cutoff=0.82)
+        if near:
+            return _LEADING_VERBS[near[0]]
         break  # only the first meaningful word counts as the imperative verb
     # Order matters: more specific intents first (e.g. "resubmit"/"withdraw" before "submit").
     table: list[tuple[tuple[str, ...], Callable]] = [
@@ -150,6 +155,11 @@ def _route(low: str) -> Callable:
     for keys, fn in table:
         if any(k in low for k in keys):
             return fn
+    # Nothing in the exact table matched — try a fuzzy/synonym pass before giving up, so
+    # off-script phrasings ("bin that draft", "what's on my plate", "kill sheet 2") still route.
+    fn, _label, score = _fuzzy_route(low)
+    if fn is not None and score >= _FUZZY_THRESHOLD:
+        return fn
     return _skill_fallback
 
 
@@ -356,7 +366,7 @@ def _skill_withdraw(T, ApiError, msg, low, ctx, res, principal):
         return _ask_to_list(res, "withdraw", "show my expenses")
     res.pending = {"action": "withdraw", "id": target["id"], "title": target["title"]}
     res.context = _carry(ctx)
-    res.reply = f"Withdraw the draft **{target['title']}**? This removes it from your active sheets. Reply **yes** to confirm."
+    res.reply = f"Withdraw **{target['title']}**? This recalls it back to a draft so you can edit and resubmit. Reply **yes** to confirm."
     res.confidence = "medium"
 
 
@@ -530,9 +540,14 @@ def _do_create(T, ApiError, title, period, res, principal, ctx, force=False):
 
 def _skill_fallback(T, ApiError, msg, low, ctx, res, principal):
     res.confidence = "low"
+    # Near-miss nudge: if the message *almost* matched an intent, name it so the user can
+    # rephrase in one step instead of guessing what the assistant understands.
+    _fn, label, score = _fuzzy_route(low)
+    hint = f" Did you mean *“{label}”*?" if label and score >= _NEARMISS_THRESHOLD else ""
     res.reply = (
-        "I can help with expenses, approvals, receipts, policy questions, reports, and dashboards. "
-        "Try one of the suggestions below, or ask *“what do I need to do next?”*"
+        "I can help with expenses, approvals, receipts, policy questions, reports, and dashboards."
+        + hint
+        + " Try one of the suggestions below, or ask *“what do I need to do next?”*"
     )
 
 
@@ -628,9 +643,25 @@ def _extract_reason(msg: str) -> str | None:
     return m.group(1).strip().rstrip(".") if m else None
 
 
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+
+
 def _extract_period(msg: str) -> str | None:
+    # Numeric form first: 2026-06, 2026/06, 2026 06.
     m = re.search(r"\b(20\d{2})[-/ ](0[1-9]|1[0-2])\b", msg)
-    return f"{m.group(1)}-{m.group(2)}" if m else None
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    # Natural month name + year, either order: "June 2026", "2026 Jun", "sept 2026".
+    low = msg.lower()
+    nm = re.search(r"\b([a-z]{3,9})\.?\s+(20\d{2})\b", low) or re.search(r"\b(20\d{2})\s+([a-z]{3,9})\b", low)
+    if nm:
+        a, b = nm.group(1), nm.group(2)
+        name, year = (a, b) if not a.isdigit() else (b, a)
+        mon = _MONTHS.get(name[:3])
+        if mon and re.fullmatch(r"20\d{2}", year):
+            return f"{year}-{mon:02d}"
+    return None
 
 
 def _strip(s: str) -> str:
@@ -697,3 +728,70 @@ _LEADING_VERBS.update({
     "decline": _skill_reject, "submit": _skill_submit, "resubmit": _skill_resubmit,
     "withdraw": _skill_withdraw, "recall": _skill_withdraw, "create": _skill_create,
 })
+
+
+# --- offline fuzzy / synonym router ------------------------------------------------------- #
+# Used ONLY when the exact keyword table above finds nothing. It widens recall to off-script
+# phrasings and typos without an LLM: multi-word phrases match as substrings; single words match
+# any message token by edit-distance ratio. Order mirrors the table — more specific intents lead,
+# so e.g. "resubmit" wins over "submit" on a tie. (`label` is the human nudge for near-misses.)
+_FUZZY_THRESHOLD = 0.82   # route to this intent
+_NEARMISS_THRESHOLD = 0.7  # don't route, but suggest "did you mean…?"
+
+_INTENT_VOCAB: list[tuple[Callable, str, tuple[str, ...]]] = [
+    (_skill_whoami, "who am I", ("who am i", "my role", "whoami", "my profile", "my account")),
+    (_skill_logout, "log out", ("log out", "logout", "sign out", "log off", "end session")),
+    (_skill_next, "what do I need to do next?", (
+        "what next", "what should i do", "next step", "to do", "todo", "outstanding",
+        "on my plate", "left to do", "anything pending", "what's left")),
+    (_skill_policy, "ask a policy question", (
+        "policy", "per meal", "meal cap", "hotel cap", "limit", "allowed", "receipt rule",
+        "deadline", "reimburse", "reimbursement", "rule", "claimable", "cap")),
+    (_skill_cross_user, "(another user's expenses — not allowed)", (
+        "someone else", "another user", "other people", "other users", "their expenses",
+        "everyone", "everybody")),
+    (_skill_pending, "show pending approvals", (
+        "pending approvals", "to approve", "review queue", "approvals", "awaiting approval",
+        "needs approval", "approval queue")),
+    (_skill_finance_queue, "show the finance queue", (
+        "finance queue", "manual review", "routed sheets", "finance review")),
+    (_skill_spend_category, "spend by category", ("spend by category", "category spend", "by category", "categories")),
+    (_skill_kpis, "show finance KPIs", ("kpi", "auto approval", "compliance rate", "interventions")),
+    (_skill_dashboard, "show the dashboard", ("dashboard", "overview", "summary", "total spend", "spending")),
+    (_skill_users, "list users", ("list users", "all users", "user list", "accounts", "who has access", "team members")),
+    (_skill_health, "check system health", ("system health", "health check", "services up", "everything up")),
+    (_skill_activity, "show my activity", ("my activity", "my history", "audit trail", "what did i do", "recent activity")),
+    (_skill_resubmit, "resubmit a sheet", ("resubmit", "submit again", "send back in")),
+    (_skill_withdraw, "withdraw a sheet", ("withdraw", "recall", "pull back", "take back", "unsubmit")),
+    (_skill_approve, "approve a sheet", ("approve", "accept", "sign off", "okay this")),
+    (_skill_reject, "reject / return a sheet", ("reject", "return", "send back", "decline", "deny", "bounce")),
+    (_skill_submit, "submit a sheet", ("submit", "send for review", "file it", "turn in")),
+    (_skill_create, "create a new expense sheet", (
+        "create", "new expense", "start an expense", "new sheet", "new draft", "add a sheet",
+        "open a draft", "make a sheet", "begin a claim", "start a claim")),
+    (_skill_my_expenses, "show my expenses", (
+        "my expenses", "my sheets", "my drafts", "status of my", "my claims", "my reports")),
+]
+
+
+def _fuzzy_route(low: str) -> tuple[Callable | None, str | None, float]:
+    """Best (skill, label, score) for a free-form message. Multi-word phrases match as
+    substrings (score 1.0); single words match the closest message token by ratio. Tokens
+    shorter than 3 chars are ignored so fillers like "ok"/"go" never trip a match."""
+    tokens = [t for t in re.findall(r"[a-z']+", low) if len(t) >= 3]
+    best: tuple[Callable | None, str | None, float] = (None, None, 0.0)
+    for fn, label, vocab in _INTENT_VOCAB:
+        score = 0.0
+        for phrase in vocab:
+            if " " in phrase:
+                if phrase in low:
+                    score = 1.0
+                    break
+            else:
+                for tok in tokens:
+                    r = difflib.SequenceMatcher(None, tok, phrase).ratio()
+                    if r > score:
+                        score = r
+        if score > best[2]:
+            best = (fn, label, score)
+    return best

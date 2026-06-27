@@ -162,7 +162,7 @@ class SheetUpdate(BaseModel):
 class AttachmentOut(BaseModel):
     id: str
     line_item_id: str
-    file_name: str | None = None  # original name, derived from the blob path
+    filename: str | None = None  # original upload name (matches the Attachment model attr)
     file_type: str
     size: int
     blob_uri: str
@@ -172,6 +172,27 @@ class AttachmentOut(BaseModel):
     uploaded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ReceiptUploadOut(BaseModel):
+    """An unassigned receipt in the employee's library (My Receipts), not yet on a line item."""
+
+    id: str
+    filename: str | None = None
+    file_type: str
+    size: int
+    scan_status: str
+    ocr_status: str | None = None
+    uploaded_at: datetime | None = None
+    download_url: str | None = None  # API path to fetch the bytes (auth required)
+
+    model_config = {"from_attributes": True}
+
+
+class ReceiptAttachFromLibrary(BaseModel):
+    """Attach an existing library receipt to a line item (body for the attach route)."""
+
+    receipt_id: str
 
 
 class LineItemOut(BaseModel):
@@ -219,6 +240,15 @@ class SheetOut(BaseModel):
     period: str | None
     finance_decision: FinanceDecision | None
     finance_decided_by: str | None = None  # resolved to the decider's display name (never an id)
+    manager_decided_by: str | None = None  # raw user id of the deciding manager (for "my reviews")
+
+    # LLM finance-approver outcome (SCOPING §6.3) — drives the Finance review drawer's
+    # "AI Decision Support" panel. Only populated once the approver has decided.
+    policy_version_used: str | None = None  # policy version the approver ran against
+    llm_confidence: float | None = None  # approver confidence (0..1)
+    route_reason: str | None = None  # why it was routed to a human (None if auto-decided)
+    route_reason_detail: str | None = None  # human-readable detail / cited clause text
+
     line_items: list[LineItemOut] = Field(default_factory=list)
 
     # Computed totals. `total` is the plain sum of line-item amounts; it is only meaningful
@@ -342,6 +372,7 @@ class ActivityPageOut(BaseModel):
 class NotificationOut(BaseModel):
     id: str
     kind: str  # info | success | warning | error
+    icon: str = "notifications"
     title: str
     body: str = ""
     href: str | None = None
@@ -593,14 +624,28 @@ class SpendByCategoryOut(BaseModel):
 
 class FinanceKpisOut(BaseModel):
     """Real, deterministically-computed finance KPIs (SCOPING §4). AI-quality metrics that
-    require ground-truth labels (accuracy, false-positive rate, SLA) are intentionally omitted
-    here — the client fills those from its baseline until a metrics pipeline emits them."""
+    require ground-truth labels (approval accuracy, false-positive rate) are still omitted
+    here — they need a human-labelling pipeline, so the client fills those from its baseline.
+    Everything else below is now derived from the data we actually have (timestamps,
+    statuses, cited clauses)."""
 
     auto_approval_rate: float  # % of finance-reached sheets the LLM auto-approved
     manual_interventions: int  # sheets currently routed to a human
     policy_citations: int  # decisions that cited at least one policy clause
     policy_compliance_rate: float  # % of line items with no rejection / policy failure
     finance_reached: int  # denominator: sheets that reached a finance outcome
+
+    # Period-over-period movement, derived from the per-period auto-approval trend.
+    auto_approval_delta: float | None = None  # pts change vs the previous period
+    manual_interventions_delta: int | None = None  # change in routed sheets vs previous period
+
+    # Operational metrics from sheet timestamps / routing (no ground truth needed).
+    escalation_rate: float | None = None  # % of finance-reached sheets that went to a human
+    sla_compliance: float | None = None  # % resolved within the SLA target window
+    avg_resolution_hours: float | None = None  # mean submit→finance-decision time, hours
+
+    top_clause: str | None = None  # most-cited policy clause across decisions
+    trend: list[float] | None = None  # auto-approval rate per period (oldest→newest)
 
 
 # --- Policy Assistant (agency RAG over Azure Foundry / offline) ------------ #
@@ -625,17 +670,3 @@ class AssistantAnswerOut(BaseModel):
     policy_version: str
     routed_to_human: bool = False
     model_version: str = "offline"
-
-
-# --- Notifications --------------------------------------------------------- #
-class NotificationOut(BaseModel):
-    id: str
-    kind: str
-    icon: str
-    title: str
-    body: str
-    href: str | None
-    read: bool
-    timestamp: datetime
-
-    model_config = {"from_attributes": True}

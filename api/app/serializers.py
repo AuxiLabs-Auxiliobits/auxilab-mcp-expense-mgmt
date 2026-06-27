@@ -6,6 +6,7 @@ import json
 from decimal import Decimal
 from urllib.parse import unquote, urlparse
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models.agency import Agency
@@ -14,7 +15,14 @@ from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
 from app.models.user import User
-from app.schemas.dto import AttachmentOut, DecisionOut, LineItemOut, PolicyFlags, SheetOut
+from app.schemas.dto import (
+    AgencyOut,
+    AttachmentOut,
+    DecisionOut,
+    LineItemOut,
+    PolicyFlags,
+    SheetOut,
+)
 from app.services.state_machine import RESUBMITTABLE
 from expense_core.policy import BaselinePolicy
 from expense_core.schemas.enums import PolicyCheckStatus, SheetStatus
@@ -35,7 +43,7 @@ def _attachment_out(sheet_id: str, line_item_id: str, a: Attachment) -> Attachme
     return AttachmentOut(
         id=a.id,
         line_item_id=a.line_item_id,
-        file_name=name or "receipt",
+        filename=name or "receipt",
         file_type=a.file_type,
         size=a.size,
         blob_uri=a.blob_uri,
