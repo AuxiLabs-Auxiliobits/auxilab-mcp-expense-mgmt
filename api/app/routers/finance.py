@@ -18,7 +18,8 @@ from app.schemas.dto import (
     LlmDecisionRequest,
     SheetOut,
 )
-from app.serializers import sheet_to_out
+from app.pagination import PageParams
+from app.serializers import sheet_to_out, sheets_to_out
 from app.services import finance_service, reports_service, sheet_service
 from expense_core.schemas.enums import SheetStatus
 
@@ -34,14 +35,19 @@ router = APIRouter(
 
 @router.get("/queue", response_model=list[SheetOut], summary="Manual-review queue (LLM-routed sheets)")
 async def manual_review_queue(
+    page: PageParams = Depends(),
     principal: Principal = Depends(require(Capability.FINANCE_DECISION)),
     session: Session = Depends(get_session),
 ) -> list[SheetOut]:
-    """Sheets the LLM routed for manual intervention (SCOPING §6.3)."""
+    """Sheets the LLM routed for manual intervention (SCOPING §6.3). Paginated + bounded."""
     rows = session.exec(
-        select(ExpenseSheet).where(ExpenseSheet.status == SheetStatus.FINANCE_MANUAL_REVIEW)
+        select(ExpenseSheet)
+        .where(ExpenseSheet.status == SheetStatus.FINANCE_MANUAL_REVIEW)
+        .order_by(ExpenseSheet.updated_at.desc())  # type: ignore[attr-defined]
+        .limit(page.limit)
+        .offset(page.offset)
     ).all()
-    return [sheet_to_out(session, s) for s in rows]
+    return sheets_to_out(session, list(rows))
 
 
 @router.get(
@@ -50,16 +56,19 @@ async def manual_review_queue(
     summary="All expense sheets (org-wide for Finance/Admin; own agency for Manager)",
 )
 async def all_sheets(
+    page: PageParams = Depends(),
     principal: Principal = Depends(require(Capability.VIEW_SHEETS)),
     session: Session = Depends(get_session),
 ) -> list[SheetOut]:
     """Backs the Finance/Admin 'Expense Sheets' screen. Finance/Admin see every sheet; a
-    Manager is scoped to their own agency (SCOPING §3.2)."""
+    Manager is scoped to their own agency (SCOPING §3.2). Paginated + bounded."""
     stmt = select(ExpenseSheet)
     if principal.scope is Scope.AGENCY:
         stmt = stmt.where(ExpenseSheet.agency_id == principal.agency_id)
-    rows = session.exec(stmt.order_by(ExpenseSheet.updated_at.desc())).all()
-    return [sheet_to_out(session, s) for s in rows]
+    rows = session.exec(
+        stmt.order_by(ExpenseSheet.updated_at.desc()).limit(page.limit).offset(page.offset)
+    ).all()
+    return sheets_to_out(session, list(rows))
 
 
 @router.get("/kpis", response_model=FinanceKpisOut, summary="Finance dashboard KPIs")

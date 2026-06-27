@@ -9,7 +9,8 @@ declare module "next-auth" {
     accessToken?: string;
   }
   interface Session {
-    accessToken?: string;
+    // Note: NO accessToken here by design (S-H2) — the token lives only on the JWT (below),
+    // read server-side by the BFF proxy. The client session never carries the bearer token.
     error?: string;
     user: { role?: Role; agencyId?: string; agencyName?: string } & DefaultSession["user"];
   }

@@ -20,7 +20,7 @@ from app.services import audit_service, intake_service, notification_service
 from app.services.image_conversion import convert_heic_to_jpeg
 from app.services.state_machine import RESUBMITTABLE, assert_transition
 from app.storage import upload_receipt_blob
-from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
+from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension, verify_receipt_magic
 from expense_core.schemas.enums import LineItemStatus, SheetStatus
 
 from expense_core.policy import BaselinePolicy  # isort: skip
@@ -270,7 +270,8 @@ def attach_receipt(
     if len(data) > MAX_RECEIPT_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="file exceeds 25 MB")
     try:
-        receipt_extension(filename)
+        ext = receipt_extension(filename)
+        verify_receipt_magic(ext, data)  # S-M2: content must match the claimed extension
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 

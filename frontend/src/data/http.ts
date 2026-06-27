@@ -13,11 +13,10 @@
  *   • a typed `ApiError` with a user-friendly message + HTTP status,
  * which the global QueryClient error handler turns into a toast.
  */
-import { getSession } from "next-auth/react";
-
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-export const USE_BACKEND =
-  !!API_BASE && process.env.NEXT_PUBLIC_USE_BACKEND === "true";
+// Authenticated requests go through the same-origin BFF proxy (src/app/api/bff/[...path]),
+// which attaches the bearer token server-side. The browser never holds the token (S-H2).
+export const BFF_BASE = "/api/bff";
+export const USE_BACKEND = process.env.NEXT_PUBLIC_USE_BACKEND === "true";
 
 /** Default per-request timeout. Long enough for cold starts, short enough to fail fast. */
 export const REQUEST_TIMEOUT_MS = 30_000;
@@ -64,16 +63,6 @@ function extractDetail(body: unknown): string | undefined {
   return undefined;
 }
 
-async function authHeader(): Promise<Record<string, string>> {
-  try {
-    const session = await getSession();
-    const token = session?.accessToken;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Combine an external AbortSignal (from React Query) with an internal timeout so
  * the request is cancelled when EITHER fires. Returns the signal + a cleanup fn.
@@ -104,7 +93,7 @@ async function send<T>(
 ): Promise<T> {
   const { signal: composed, done } = withTimeout(signal);
   try {
-    const headers: Record<string, string> = { ...(await authHeader()) };
+    const headers: Record<string, string> = {};
     let payload: BodyInit | undefined;
     if (isForm) {
       payload = body as FormData;
@@ -114,7 +103,7 @@ async function send<T>(
     }
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload, signal: composed });
+      res = await fetch(`${BFF_BASE}${path}`, { method, headers, body: payload, signal: composed });
     } catch (e) {
       // fetch only rejects on network failure / abort — map to a typed error.
       if (composed.aborted && (composed.reason as Error)?.name === "TimeoutError") {
@@ -154,10 +143,9 @@ export async function apiBlob(
 ): Promise<{ blob: Blob; filename: string; contentType: string }> {
   const { signal: composed, done } = withTimeout(signal);
   try {
-    const headers = { ...(await authHeader()) };
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}${path}`, { headers, signal: composed });
+      res = await fetch(`${BFF_BASE}${path}`, { signal: composed });
     } catch {
       if (composed.aborted && (composed.reason as Error)?.name === "TimeoutError") {
         throw new ApiError(friendlyMessage(408), 408, "timeout");

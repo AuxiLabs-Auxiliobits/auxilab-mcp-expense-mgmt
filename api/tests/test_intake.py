@@ -122,19 +122,14 @@ def test_scan_404_without_receipt(client):
 def test_scan_text_receipt_offline(client):
     emp = login(client, "employee@demo.local")
     sheet, li = _draft_with_item(client, emp)
-    receipt = b"Merchant: Cafe Bistro\nTotal: 42.00\nTax: 2.00\nLatte 40.00\n"
+    # A real %PDF header (so it passes magic-byte validation, S-M2) followed by parseable text
+    # that the offline scanner decodes as UTF-8 and extracts fields from.
+    receipt = b"%PDF-1.4\nMerchant: Cafe Bistro\nTotal: 42.00\nTax: 2.00\nLatte 40.00\n"
     up = client.post(
         f"/sheets/{sheet['id']}/line-items/{li}/receipt",
-        files={"file": ("receipt.txt", receipt, "text/plain")},
+        files={"file": ("receipt.pdf", receipt, "application/pdf")},
         headers=auth(emp),
     )
-    # .txt isn't an allowed receipt type, so attach a .pdf-named text blob instead.
-    if up.status_code != 201:
-        up = client.post(
-            f"/sheets/{sheet['id']}/line-items/{li}/receipt",
-            files={"file": ("receipt.pdf", receipt, "application/pdf")},
-            headers=auth(emp),
-        )
     assert up.status_code == 201, up.text
 
     r = client.post(f"/sheets/{sheet['id']}/line-items/{li}/scan", headers=auth(emp))

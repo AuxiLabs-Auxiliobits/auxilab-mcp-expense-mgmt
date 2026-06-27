@@ -52,51 +52,31 @@ def _attachment_out(sheet_id: str, line_item_id: str, a: Attachment) -> Attachme
     )
 
 
-def sheet_to_out(
-    session: Session, sheet: ExpenseSheet, *, policy: BaselinePolicy | None = None
+def _assemble_sheet(
+    sheet: ExpenseSheet,
+    items: list[LineItem],
+    atts_by_item: dict[str, list[Attachment]],
+    name_of: dict[str, str],
+    agency_of: dict[str, str],
+    policy: BaselinePolicy | None,
 ) -> SheetOut:
-    """Serialize a sheet to its read DTO, enriched for the sheet-detail UI.
-
-    Pass `policy` to populate the draft-time `policy_flags` preview; without it the flags stay
-    at zero (everything else is still computed). Names, totals, receipt and submit-gating
-    fields are resolved here so the client doesn't re-implement them."""
-    items = list(session.exec(select(LineItem).where(LineItem.sheet_id == sheet.id)).all())
-    # Fetch the attachment rows once and group by line item (real size/name, not synthetic).
-    att_rows = list(
-        session.exec(
-            select(Attachment).where(
-                Attachment.line_item_id.in_([i.id for i in items] or [""])  # type: ignore[attr-defined]
-            )
-        ).all()
-    )
-    by_item: dict[str, list[Attachment]] = {}
-    for a in att_rows:
-        by_item.setdefault(a.line_item_id, []).append(a)
-    counts = {iid: len(atts) for iid, atts in by_item.items()}
-
-    out = SheetOut.model_validate(sheet)  # pulls id/status/version/period/timestamps directly
+    """Build a SheetOut from already-resolved data (no DB access). Shared by the single-sheet
+    and batched-list serializers so they can't diverge."""
+    out = SheetOut.model_validate(sheet)  # id/status/version/period/timestamps
     line_outs: list[LineItemOut] = []
     for i in items:
         li = LineItemOut.model_validate(i)
-        atts = by_item.get(i.id, [])
+        atts = atts_by_item.get(i.id, [])
         li.receipt_count = len(atts)
         li.attachments = [_attachment_out(sheet.id, i.id, a) for a in atts]
         line_outs.append(li)
     out.line_items = line_outs
 
-    # Display names for the FK columns the UI shows (owner + agency).
-    employee = session.get(User, sheet.employee_id)
-    agency = session.get(Agency, sheet.agency_id)
-    out.employee_name = employee.name if employee else None
-    out.agency_name = agency.name if agency else None
-
-    # Resolve the finance decider's id → display name so the UI never shows a raw user id.
+    out.employee_name = name_of.get(sheet.employee_id)
+    out.agency_name = agency_of.get(sheet.agency_id) if sheet.agency_id else None
     if sheet.finance_decided_by:
-        decider = session.get(User, sheet.finance_decided_by)
-        out.finance_decided_by = decider.name if decider else "Finance"
+        out.finance_decided_by = name_of.get(sheet.finance_decided_by, "Finance")
 
-    # Totals. Keep a per-currency breakdown (always correct) plus a flat total/currency for
-    # the single-currency common case the summary panel renders.
     totals: dict[str, Decimal] = {}
     for i in items:
         totals[i.currency] = totals.get(i.currency, Decimal("0")) + i.amount
@@ -107,10 +87,9 @@ def sheet_to_out(
     elif len(totals) == 1:
         out.currency = next(iter(totals))
     else:
-        out.currency = None  # mixed currencies — client should read totals_by_currency
+        out.currency = None  # mixed currencies — client reads totals_by_currency
 
-    # Receipt + submit gating (mirrors sheet_service.submit_sheet's pre-checks).
-    out.missing_receipts = sum(1 for i in items if counts.get(i.id, 0) == 0)
+    out.missing_receipts = sum(1 for i in items if not atts_by_item.get(i.id))
     blockers: list[str] = []
     if sheet.status not in _SUBMITTABLE_STATES:
         blockers.append(f"Sheet cannot be submitted from status {sheet.status}.")
@@ -123,11 +102,80 @@ def sheet_to_out(
     out.submit_blockers = blockers
     out.can_submit = not blockers
 
-    # Policy preview (non-mutating dry run; authoritative intake runs at submission).
     if policy is not None and items:
         out.policy_flags = _policy_flags(items, policy)
-
     return out
+
+
+def sheet_to_out(
+    session: Session, sheet: ExpenseSheet, *, policy: BaselinePolicy | None = None
+) -> SheetOut:
+    """Serialize ONE sheet (the detail endpoint). For lists use `sheets_to_out` to avoid N+1."""
+    items = list(session.exec(select(LineItem).where(LineItem.sheet_id == sheet.id)).all())
+    att_rows = session.exec(
+        select(Attachment).where(
+            Attachment.line_item_id.in_([i.id for i in items] or [""])  # type: ignore[attr-defined]
+        )
+    ).all()
+    by_item: dict[str, list[Attachment]] = {}
+    for a in att_rows:
+        by_item.setdefault(a.line_item_id, []).append(a)
+
+    name_of: dict[str, str] = {}
+    employee = session.get(User, sheet.employee_id)
+    if employee:
+        name_of[sheet.employee_id] = employee.name
+    if sheet.finance_decided_by:
+        decider = session.get(User, sheet.finance_decided_by)
+        if decider:
+            name_of[sheet.finance_decided_by] = decider.name
+    agency_of: dict[str, str] = {}
+    if sheet.agency_id:
+        agency = session.get(Agency, sheet.agency_id)
+        if agency:
+            agency_of[sheet.agency_id] = agency.name
+    return _assemble_sheet(sheet, items, by_item, name_of, agency_of, policy)
+
+
+def sheets_to_out(
+    session: Session, sheets: list[ExpenseSheet], *, policy: BaselinePolicy | None = None
+) -> list[SheetOut]:
+    """Batched list serializer — resolves line items, attachments, and FK display names for
+    the WHOLE result set in a fixed handful of queries instead of ~2N (perf: P-H1)."""
+    if not sheets:
+        return []
+    sheet_ids = [s.id for s in sheets]
+    all_items = list(
+        session.exec(select(LineItem).where(LineItem.sheet_id.in_(sheet_ids))).all()  # type: ignore[attr-defined]
+    )
+    items_by_sheet: dict[str, list[LineItem]] = {}
+    for i in all_items:
+        items_by_sheet.setdefault(i.sheet_id, []).append(i)
+
+    item_ids = [i.id for i in all_items] or [""]
+    att_rows = list(
+        session.exec(select(Attachment).where(Attachment.line_item_id.in_(item_ids))).all()  # type: ignore[attr-defined]
+    )
+    atts_by_item: dict[str, list[Attachment]] = {}
+    for a in att_rows:
+        atts_by_item.setdefault(a.line_item_id, []).append(a)
+
+    user_ids = {s.employee_id for s in sheets} | {
+        s.finance_decided_by for s in sheets if s.finance_decided_by
+    }
+    agency_ids = {s.agency_id for s in sheets if s.agency_id}
+    name_of = {
+        u.id: u.name
+        for u in session.exec(select(User).where(User.id.in_(user_ids or [""]))).all()  # type: ignore[attr-defined]
+    }
+    agency_of = {
+        a.id: a.name
+        for a in session.exec(select(Agency).where(Agency.id.in_(agency_ids or [""]))).all()  # type: ignore[attr-defined]
+    }
+    return [
+        _assemble_sheet(s, items_by_sheet.get(s.id, []), atts_by_item, name_of, agency_of, policy)
+        for s in sheets
+    ]
 
 
 def _policy_flags(items: list[LineItem], policy: BaselinePolicy) -> PolicyFlags:

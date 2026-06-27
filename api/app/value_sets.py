@@ -73,8 +73,7 @@ def validate_period(period: str) -> str:
 
 
 def receipt_extension(filename: str) -> str:
-    """Return the lower-cased extension and assert it is allowed (rejects spoof-free name only;
-    MIME/magic-byte checks happen in the ingestion worker)."""
+    """Return the lower-cased extension and assert it is allowed."""
     ext = PurePosixPath(filename).suffix.lower()
     if ext not in ALLOWED_RECEIPT_EXTENSIONS:
         raise ValueError(
@@ -82,3 +81,28 @@ def receipt_extension(filename: str) -> str:
             f"{sorted(ALLOWED_RECEIPT_EXTENSIONS)}"
         )
     return ext
+
+
+# Leading-byte signatures per type we can fingerprint. Types we don't (heic/webp variants) are
+# normalized at storage (convert_heic_to_jpeg), so they pass through and re-check once jpeg.
+_MAGIC: dict[str, list[bytes]] = {
+    ".pdf": [b"%PDF"],
+    ".png": [b"\x89PNG\r\n\x1a\n"],
+    ".jpg": [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".gif": [b"GIF87a", b"GIF89a"],
+}
+
+
+def verify_receipt_magic(ext: str, data: bytes) -> None:
+    """Reject a spoofed extension by confirming the file's leading bytes match the claimed type
+    (security: S-M2). A `.pdf`-named HTML/executable is refused before storage. Empty files are
+    rejected; un-fingerprinted (but allowed) types pass through."""
+    if not data:
+        raise ValueError("empty file")
+    expected = _MAGIC.get(ext)
+    if expected is None:
+        return
+    head = data[:16]
+    if not any(head.startswith(sig) for sig in expected):
+        raise ValueError(f"file content does not match its '{ext}' extension")

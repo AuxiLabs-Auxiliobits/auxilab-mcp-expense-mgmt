@@ -21,7 +21,7 @@ from app.principal import Principal
 from app.services import audit_service, sheet_service
 from app.services.image_conversion import convert_heic_to_jpeg
 from app.storage import delete_receipt_blob, read_receipt_blob, upload_receipt_blob
-from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension
+from app.value_sets import MAX_RECEIPT_BYTES, receipt_extension, verify_receipt_magic
 
 
 def list_for(session: Session, actor: Principal) -> list[ReceiptUpload]:
@@ -52,7 +52,8 @@ def create(
     if len(data) > MAX_RECEIPT_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="file exceeds 25 MB")
     try:
-        receipt_extension(filename)
+        ext = receipt_extension(filename)
+        verify_receipt_magic(ext, data)  # S-M2: content must match the claimed extension
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 

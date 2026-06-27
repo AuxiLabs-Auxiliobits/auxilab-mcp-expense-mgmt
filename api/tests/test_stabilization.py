@@ -135,6 +135,50 @@ def test_create_user_accepts_strong_password(client):
     assert r.status_code == 201, r.text
 
 
+# --- S-M2: receipt upload rejects a spoofed extension ---------------------- #
+def test_receipt_upload_rejects_spoofed_pdf(client):
+    emp = login(client, "employee@demo.local")
+    bad = client.post(
+        "/receipts",
+        files={"file": ("evil.pdf", b"<html>not a pdf at all</html>", "application/pdf")},
+        headers=auth(emp),
+    )
+    assert bad.status_code == 422, bad.text
+    good = client.post(
+        "/receipts",
+        files={"file": ("real.pdf", b"%PDF-1.5 minimal", "application/pdf")},
+        headers=auth(emp),
+    )
+    assert good.status_code in (200, 201), good.text
+
+
+# --- P-H1: the sheet-list serializer is batched (no N+1) ------------------- #
+def test_sheet_list_query_count_is_bounded(client):
+    """GET /sheets must issue a fixed handful of queries regardless of sheet count — under the
+    old per-sheet serializer this would be ~2N and fail as the list grows."""
+    from sqlalchemy import event
+
+    from app.db import engine
+
+    emp = login(client, "employee@demo.local")
+    for _ in range(6):  # enough that an N+1 (~2 per sheet) would blow the bound
+        _submit_unique(client, emp)
+
+    count = {"n": 0}
+
+    def _on_exec(conn, cursor, statement, params, context, executemany):
+        count["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _on_exec)
+    try:
+        r = client.get("/sheets", headers=auth(emp))
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_exec)
+
+    assert r.status_code == 200 and len(r.json()) >= 6
+    assert count["n"] <= 12, f"expected bounded (batched) query count, got {count['n']} — N+1?"
+
+
 # --- S-C1: JWT secret guard fails fast outside dev ------------------------- #
 def test_default_jwt_secret_rejected_in_prod():
     with pytest.raises(Exception):
