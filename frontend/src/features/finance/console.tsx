@@ -151,12 +151,6 @@ export function FinanceConsole() {
 
   const all = useMemo(() => routed ?? [], [routed]);
 
-  // Triage signals.
-  const breaches = all.filter((s) => agingLevel(s.submittedAt).level === "escalation").length;
-  const warnings = all.filter((s) => agingLevel(s.submittedAt).level === "warning").length;
-  const oldestHours = all.reduce((m, s) => Math.max(m, agingLevel(s.submittedAt).hours), 0);
-  const oldestLabel = oldestHours >= 24 ? `${Math.floor(oldestHours / 24)}d` : `${oldestHours}h`;
-
   const counts = useMemo(
     () =>
       Object.fromEntries(
@@ -348,7 +342,7 @@ export function FinanceConsole() {
       </Card>
 
       {/* AI Approver performance — read-only analytics (demoted) */}
-      <Card className="mt-3 overflow-hidden">
+      <Card className="mt-6 overflow-hidden">
         <div className="flex items-center justify-between border-b border-outline-variant px-4 py-2">
           <h2 className="flex items-center gap-1.5 text-label-md font-semibold uppercase tracking-wider text-on-surface-variant">
             <Icon name="smart_toy" className="text-[16px] text-secondary" /> AI Approver performance · 30 days

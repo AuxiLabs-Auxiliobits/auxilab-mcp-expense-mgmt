@@ -95,7 +95,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
-      <SessionProvider>
+      {/* Refetch the session periodically + on focus so the access token is refreshed
+          before it expires — an active user's API calls never 401, so they stay signed in. */}
+      <SessionProvider refetchInterval={5 * 60} refetchOnWindowFocus>
         <QueryClientProvider client={queryClient}>
           <GlobalProgress />
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>

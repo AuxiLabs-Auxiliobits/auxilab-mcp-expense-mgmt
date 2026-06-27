@@ -1,0 +1,650 @@
+ ⨯ ./src/data/hooks.ts
+Error:   [31mx[0m Merge conflict marker encountered.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:336:1]
+ [2m333[0m |   });
+ [2m334[0m | }
+ [2m335[0m | 
+ [2m336[0m | <<<<<<< HEAD
+     : [35;1m^^^^^^^[0m
+ [2m337[0m | export function useMarkOneNotificationRead(role: Role) {
+ [2m338[0m |   const qc = useQueryClient();
+ [2m338[0m |   return useMutation({
+     `----
+  [31mx[0m Merge conflict marker encountered.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:358:1]
+ [2m355[0m |   return useMutation({
+ [2m356[0m |     mutationFn: (id: string) => api.deleteNotification(id),
+ [2m357[0m |     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+ [2m358[0m | =======
+     : [35;1m^^^^^^^[0m
+ [2m359[0m | // ── Settings / preferences ──
+ [2m360[0m | export const usePreferences = () =>
+ [2m360[0m |   useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });
+     `----
+  [31mx[0m Unexpected token `const`. Expected ... , *,  (, [, :, , ?, =, an identifier, public, protected, private, readonly, <.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:360:1]
+ [2m357[0m |     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+ [2m358[0m | =======
+ [2m359[0m | // ── Settings / preferences ──
+ [2m360[0m | export const usePreferences = () =>
+     : [35;1m       ^^^^^[0m
+ [2m361[0m |   useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });
+ [2m362[0m | 
+ [2m362[0m | export function useUpdatePreferences() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/data/hooks.ts
+./src/app/(portal)/employee/page.tsx
+ ⨯ ./src/data/hooks.ts
+Error:   [31mx[0m Merge conflict marker encountered.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:336:1]
+ [2m333[0m |   });
+ [2m334[0m | }
+ [2m335[0m | 
+ [2m336[0m | <<<<<<< HEAD
+     : [35;1m^^^^^^^[0m
+ [2m337[0m | export function useMarkOneNotificationRead(role: Role) {
+ [2m338[0m |   const qc = useQueryClient();
+ [2m338[0m |   return useMutation({
+     `----
+  [31mx[0m Merge conflict marker encountered.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:358:1]
+ [2m355[0m |   return useMutation({
+ [2m356[0m |     mutationFn: (id: string) => api.deleteNotification(id),
+ [2m357[0m |     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+ [2m358[0m | =======
+     : [35;1m^^^^^^^[0m
+ [2m359[0m | // ── Settings / preferences ──
+ [2m360[0m | export const usePreferences = () =>
+ [2m360[0m |   useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });
+     `----
+  [31mx[0m Unexpected token `const`. Expected ... , *,  (, [, :, , ?, =, an identifier, public, protected, private, readonly, <.
+     ,-[[36;1;4mC:\Users\Ankit\Documents\Expense Management MCP Server\frontend\src\data\hooks.ts[0m:360:1]
+ [2m357[0m |     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+ [2m358[0m | =======
+ [2m359[0m | // ── Settings / preferences ──
+ [2m360[0m | export const usePreferences = () =>
+     : [35;1m       ^^^^^[0m
+ [2m361[0m |   useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });
+ [2m362[0m | 
+ [2m362[0m | export function useUpdatePreferences() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/data/hooks.ts
+./src/app/(portal)/employee/page.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+ ⚠ ./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useMarkOneNotificationRead' is not exported from '@/data/hooks' (imported as 'useMarkOneNotificationRead').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useArchiveNotification' is not exported from '@/data/hooks' (imported as 'useArchiveNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx
+
+./src/components/layout/notification-bell.tsx
+Attempted import error: 'useDeleteNotification' is not exported from '@/data/hooks' (imported as 'useDeleteNotification').
+
+Import trace for requested module:
+./src/components/layout/notification-bell.tsx
+./src/components/layout/top-nav.tsx
+./src/components/layout/portal-shell.tsx

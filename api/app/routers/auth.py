@@ -7,15 +7,27 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.auth.base import AuthError, AuthProvider
 from app.auth.dependencies import current_principal, get_auth_provider
+from app.config import settings
 from app.db import get_session
+from app.email.sender import get_email_sender
 from app.models.agency import Agency
 from app.models.user import User
 from app.principal import Principal
-from app.schemas.dto import LoginRequest, MeOut, TokenResponse
+from app.schemas.dto import (
+    AuthMethodOut,
+    ForgotPasswordRequest,
+    LoginMethodsOut,
+    LoginRequest,
+    MeOut,
+    MessageResponse,
+    ResetPasswordRequest,
+    TokenResponse,
+)
+from app.services import password_reset_service as prs
 
 router = APIRouter(
     prefix="/auth",
@@ -55,6 +67,55 @@ async def token(
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
     return TokenResponse(access_token=access)
+
+
+@router.get("/login-methods", response_model=LoginMethodsOut, summary="Which sign-in methods are enabled")
+async def login_methods() -> LoginMethodsOut:
+    """Public: tells the login UI whether local password login and/or SSO are enabled, and
+    where SSO users reset their password. Global config — never leaks whether an email exists."""
+    m = prs.login_methods(settings)
+    return LoginMethodsOut(password=m.password, sso=m.sso, sso_label=m.sso_label, sso_reset_url=m.sso_reset_url)
+
+
+@router.get("/auth-method", response_model=AuthMethodOut, summary="Login route for a given email (hybrid)")
+async def auth_method(email: str, session: Session = Depends(get_session)) -> AuthMethodOut:
+    """The hybrid login form calls this when the user submits: it returns "azure" for accounts
+    that must sign in via Microsoft SSO, else "password" (local check). Unknown / manual / empty
+    all resolve to "password", so this never reveals whether an arbitrary email exists — only
+    whether a known account is Azure-backed."""
+    if settings.auth_provider != "hybrid":
+        # Single-mode deployments don't route per-email; mirror the global method.
+        m = prs.login_methods(settings)
+        return AuthMethodOut(method="azure" if m.sso and not m.password else "password")
+    user = session.exec(select(User).where(User.email == email.strip().lower())).first()
+    is_azure = user is not None and (user.source or "").lower() == "azure"
+    return AuthMethodOut(method="azure" if is_azure else "password")
+
+
+@router.post("/forgot-password", response_model=MessageResponse, summary="Request a local password reset")
+async def forgot_password(
+    body: ForgotPasswordRequest, session: Session = Depends(get_session)
+) -> MessageResponse:
+    """Email a single-use, time-limited reset link for a local account. Always returns the
+    same generic message (no user enumeration); SSO-only accounts get no link."""
+    prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    return MessageResponse(
+        message="If an account exists for that email, a password-reset link is on its way."
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse, summary="Set a new password from a reset token")
+async def reset_password(
+    body: ResetPasswordRequest, session: Session = Depends(get_session)
+) -> MessageResponse:
+    """Consume a reset token and set a new password (single-use; complexity enforced)."""
+    try:
+        prs.reset_password(session, settings, body.token, body.new_password)
+    except prs.PasswordPolicyError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    except prs.ResetError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    return MessageResponse(message="Your password has been reset. You can now sign in.")
 
 
 @router.get("/me", response_model=MeOut, summary="Current authenticated principal")

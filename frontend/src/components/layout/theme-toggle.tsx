@@ -3,49 +3,32 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Icon } from "@/components/ui/icon";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const OPTIONS = [
-  { key: "light", label: "Light", icon: "light_mode" },
-  { key: "dark", label: "Dark", icon: "dark_mode" },
-] as const;
-
-const ICON: Record<string, string> = {
-  light: "light_mode",
-  dark: "dark_mode",
-};
-
+/**
+ * One-click light/dark toggle. Clicking flips the theme directly (no menu); the icon
+ * shows the mode you'll switch TO (moon in light mode, sun in dark mode).
+ */
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const current = mounted ? theme ?? "light" : "light";
+  const isDark = mounted && resolvedTheme === "dark";
+  const label = isDark ? "Switch to light mode" : "Switch to dark mode";
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="Theme"
-        className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
-      >
-        <Icon name={ICON[current] ?? "light_mode"} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {OPTIONS.map((o) => (
-          <DropdownMenuItem key={o.key} onClick={() => setTheme(o.key)}>
-            <Icon name={o.icon} className="text-[18px]" />
-            {o.label}
-            {current === o.key && (
-              <Icon name="check" className="ml-auto text-[16px] text-secondary" />
-            )}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          aria-label={label}
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+          className="rounded p-1.5 text-on-surface-variant transition-all duration-200 hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary active:scale-90"
+        >
+          <Icon name={isDark ? "light_mode" : "dark_mode"} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }

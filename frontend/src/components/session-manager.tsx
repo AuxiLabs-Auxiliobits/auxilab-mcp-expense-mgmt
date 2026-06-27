@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  ABSOLUTE_TIMEOUT_MS,
   IDLE_TIMEOUT_MS,
   WARNING_BEFORE_MS,
   broadcastLogout,
-  isRememberMe,
   onLogoutBroadcast,
   setSessionExpiredHandler,
   type LogoutReason,
@@ -27,18 +25,6 @@ import {
 
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"] as const;
 
-/** Read the JWT `exp` (ms) without verifying — just for the absolute-expiry deadline. */
-function tokenExpMs(token: string | undefined): number | null {
-  if (!token) return null;
-  try {
-    const payload = token.split(".")[1];
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-    return typeof json.exp === "number" ? json.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
 function mmss(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -49,16 +35,13 @@ function mmss(ms: number): string {
  * and synchronizes logout across tabs. Mounted once inside the authenticated portal shell.
  */
 export function SessionManager() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
   const qc = useQueryClient();
 
   const lastActivity = useRef<number>(Date.now());
-  const mountedAt = useRef<number>(Date.now());
   const loggingOut = useRef(false);
   const [msLeft, setMsLeft] = useState<number | null>(null); // non-null => warning shown
-
-  const accessToken = (session as { accessToken?: string } | null)?.accessToken;
 
   const doLogout = useCallback(
     (reason: LogoutReason) => {
@@ -114,15 +97,15 @@ export function SessionManager() {
     };
   }, [msLeft]);
 
-  // 5) The ticker: every second, compute the nearest deadline and warn / log out.
+  // 5) The ticker: every second, check the idle deadline and warn / log out.
+  //    IDLE ONLY — an active user (any activity resets lastActivity) is never logged
+  //    out on a clock. A genuinely-expired token is caught by the API 401 handler.
   useEffect(() => {
     if (status !== "authenticated") return;
     const tick = () => {
       if (loggingOut.current) return;
       const now = Date.now();
-      const absolute = tokenExpMs(accessToken) ?? mountedAt.current + ABSOLUTE_TIMEOUT_MS;
-      const idle = isRememberMe() ? Infinity : lastActivity.current + IDLE_TIMEOUT_MS;
-      const deadline = Math.min(absolute, idle);
+      const deadline = lastActivity.current + IDLE_TIMEOUT_MS;
       const remaining = deadline - now;
       if (remaining <= 0) {
         setMsLeft(null);
@@ -136,7 +119,7 @@ export function SessionManager() {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [status, accessToken, doLogout, msLeft]);
+  }, [status, doLogout, msLeft]);
 
   function stayLoggedIn() {
     lastActivity.current = Date.now();

@@ -48,6 +48,12 @@ export function PolicyAssistant({ role }: { role: Role }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  // Pre-fill the prompt when opened from the command palette (…/assistant?q=…).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setInput(q);
+  }, []);
+
   function patch(id: string, fn: (m: ChatMessage) => ChatMessage) {
     setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m)));
   }

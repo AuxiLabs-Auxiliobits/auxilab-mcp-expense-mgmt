@@ -1,11 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { PORTAL_BASE } from "@/lib/rbac";
 
-export default async function Home() {
-  const session = await auth();
-  if (session?.user?.role) {
-    redirect(PORTAL_BASE[session.user.role]);
-  }
+export default function Home() {
+  // The root always lands on the login page (the app's entry point), even for an
+  // already-authenticated user — they can navigate into their portal from there.
   redirect("/login");
 }

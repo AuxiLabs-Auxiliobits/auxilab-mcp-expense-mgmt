@@ -1,45 +1,53 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import { useTheme } from "next-themes";
 import { signOut } from "next-auth/react";
 import { useSessionRole } from "@/components/session-role";
-import { ROLE_LABELS, type Role } from "@/data/types";
-import { can, getNav, PORTAL_BASE } from "@/lib/rbac";
+import { buildCommands, GROUP_ORDER, type AppCommand } from "@/lib/command-registry";
+import { bestFuzzyScore } from "@/lib/command-fuzzy";
+import { rankRecent, recordCommand } from "@/lib/use-command-history";
+import { broadcastLogout, setRememberMe } from "@/lib/session";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-
-const PORTAL_META: Record<Role, { label: string; icon: string }> = {
-  employee: { label: "Employee Dashboard", icon: "dashboard" },
-  manager: { label: "Manager Review Queue", icon: "fact_check" },
-  finance: { label: "Finance Console", icon: "gavel" },
-  admin: { label: "Admin Settings", icon: "settings" },
-};
+import { Highlight } from "@/components/command-highlight";
+import { CommandSearchResults } from "@/components/command-palette-search";
 
 export const OPEN_COMMAND_EVENT = "auxilab:open-command";
 
-function Item({
-  onSelect,
-  icon,
-  children,
-  shortcut,
+function CommandRow({
+  cmd,
+  query,
+  onRun,
 }: {
-  onSelect: () => void;
-  icon: string;
-  children: React.ReactNode;
-  shortcut?: string;
+  cmd: AppCommand;
+  query: string;
+  onRun: (c: AppCommand) => void;
 }) {
   return (
     <Command.Item
-      onSelect={onSelect}
-      className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-body-sm text-on-surface outline-none transition-colors data-[selected=true]:bg-surface-container-low"
+      value={cmd.id}
+      keywords={cmd.keywords}
+      onSelect={() => onRun(cmd)}
+      className="flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-body-sm text-on-surface outline-none transition-colors data-[selected=true]:bg-surface-container-high"
     >
-      <Icon name={icon} className="text-[18px] text-on-surface-variant" />
-      <span className="flex-1">{children}</span>
-      {shortcut && (
-        <span className="font-mono text-label-sm text-on-surface-variant">{shortcut}</span>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-container-high/60 text-on-surface-variant">
+        <Icon name={cmd.icon} className="text-[17px]" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        <Highlight query={query} text={cmd.label} />
+      </span>
+      {cmd.kind === "ai" && (
+        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-label-sm font-medium text-primary">
+          AI
+        </span>
+      )}
+      {cmd.shortcut && (
+        <kbd className="shrink-0 rounded border border-outline-variant px-1.5 py-0.5 font-mono text-label-sm text-on-surface-variant">
+          {cmd.shortcut}
+        </kbd>
       )}
     </Command.Item>
   );
@@ -47,15 +55,13 @@ function Item({
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query); // keeps typing snappy (Phase 9)
   const router = useRouter();
   const { setTheme, resolvedTheme } = useTheme();
   const { sessionRole } = useSessionRole();
-  // Each user navigates only to their own portal; admin can reach all four.
-  const accessible: Role[] =
-    sessionRole === "admin"
-      ? ["employee", "manager", "finance", "admin"]
-      : [sessionRole];
 
+  // Global activation: Ctrl/Cmd+K, plus the top-nav "Search or jump to" button event.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -74,92 +80,134 @@ export function CommandPalette() {
     };
   }, []);
 
-  function run(fn: () => void) {
+  // Reset the query whenever the palette closes so it always opens fresh.
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  const commands = useMemo(() => buildCommands(sessionRole), [sessionRole]);
+  const q = deferredQuery.trim();
+
+  // Rank commands by fuzzy score over label + NL synonym keywords (Phase 8).
+  const ranked = useMemo(() => {
+    if (!q) return commands.map((c) => ({ cmd: c, score: 0 }));
+    return commands
+      .map((c) => ({ cmd: c, score: bestFuzzyScore(q, [c.label, ...(c.keywords ?? [])]) }))
+      .filter((x) => x.score >= 0)
+      .sort((a, b) => b.score - a.score);
+  }, [commands, q]);
+
+  // Group ranked commands, honoring GROUP_ORDER.
+  const grouped = useMemo(() => {
+    const map = new Map<string, AppCommand[]>();
+    for (const { cmd } of ranked) {
+      const arr = map.get(cmd.group) ?? [];
+      arr.push(cmd);
+      map.set(cmd.group, arr);
+    }
+    return GROUP_ORDER.filter((g) => map.has(g)).map((g) => [g, map.get(g)!] as const);
+  }, [ranked]);
+
+  // Recent / frequently-used commands (Phase 6) — only when there's no active query.
+  const recent = useMemo(() => {
+    if (q || !open) return [];
+    const valid = new Set(commands.map((c) => c.id));
+    const ids = rankRecent(valid, 5);
+    const byId = new Map(commands.map((c) => [c.id, c]));
+    return ids.map((id) => byId.get(id)!).filter(Boolean);
+  }, [commands, q, open]);
+
+  function runCommand(c: AppCommand) {
+    recordCommand(c.id);
     setOpen(false);
-    // let the dialog close before navigating
-    requestAnimationFrame(fn);
+    requestAnimationFrame(() => {
+      if (c.intent === "toggle-theme") {
+        setTheme(resolvedTheme === "dark" ? "light" : "dark");
+      } else if (c.intent === "sign-out") {
+        setRememberMe(false);
+        broadcastLogout("manual");
+        signOut({ redirectTo: "/login" });
+      } else if (c.href) {
+        router.push(c.href);
+      }
+    });
+  }
+
+  function navigateTo(href: string) {
+    setOpen(false);
+    requestAnimationFrame(() => router.push(href));
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
-        <DialogTitle className="sr-only">Command menu</DialogTitle>
-        <Command
-          loop
-          className="[&_[cmdk-input-wrapper]]:border-b [&_[cmdk-input-wrapper]]:border-outline-variant"
-        >
-          <div className="flex items-center gap-2 border-b border-outline-variant px-4">
+      <DialogContent
+        className="top-[12%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-2xl border border-outline-variant/60 bg-surface-container-lowest/80 p-0 shadow-elevation-3 backdrop-blur-2xl"
+        aria-label="Command palette"
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <Command shouldFilter={false} loop label="Global command palette">
+          {/* Search input */}
+          <div className="flex items-center gap-2.5 border-b border-outline-variant px-4">
             <Icon name="search" className="text-[18px] text-on-surface-variant" />
             <Command.Input
               autoFocus
-              placeholder="Type a command or search…"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Search or type a command…"
               className="h-12 flex-1 bg-transparent text-body-md text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none"
             />
             <kbd className="rounded border border-outline-variant px-1.5 py-0.5 font-mono text-label-sm text-on-surface-variant">
               ESC
             </kbd>
           </div>
-          <Command.List className="max-h-[60vh] overflow-y-auto p-2">
-            <Command.Empty className="px-2 py-8 text-center text-body-sm text-on-surface-variant">
-              No results found.
+
+          <Command.List className="max-h-[60vh] overflow-y-auto scroll-py-2 p-2">
+            <Command.Empty className="px-2 py-10 text-center text-body-sm text-on-surface-variant">
+              <Icon name="search_off" className="mb-2 block text-[28px] text-on-surface-variant/50" />
+              No results for “{query}”.
             </Command.Empty>
 
-            <Command.Group heading="Navigate">
-              {accessible.map((role) => (
-                <Item
-                  key={role}
-                  icon={PORTAL_META[role].icon}
-                  onSelect={() => run(() => router.push(PORTAL_BASE[role]))}
-                >
-                  {PORTAL_META[role].label}
-                  <span className="ml-2 font-mono text-label-sm text-on-surface-variant">
-                    {ROLE_LABELS[role]}
-                  </span>
-                </Item>
-              ))}
-              <Item icon="description" onSelect={() => run(() => router.push("/employee/sheets"))}>
-                My Expense Sheets
-              </Item>
-            </Command.Group>
-
-            <Command.Group heading="Pages">
-              {getNav(sessionRole)
-                .flatMap((g) => g.items)
-                .map((item) => (
-                  <Item
-                    key={item.href}
-                    icon={item.icon}
-                    onSelect={() => run(() => router.push(item.href))}
-                  >
-                    {item.label}
-                  </Item>
-                ))}
-            </Command.Group>
-
-            <Command.Group heading="Actions">
-              {can(sessionRole, "submit_sheet") && (
-                <Item
-                  icon="add"
-                  shortcut="N"
-                  onSelect={() => run(() => router.push("/employee/sheets/new"))}
-                >
-                  New Expense Sheet
-                </Item>
-              )}
-              <Item
-                icon={resolvedTheme === "dark" ? "light_mode" : "dark_mode"}
-                onSelect={() => run(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))}
+            {/* Recents (no query) */}
+            {recent.length > 0 && (
+              <Command.Group
+                heading="Recent"
+                className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5"
               >
-                Toggle {resolvedTheme === "dark" ? "light" : "dark"} theme
-              </Item>
-            </Command.Group>
+                {recent.map((c) => (
+                  <CommandRow key={`recent-${c.id}`} cmd={c} query="" onRun={runCommand} />
+                ))}
+              </Command.Group>
+            )}
 
-            <Command.Group heading="Account">
-              <Item icon="logout" onSelect={() => run(() => signOut({ redirectTo: "/login" }))}>
-                Sign out
-              </Item>
-            </Command.Group>
+            {/* Commands (navigation / actions / AI / system) */}
+            {grouped.map(([group, items]) => (
+              <Command.Group
+                key={group}
+                heading={group}
+                className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5"
+              >
+                {items.map((c) => (
+                  <CommandRow key={c.id} cmd={c} query={q} onRun={runCommand} />
+                ))}
+              </Command.Group>
+            ))}
+
+            {/* Global entity search — lazy-mounted only while querying (Phase 4/9) */}
+            {q.length > 0 && (
+              <CommandSearchResults role={sessionRole} query={q} onRun={navigateTo} />
+            )}
           </Command.List>
+
+          {/* Footer hints */}
+          <div className="flex items-center justify-between border-t border-outline-variant px-3 py-2 text-label-md text-on-surface-variant">
+            <span className="flex items-center gap-1.5">
+              <kbd className="rounded border border-outline-variant px-1 font-mono">↑↓</kbd> navigate
+              <kbd className="ml-2 rounded border border-outline-variant px-1 font-mono">↵</kbd> select
+            </span>
+            <span className="flex items-center gap-1">
+              <Icon name="bolt" className="text-[14px] text-primary" /> Auxilab EM
+            </span>
+          </div>
         </Command>
       </DialogContent>
     </Dialog>

@@ -1,0 +1,9 @@
+[project]
+name = "expense-quickstart"
+version = "0.1.0"
+description = "Quickstart-style Expense Management MCP server (follows the official MCP tutorial)"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "httpx",
+]

@@ -305,8 +305,25 @@ export function usePublishPolicy() {
 }
 
 // ── Notifications ──
+// Near-real-time delivery via polling (Phase 4 baseline). React Query refetches every 20s
+// and on window focus, so new workflow notifications appear without a manual refresh.
 export const useNotifications = (role: Role) =>
-  useQuery({ queryKey: queryKeys.notifications(role), queryFn: () => api.getNotifications(role) });
+  useQuery({
+    queryKey: queryKeys.notifications(role),
+    queryFn: () => api.getNotifications(role),
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+  });
+
+/** Full inbox incl. archived — used by the Notification Center (keyed under the role's
+ * notifications prefix so the per-item mutations' prefix-invalidation refreshes it too). */
+export const useAllNotifications = (role: Role) =>
+  useQuery({
+    queryKey: [...queryKeys.notifications(role), "all"],
+    queryFn: () => api.getNotifications(role, true),
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+  });
 
 export function useMarkNotificationsRead(role: Role) {
   const qc = useQueryClient();

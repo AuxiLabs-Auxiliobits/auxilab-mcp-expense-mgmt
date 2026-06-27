@@ -1396,12 +1396,19 @@ async function publishPolicyDocumentMock(args: {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-export function getNotifications(role: Role): Promise<AppNotification[]> {
+export function getNotifications(role: Role, includeArchived = false): Promise<AppNotification[]> {
   // Backend scopes by the caller's token (recipient or role); `role` filters the mock.
   return backend(
-    () => apiGet<Raw[]>("/notifications").then((rows) => rows.map(mapNotification)),
+    () =>
+      apiGet<Raw[]>(`/notifications${includeArchived ? "?include_archived=true" : ""}`).then(
+        (rows) => rows.map(mapNotification),
+      ),
     () => {
-      const list = notificationStore.filter((n) => !n.roles || n.roles.includes(role));
+      const list = notificationStore.filter(
+        (n) =>
+          (!n.roles || n.roles.includes(role)) &&
+          (includeArchived || !(n as { archived?: boolean }).archived),
+      );
       return delay(clone(list), 150);
     },
   );

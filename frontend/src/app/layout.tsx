@@ -12,7 +12,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Auxilab — Expense Management",
+  // Every page resolves to "<Page> — Auxilab EM" via the template; pages without their own
+  // title fall back to the brand default.
+  title: {
+    default: "Auxilab EM",
+    template: "%s — Auxilab EM",
+  },
   description:
     "Enterprise expense compliance platform — multi-role portal with an LLM Finance Approver, agency-scoped policy RAG, and full audit trail.",
 };
