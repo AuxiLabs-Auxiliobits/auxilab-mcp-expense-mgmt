@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models.decision import Decision
@@ -110,15 +111,32 @@ def _scoped_line_items(
     return list(session.exec(stmt).all())
 
 
+def _scope_filter(stmt, principal: Principal, agency_id: str | None):
+    """Apply agency scoping (manager → own agency; finance/admin → all or one) to a statement
+    already joined to ExpenseSheet."""
+    if principal.scope is Scope.AGENCY:
+        return stmt.where(ExpenseSheet.agency_id == principal.agency_id)
+    if agency_id:
+        return stmt.where(ExpenseSheet.agency_id == agency_id)
+    return stmt
+
+
 def spend_by_category(
     session: Session, principal: Principal, *, agency_id: str | None = None
 ) -> list[SpendByCategoryOut]:
-    """Total spend per expense category within the caller's scope, highest first."""
+    """Total spend per expense category within the caller's scope, highest first.
+    Aggregated in SQL (SUM ... GROUP BY) instead of loading every line item (perf: P-H3)."""
+    stmt = _scope_filter(
+        select(LineItem.category, func.sum(LineItem.amount))
+        .join(ExpenseSheet, LineItem.sheet_id == ExpenseSheet.id)
+        .group_by(LineItem.category),
+        principal,
+        agency_id,
+    )
     totals: dict[str, Decimal] = {}
-    for item in _scoped_line_items(session, principal, agency_id):
-        cat = (item.category or Category.OTHER)
-        cat = cat.value if hasattr(cat, "value") else str(cat)
-        totals[cat] = totals.get(cat, Decimal("0")) + item.amount
+    for cat, total in session.exec(stmt).all():
+        key = (cat.value if hasattr(cat, "value") else str(cat)) if cat is not None else Category.OTHER.value
+        totals[key] = totals.get(key, Decimal("0")) + (Decimal(str(total)) if total is not None else Decimal("0"))
     return [
         SpendByCategoryOut(category=cat, amount=amount)
         for cat, amount in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)

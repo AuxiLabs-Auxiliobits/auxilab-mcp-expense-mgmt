@@ -21,6 +21,7 @@ export const queryKeys = {
   policyDocuments: ["policy-documents"] as const,
   spendByCategory: ["spend-by-category"] as const,
   agencies: ["agencies"] as const,
+  adminUsers: ["admin-users"] as const,
   baselinePolicy: ["baseline-policy"] as const,
   auditLog: ["audit-log"] as const,
   myAuditLog: (id: string) => ["my-audit", id] as const,
@@ -279,6 +280,64 @@ export function useAddAgency() {
       qc.invalidateQueries({ queryKey: queryKeys.agencies });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
     },
+  });
+}
+
+// ── Admin: agency CRUD (rename / soft-delete) ──
+export function useUpdateAgency() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateAgency(id, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.agencies });
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+    },
+  });
+}
+
+export function useDeleteAgency() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteAgency(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.agencies });
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+    },
+  });
+}
+
+// ── Admin: user CRUD (onboard employee / manager / finance) ──
+export const useAdminUsers = () =>
+  useQuery({ queryKey: queryKeys.adminUsers, queryFn: () => api.listAdminUsers() });
+
+function _invalidateUsers(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: queryKeys.adminUsers });
+  qc.invalidateQueries({ queryKey: queryKeys.agencies }); // user counts change
+  qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: api.AdminUserInput) => api.createUser(input),
+    onSuccess: () => _invalidateUsers(qc),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: api.AdminUserPatch }) =>
+      api.updateUser(id, patch),
+    onSuccess: () => _invalidateUsers(qc),
+  });
+}
+
+export function useDeactivateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteUser(id),
+    onSuccess: () => _invalidateUsers(qc),
   });
 }
 

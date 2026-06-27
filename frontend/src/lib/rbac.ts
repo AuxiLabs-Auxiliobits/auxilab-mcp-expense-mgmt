@@ -78,24 +78,16 @@ const NAV: Record<Role, NavGroup[]> = {
       ],
     },
   ],
-  // Admin has full platform rights — every item is accessible (no locks).
+  // Admin is the platform administrator: onboarding & managing users and agencies.
+  // No policy or operational reporting (those belong to Finance/Manager).
   admin: [
     {
       title: "Administration",
-      items: [{ label: "Platform Settings", href: "/admin", icon: "settings" }],
+      items: [{ label: "Users & Agencies", href: "/admin", icon: "group" }],
     },
     {
-      title: "Policy",
-      items: [{ label: "Policy Console", href: "/finance", icon: "gavel" }],
-    },
-    {
-      title: "Operations",
-      items: [
-        { label: "Analytics", href: "/finance/insights", icon: "insights" },
-        { label: "Expense Sheets", href: "/finance/sheets", icon: "description" },
-        { label: "Review Queue", href: "/manager", icon: "fact_check" },
-        { label: "Audit Logs", href: "/finance/audit", icon: "history" },
-      ],
+      title: "Oversight",
+      items: [{ label: "Audit Logs", href: "/finance/audit", icon: "history" }],
     },
   ],
 };

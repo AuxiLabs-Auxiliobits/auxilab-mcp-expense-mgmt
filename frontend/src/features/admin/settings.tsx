@@ -1,44 +1,41 @@
 "use client";
 
-import Link from "next/link";
 import { useAuditLog } from "@/data/hooks";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { Reveal } from "@/components/shared/reveal";
 import { AuditLog } from "@/components/shared/audit-log";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgencyManagement } from "./agency-management";
-import { BaselinePolicyViewer } from "./baseline-policy-viewer";
-import { RoleAssignmentForm } from "./role-assignment-form";
+import { UserManagement } from "./user-management";
 
+/**
+ * Admin console — platform administration only: onboard & manage users
+ * (employee / manager / finance / admin) and agencies, with a live audit trail.
+ * No policy or operational reporting here (those belong to Finance/Manager).
+ */
 export function AdminSettings() {
   const { data: audit, isLoading } = useAuditLog();
 
   return (
     <PageContainer>
       <PageHeader
-        title="Platform Settings"
-        description="Manage agencies, global policies, and platform audit logs."
+        title="Administration"
+        description="Onboard and manage users and agencies across the platform."
         tone="primary"
         size="xl"
-      >
-        <Button variant="outline">Export Logs</Button>
-        <Button>Save Changes</Button>
-      </PageHeader>
+      />
 
       <Reveal delay={80} className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          <UserManagement />
           <AgencyManagement />
-          <BaselinePolicyViewer />
         </div>
 
         <div className="space-y-6">
-          <RoleAssignmentForm />
-
-          <Card className="flex flex-col overflow-hidden" style={{ height: 400 }}>
+          <Card className="flex flex-col overflow-hidden" style={{ height: 520 }}>
             <div className="border-b border-outline-variant bg-surface-container-lowest p-4">
               <h3 className="flex items-center gap-2 text-body-lg font-bold text-primary">
                 <Icon name="security" className="text-signal-red" /> Immutable Audit Log
@@ -54,11 +51,6 @@ export function AdminSettings() {
               ) : (
                 <AuditLog entries={audit ?? []} />
               )}
-            </div>
-            <div className="border-t border-outline-variant bg-surface-container-low p-2 text-center">
-              <Link href="#" className="text-body-sm text-primary hover:underline">
-                View Full Log Repository
-              </Link>
             </div>
           </Card>
         </div>

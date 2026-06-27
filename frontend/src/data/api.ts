@@ -1520,20 +1520,55 @@ export interface AdminUserInput {
   password: string;
   agencyId?: string;
 }
-export const getUsers = (isActive?: boolean) =>
-  apiGet<Raw[]>(`/admin/users${isActive != null ? `?is_active=${isActive}` : ""}`);
-export const getAdminUser = (id: string) => apiGet<Raw>(`/admin/users/${id}`);
-export const createUser = (input: AdminUserInput) =>
+/** Map a backend UserOut row to the typed User (agencyName is resolved client-side). */
+function mapAdminUser(r: Raw): User {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    email: String(r.email ?? ""),
+    role: String(r.role ?? "employee").toLowerCase() as Role,
+    agencyId: (r.agency_id as string) ?? "",
+    isActive: (r.is_active as boolean) ?? true,
+  };
+}
+
+export const listAdminUsers = (opts?: { isActive?: boolean }): Promise<User[]> =>
+  apiGet<Raw[]>(
+    `/admin/users${opts?.isActive != null ? `?is_active=${opts.isActive}` : ""}`,
+  ).then((rows) => rows.map(mapAdminUser));
+
+export const getAdminUser = (id: string) => apiGet<Raw>(`/admin/users/${id}`).then(mapAdminUser);
+
+export const createUser = (input: AdminUserInput): Promise<User> =>
   apiPost<Raw>("/admin/users", {
     name: input.name,
     email: input.email,
     role: input.role,
     password: input.password,
     agency_id: input.agencyId,
-  });
-export const updateUser = (id: string, patch: Partial<{ role: Role; name: string }>) =>
-  apiPatch<Raw>(`/admin/users/${id}`, patch);
-export const deleteUser = (id: string) => apiDelete<Raw>(`/admin/users/${id}`);
+  }).then(mapAdminUser);
+
+export interface AdminUserPatch {
+  name?: string;
+  email?: string;
+  role?: Role;
+  agencyId?: string;
+  isActive?: boolean;
+  password?: string;
+}
+export const updateUser = (id: string, patch: AdminUserPatch): Promise<User> =>
+  apiPatch<Raw>(`/admin/users/${id}`, {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.email !== undefined ? { email: patch.email } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.agencyId !== undefined ? { agency_id: patch.agencyId } : {}),
+    ...(patch.isActive !== undefined ? { is_active: patch.isActive } : {}),
+    ...(patch.password ? { password: patch.password } : {}),
+  }).then(mapAdminUser);
+
+/** Soft-delete (deactivate). Re-enable via updateUser({ isActive: true }). */
+export const deleteUser = (id: string): Promise<User> =>
+  apiDelete<Raw>(`/admin/users/${id}`).then(mapAdminUser);
 
 // Admin — agencies CRUD
 export const getAgency = (id: string) => apiGet<Raw>(`/admin/agencies/${id}`).then(mapAgency);

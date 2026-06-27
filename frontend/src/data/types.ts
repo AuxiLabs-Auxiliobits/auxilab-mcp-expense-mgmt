@@ -91,6 +91,8 @@ export interface User {
   agencyId: string;
   agencyName?: string; // resolved from agencyId for display
   avatarUrl?: string;
+  isActive?: boolean; // admin user management (soft-delete / enable)
+  source?: string; // "azure" | "manual" — drives whether a local password applies
 }
 
 export interface AgencyPolicyDocument {
