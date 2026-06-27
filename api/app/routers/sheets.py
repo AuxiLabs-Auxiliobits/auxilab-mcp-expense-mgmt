@@ -13,7 +13,7 @@ from app.models.attachment import Attachment
 from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
-from app.principal import Principal
+from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
 from app.config import settings
@@ -397,11 +397,14 @@ async def scan_receipt(
     if not attachments:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no receipt attached to scan")
     result = receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)
-    # Persist the review flag for Finance (employee UI shows nothing).
-    item.needs_human_review = result.human_intervention_required
-    item.review_reason = result.detail if result.human_intervention_required else None
-    session.add(item)
-    session.commit()
+    # Only Finance/Admin scans MUTATE the human-review flag. The submitter (read scope on
+    # their own sheet) may scan to preview the reconcile, but must not be able to set — or,
+    # worse, clear — this fraud-control flag with a clean re-scan (security: S-H3).
+    if principal.role in (Role.FINANCE, Role.ADMIN):
+        item.needs_human_review = result.human_intervention_required
+        item.review_reason = result.detail if result.human_intervention_required else None
+        session.add(item)
+        session.commit()
     return result
 
 

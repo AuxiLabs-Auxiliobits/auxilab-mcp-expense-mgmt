@@ -58,10 +58,10 @@ def test_deactivated_account_token_rejected(client):
     email = "deact-test@demo.local"
     created = client.post(
         "/admin/users",
-        json={"name": "Deact", "email": email, "role": "employee", "password": "demo"},
+        json={"name": "Deact", "email": email, "role": "employee", "password": "Demo123456"},
         headers=auth(admin),
     ).json()
-    token = login(client, email)
+    token = login(client, email, "Demo123456")
     assert client.get("/auth/me", headers=auth(token)).status_code == 200  # works while active
 
     client.delete(f"/admin/users/{created['id']}", headers=auth(admin))  # soft-delete (is_active=false)

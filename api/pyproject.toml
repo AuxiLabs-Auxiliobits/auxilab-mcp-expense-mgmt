@@ -14,6 +14,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "httpx>=0.27",
     "python-multipart>=0.0.9",  # multipart/form-data for policy-doc uploads
+    "slowapi>=0.1.9",  # per-IP rate limiting on the pre-auth surface (security: S-H1)
     # The engine is a local workspace package (installed editable: pip install -e ../core-engine).
     "expense-core>=0.1.0",
 ]

@@ -36,7 +36,11 @@ _MATRIX: dict[Capability, set[Role]] = {
     Capability.VIEW_OWN_SHEETS: {Role.EMPLOYEE, Role.MANAGER, Role.FINANCE, Role.ADMIN},
     Capability.VIEW_SHEETS: {Role.MANAGER, Role.FINANCE, Role.ADMIN},
     Capability.MANAGER_ACTION_LINE_ITEM: {Role.MANAGER},
-    Capability.FINANCE_DECISION: {Role.FINANCE, Role.ADMIN, Role.AGENT},
+    # AGENT (the LLM service principal) is intentionally excluded: it acts only through the
+    # dedicated /finance/sheets/{id}/llm-decision webhook (guarded by require_role(AGENT)),
+    # never the human approve/reject/override endpoints. Including it here would let a
+    # compromised worker token drive human finance decisions org-wide (SoD bypass).
+    Capability.FINANCE_DECISION: {Role.FINANCE, Role.ADMIN},
     Capability.OVERRIDE_LLM_DECISION: {Role.FINANCE, Role.ADMIN},
     Capability.UPDATE_AGENCY_POLICY_DOC: {Role.FINANCE, Role.ADMIN},
     Capability.MANAGE_AGENCY: {Role.ADMIN},

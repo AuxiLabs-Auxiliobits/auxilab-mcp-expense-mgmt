@@ -5,13 +5,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
 from app.auth.base import AuthError, AuthProvider
 from app.auth.dependencies import current_principal, get_auth_provider
 from app.config import settings
+from app.rate_limit import limiter
 from app.db import get_session
 from app.email.sender import get_email_sender
 from app.models.agency import Agency
@@ -37,8 +38,9 @@ router = APIRouter(
 
 
 @router.post("/login", response_model=TokenResponse, summary="Log in (JSON) and get a bearer token")
+@limiter.limit(settings.rate_limit_auth)
 async def login(
-    body: LoginRequest, provider: AuthProvider = Depends(get_auth_provider)
+    request: Request, body: LoginRequest, provider: AuthProvider = Depends(get_auth_provider)
 ) -> TokenResponse:
     """Authenticate with an email + password (JSON body) and receive a JWT bearer token.
 
@@ -53,7 +55,9 @@ async def login(
 
 
 @router.post("/token", response_model=TokenResponse, summary="OAuth2 token endpoint (for Swagger Authorize)")
+@limiter.limit(settings.rate_limit_auth)
 async def token(
+    request: Request,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     provider: AuthProvider = Depends(get_auth_provider),
 ) -> TokenResponse:
@@ -93,8 +97,9 @@ async def auth_method(email: str, session: Session = Depends(get_session)) -> Au
 
 
 @router.post("/forgot-password", response_model=MessageResponse, summary="Request a local password reset")
+@limiter.limit(settings.rate_limit_forgot)
 async def forgot_password(
-    body: ForgotPasswordRequest, session: Session = Depends(get_session)
+    request: Request, body: ForgotPasswordRequest, session: Session = Depends(get_session)
 ) -> MessageResponse:
     """Email a single-use, time-limited reset link for a local account. Always returns the
     same generic message (no user enumeration); SSO-only accounts get no link."""

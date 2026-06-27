@@ -333,6 +333,32 @@ export function useMarkNotificationsRead(role: Role) {
   });
 }
 
+// Per-item notification mutations. Invalidating the role-prefixed key refreshes BOTH the
+// bell (`notifications(role)`) and the center (`[...notifications(role), "all"]`).
+export function useMarkOneNotificationRead(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.markNotificationRead(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+export function useArchiveNotification(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveNotification(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+export function useDeleteNotification(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteNotification(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
 // ── Settings / preferences ──
 export const usePreferences = () =>
   useQuery({ queryKey: ["preferences"], queryFn: () => api.getPreferences() });

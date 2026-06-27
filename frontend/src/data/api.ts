@@ -1429,6 +1429,42 @@ export async function markNotificationsRead(role: Role): Promise<AppNotification
   );
 }
 
+/** Mark a single notification read (recipient-scoped server-side). */
+export function markNotificationRead(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/read`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id);
+      if (n) n.read = true;
+      return delay(undefined, 120);
+    },
+  );
+}
+
+/** Archive a single notification — hidden from the default inbox, kept in history. */
+export function archiveNotification(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/archive`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id) as { archived?: boolean } | undefined;
+      if (n) n.archived = true;
+      return delay(undefined, 120);
+    },
+  );
+}
+
+/** Permanently delete a single notification. */
+export function deleteNotification(id: string): Promise<void> {
+  return backend(
+    () => apiDelete<void>(`/notifications/${id}`).then(() => undefined),
+    () => {
+      const i = notificationStore.findIndex((x) => x.id === id);
+      if (i >= 0) notificationStore.splice(i, 1);
+      return delay(undefined, 120);
+    },
+  );
+}
+
 // ── User settings / preferences ──────────────────────────────────────────────
 export type UserPreferences = Record<string, boolean | string | number>;
 

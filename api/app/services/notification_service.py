@@ -98,13 +98,15 @@ def notify_role(
     return len(recipients)
 
 
-def list_for(session: Session, principal: Principal, *, limit: int = 50) -> list[Notification]:
+def list_for(
+    session: Session, principal: Principal, *, limit: int = 50, include_archived: bool = False
+) -> list[Notification]:
+    stmt = select(Notification).where(Notification.recipient_id == principal.subject_id)
+    if not include_archived:
+        stmt = stmt.where(Notification.archived == False)  # noqa: E712
     return list(
         session.exec(
-            select(Notification)
-            .where(Notification.recipient_id == principal.subject_id)
-            .order_by(Notification.created_at.desc())  # type: ignore[attr-defined]
-            .limit(limit)
+            stmt.order_by(Notification.created_at.desc()).limit(limit)  # type: ignore[attr-defined]
         ).all()
     )
 
@@ -121,3 +123,45 @@ def mark_all_read(session: Session, principal: Principal) -> list[Notification]:
         session.add(n)
     session.commit()
     return list_for(session, principal)
+
+
+def _owned_or_none(session: Session, principal: Principal, notification_id: str) -> Notification | None:
+    """Fetch a notification only if it belongs to the caller — otherwise None (the router
+    turns that into a 404, so a non-owner can't even tell the row exists)."""
+    n = session.get(Notification, notification_id)
+    if n is None or n.recipient_id != principal.subject_id:
+        return None
+    return n
+
+
+def mark_one_read(session: Session, principal: Principal, notification_id: str) -> Notification | None:
+    n = _owned_or_none(session, principal, notification_id)
+    if n is None:
+        return None
+    n.read = True
+    session.add(n)
+    session.commit()
+    session.refresh(n)
+    return n
+
+
+def set_archived(
+    session: Session, principal: Principal, notification_id: str, archived: bool
+) -> Notification | None:
+    n = _owned_or_none(session, principal, notification_id)
+    if n is None:
+        return None
+    n.archived = archived
+    session.add(n)
+    session.commit()
+    session.refresh(n)
+    return n
+
+
+def delete_one(session: Session, principal: Principal, notification_id: str) -> bool:
+    n = _owned_or_none(session, principal, notification_id)
+    if n is None:
+        return False
+    session.delete(n)
+    session.commit()
+    return True
