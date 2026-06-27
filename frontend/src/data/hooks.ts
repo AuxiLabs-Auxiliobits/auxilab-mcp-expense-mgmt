@@ -262,7 +262,12 @@ export const useBaselinePolicy = () =>
   useQuery({ queryKey: queryKeys.baselinePolicy, queryFn: api.getBaselinePolicy });
 
 export const useAuditLog = () =>
-  useQuery({ queryKey: queryKeys.auditLog, queryFn: api.getAuditLog });
+  useQuery({
+    queryKey: queryKeys.auditLog,
+    queryFn: api.getAuditLog,
+    refetchInterval: 30_000, // live: re-poll the immutable trail every 30s
+    staleTime: 0, // always considered stale so admin mutations refetch immediately
+  });
 
 export function useAssignRole() {
   const qc = useQueryClient();

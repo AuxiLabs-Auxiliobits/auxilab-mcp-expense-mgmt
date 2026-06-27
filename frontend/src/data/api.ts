@@ -1211,10 +1211,9 @@ export function getBaselinePolicy() {
 }
 
 export function getAuditLog() {
-  return backend(
-    () => apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit)),
-    () => delay(clone(auditLog)),
-  );
+  // Admin compliance view — ALWAYS the real immutable backend trail, never the mock store
+  // (showing fabricated audit entries would be a correctness/compliance hazard).
+  return apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit));
 }
 
 export interface AssignRoleInput {
