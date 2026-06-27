@@ -76,6 +76,11 @@ class OidcProvisioner:
     # --- JIT creation or denial -------------------------------------------- #
     def _provision(self, identity: FederatedIdentity) -> User:
         if not self._s.oidc_auto_provision:
+            logger.warning(
+                "Federated login DENIED — no DB user for email=%s subject=%s "
+                "(add the user or enable OIDC_AUTO_PROVISION).",
+                identity.email, identity.subject,
+            )
             raise AuthError(
                 "Your account isn't provisioned for this application yet. "
                 "Please contact your administrator."

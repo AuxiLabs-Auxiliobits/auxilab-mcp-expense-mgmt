@@ -91,7 +91,9 @@ async function refreshAccessToken(token: JWT): Promise<void> {
       return;
     }
     const refreshed = await res.json();
-    token.accessToken = refreshed.access_token;
+    // Keep forwarding the ID token (audience = our client id) to the backend, not the
+    // Graph-scoped access token. A refresh with openid scope re-issues the id_token.
+    token.accessToken = refreshed.id_token ?? refreshed.access_token;
     token.expiresAt = Date.now() + (refreshed.expires_in ?? 300) * 1000;
     // Refresh-token rotation: keep the new one if the IdP issued it.
     if (refreshed.refresh_token) token.refreshToken = refreshed.refresh_token;
@@ -115,7 +117,10 @@ export const authConfig = {
       //    NOTE: must be checked BEFORE the generic `user` branch — the Credentials provider
       //    also supplies an `account` (provider "credentials"), but with no access_token.
       if (account?.access_token) {
-        token.accessToken = account.access_token;
+        // Our backend validates the bearer token's audience against OUR client id. With OIDC
+        // scopes the access_token is minted for Microsoft Graph (wrong audience), whereas the
+        // ID token's audience IS our client id — so forward the ID token to the backend.
+        token.accessToken = account.id_token ?? account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at ? account.expires_at * 1000 : undefined;
         token.provider = account.provider;

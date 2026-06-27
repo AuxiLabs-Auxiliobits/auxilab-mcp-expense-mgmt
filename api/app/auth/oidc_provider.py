@@ -13,6 +13,7 @@ what makes adding another IdP a config change, not a rewrite (ADR-001, the auth 
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol
@@ -23,6 +24,8 @@ from jwt import PyJWKClient
 from app.auth.base import AuthError, AuthProvider
 from app.auth.role_mapping import RoleMapper
 from app.principal import Principal, Role
+
+logger = logging.getLogger("app.auth.oidc")
 
 
 @dataclass(frozen=True)
@@ -89,20 +92,47 @@ class OidcAuthProvider(AuthProvider):
 
     def _identity_from(self, claims: dict) -> FederatedIdentity:
         subject = str(claims.get(self._cfg.subject_claim) or claims.get("sub") or claims.get("oid") or "")
-        email = str(
-            claims.get(self._cfg.email_claim)
-            or claims.get("preferred_username")
-            or claims.get("upn")
-            or ""
-        ).strip().lower()
+        email = _normalize_guest_email(
+            str(
+                claims.get(self._cfg.email_claim)
+                or claims.get("preferred_username")
+                or claims.get("upn")
+                or ""
+            ).strip().lower()
+        )
         name = str(claims.get(self._cfg.name_claim) or email)
         roles = _as_list(claims.get(self._cfg.roles_claim))
         groups = _as_list(claims.get(self._cfg.groups_claim))
         role_hint = self._mapper.map(*roles, *groups)
+        # Diagnostic: what identity did the verified token actually carry? (No secrets logged.)
+        logger.info(
+            "OIDC token verified — email=%s subject=%s roles=%s (raw: email=%r upn=%r pref=%r)",
+            email, subject, roles,
+            claims.get(self._cfg.email_claim), claims.get("upn"), claims.get("preferred_username"),
+        )
         return FederatedIdentity(
             subject=subject, email=email, name=name,
             role_hint=role_hint, raw_roles=roles, raw_groups=groups,
         )
+
+
+def _normalize_guest_email(email: str) -> str:
+    """Decode an Entra B2B guest UPN back to the external email it was minted from.
+
+    Azure stores invited guests with a UPN like
+        akankitkumarbxr_gmail.com#EXT#@tenant.onmicrosoft.com
+    but our users table is keyed on the real address (akankitkumarbxr@gmail.com).
+    When the token's email arrives in the #EXT# form, convert the last "_" of the
+    local part back to "@" so DB-by-email matching still works. Plain emails (the
+    common case, when the `email` claim is present) pass through unchanged.
+    """
+    marker = "#ext#"
+    low = email.lower()
+    if marker not in low:
+        return email
+    local = low.split(marker, 1)[0]  # e.g. "akankitkumarbxr_gmail.com"
+    idx = local.rfind("_")
+    return f"{local[:idx]}@{local[idx + 1:]}" if idx != -1 else email
 
 
 def _as_list(value: object) -> list[str]:

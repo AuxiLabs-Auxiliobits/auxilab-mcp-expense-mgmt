@@ -5,6 +5,7 @@ only assembles the app.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,6 +16,11 @@ from app.config import settings
 from app.db import engine, init_db
 from app.routers import ALL_ROUTERS
 from app.seed import seed_demo
+
+# Surface app loggers (auth resolution/denials) on the console alongside uvicorn's.
+logging.getLogger("app").setLevel(logging.INFO)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

@@ -1,3 +1,6 @@
+# Generated credential sheets — contain REAL passwords, never commit
+Expense-Management-Credentials.*
+
 # Python
 __pycache__/
 *.py[cod]
