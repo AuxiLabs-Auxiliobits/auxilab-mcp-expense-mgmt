@@ -17,7 +17,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { broadcastLogout, setRememberMe } from "@/lib/session";
 import { OPEN_COMMAND_EVENT } from "@/components/command-palette";
-import { RoleSwitcher } from "./role-switcher";
 import { NotificationBell } from "./notification-bell";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -113,9 +112,8 @@ export function TopNav({
         </button>
       </div>
 
-      {/* Right — role switcher (admin) + actions */}
+      {/* Right — actions (each role sees only its own portal, so no view switcher) */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <RoleSwitcher role={role} />
         <ThemeToggle />
         <NotificationBell />
         <div className="mx-1 hidden h-8 w-px bg-outline-variant sm:block" />
@@ -137,7 +135,12 @@ export function TopNav({
               </div>
               <div className="mt-1 text-label-sm uppercase text-secondary">
                 {ROLE_LABELS[signedInRole]}
-                {agencyName ? ` · ${agencyName}` : ""}
+                {/* Admins span every agency, so never pin them to one. */}
+                {signedInRole === "admin"
+                  ? " · All Agencies"
+                  : agencyName
+                    ? ` · ${agencyName}`
+                    : ""}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

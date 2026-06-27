@@ -3,15 +3,18 @@
  *
  * The access token lives in next-auth's encrypted, HttpOnly session cookie (not localStorage),
  * so this module only governs *when* to end the session, not where the token is stored:
- *   • idle timeout  — log out after inactivity (unless "Remember me" is on)
- *   • absolute cap  — hard ceiling regardless of activity (mirrors the token's exp)
- *   • a 401 from any API call → treat as an expired/revoked session
+ *   • idle timeout  — the ONLY clock-based logout: 10 minutes of inactivity.
+ *                     An active user is never logged out (no absolute cap), as long
+ *                     as their token keeps refreshing (handled by the auth layer).
+ *   • a 401 from any API call → treat as an expired/revoked session (refresh failed)
  *   • multi-tab     — a logout in one tab logs out all tabs
  */
 
-export const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
-export const ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours hard cap
-export const WARNING_BEFORE_MS = 2 * 60 * 1000; // warn 2 minutes before idle logout
+export const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes of inactivity → expire
+export const WARNING_BEFORE_MS = 60 * 1000; // warn 1 minute before the idle logout
+// No absolute cap: an active session never expires on a clock. Kept for any
+// external reference, but the SessionManager no longer enforces it.
+export const ABSOLUTE_TIMEOUT_MS = Infinity;
 
 export const REMEMBER_ME_KEY = "expense.rememberMe";
 

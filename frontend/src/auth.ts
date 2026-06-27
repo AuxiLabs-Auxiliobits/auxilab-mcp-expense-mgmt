@@ -48,7 +48,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
             issuer: process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
             // offline_access → refresh token (silent renewal); PKCE is on by default.
-            authorization: { params: { scope: "openid profile email offline_access" } },
+            // prompt=login forces re-authentication every time, so signing out and back
+            // in always asks for credentials (Entra won't silently reuse its SSO session).
+            authorization: {
+              params: { scope: "openid profile email offline_access", prompt: "login" },
+            },
           }),
         ]
       : []),

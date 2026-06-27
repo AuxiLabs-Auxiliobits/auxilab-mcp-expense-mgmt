@@ -49,6 +49,14 @@ class LoginMethods:
 
 def login_methods(settings: Settings) -> LoginMethods:
     """Global (non-enumerating) description of how users sign in — drives the login UI."""
+    # hybrid offers BOTH the local password form and the Microsoft SSO button.
+    if settings.auth_provider == "hybrid":
+        return LoginMethods(
+            password=True,
+            sso=True,
+            sso_label="Microsoft",
+            sso_reset_url="https://passwordreset.microsoftonline.com/",
+        )
     is_sso = settings.auth_provider in ("entra", "oidc")
     label = "Microsoft" if settings.auth_provider == "entra" else "Single sign-on"
     reset_url = (

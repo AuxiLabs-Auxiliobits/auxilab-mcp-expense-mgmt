@@ -54,18 +54,23 @@ def main() -> None:
                 print(f"Agency exists:  {name} ({a.id})")
             agency_ids[name] = a.id
 
-        # 2) Users (keyed on UPN/email)
+        # 2) Users (keyed on UPN/email). Admins span all agencies → no single agency.
         for display, local, role, agency in ROSTER:
             email = f"{local}@{DOMAIN}".lower()
+            agency_id = None if role == Role.ADMIN else agency_ids[agency]
             u = s.exec(select(User).where(User.email == email)).first()
             action = "UPDATED" if u else "CREATED"
             if u is None:
-                u = User(name=display, email=email, role=role, agency_id=agency_ids[agency], is_active=True)
+                u = User(
+                    name=display, email=email, role=role, agency_id=agency_id,
+                    is_active=True, source="azure",  # SSO accounts → hybrid routes to Microsoft
+                )
                 s.add(u)
             else:
-                u.name, u.role, u.agency_id, u.is_active = display, role, agency_ids[agency], True
+                u.name, u.role, u.agency_id, u.is_active = display, role, agency_id, True
+                u.source = "azure"
             s.commit()
-            print(f"User {action}: {email:<52} {role.value:<9} {agency}")
+            print(f"User {action}: {email:<52} {role.value:<9} {agency if agency_id else 'ALL'}")
 
 
 if __name__ == "__main__":

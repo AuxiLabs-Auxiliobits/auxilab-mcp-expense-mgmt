@@ -55,6 +55,13 @@ class LoginMethodsOut(BaseModel):
     sso_reset_url: str
 
 
+class AuthMethodOut(BaseModel):
+    """Per-email login route for the hybrid login form: "azure" → redirect to Microsoft SSO,
+    "password" → local password check. Unknown emails resolve to "password" (no enumeration)."""
+
+    method: str
+
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 

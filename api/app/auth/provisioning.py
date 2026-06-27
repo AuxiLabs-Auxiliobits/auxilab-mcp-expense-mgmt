@@ -104,6 +104,7 @@ class OidcProvisioner:
             agency_id=agency_id,
             password_hash=None,  # federated — no local password
             is_active=True,
+            source="azure",  # federated origin → hybrid login routes them to SSO
             entra_object_id=identity.subject or None,
         )
         self._session.add(user)

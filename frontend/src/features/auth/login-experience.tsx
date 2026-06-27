@@ -101,6 +101,20 @@ export function LoginExperience() {
     setLoading(tag);
     setRememberMe(remember); // relaxes the idle timeout for this session
     try {
+      // Hybrid routing: an Azure-backed account (source="azure") has no local password —
+      // send it to Microsoft SSO instead of checking a password. Everyone else (manual /
+      // empty / unknown) falls through to the local password check below.
+      try {
+        const r = await fetch(
+          `${API_BASE}/auth/auth-method?email=${encodeURIComponent(email.trim().toLowerCase())}`,
+        );
+        if (r.ok && (await r.json())?.method === "azure") {
+          signIn(SSO_PROVIDER, { callbackUrl: "/" }); // redirects to Microsoft; page navigates away
+          return;
+        }
+      } catch {
+        /* if the lookup fails, fall back to local password auth */
+      }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
         showError("Invalid email or password. Please try again.");

@@ -24,6 +24,11 @@ class User(SQLModel, table=True):
     password_hash: str | None = None
     is_active: bool = True
 
+    # Account origin → which login path applies (hybrid auth):
+    #   "azure"          → must sign in via Microsoft SSO (no local password)
+    #   "manual" / None  → local email + password, role from this table
+    source: str | None = Field(default=None, index=True)
+
     # Entra migration hook — backfilled at cutover by matching email.
     entra_object_id: str | None = Field(default=None, index=True)
 

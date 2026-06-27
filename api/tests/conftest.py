@@ -8,6 +8,9 @@ import tempfile
 
 os.environ.setdefault("APP_ENVIRONMENT", "dev")
 os.environ.setdefault("APP_SEED_DEMO_DATA", "true")
+# Pin local-password mode for the suite regardless of the dev .env (which may be entra/hybrid).
+# OIDC/hybrid behaviour is covered by tests that construct those providers explicitly.
+os.environ.setdefault("APP_AUTH_PROVIDER", "db")
 _db = os.path.join(tempfile.gettempdir(), "expense_api_test.db")
 if os.path.exists(_db):
     os.remove(_db)

@@ -61,8 +61,13 @@ def main() -> None:
             user.role = role
             user.agency_id = agency.id
             user.is_active = True
+            user.source = "azure"
         else:
-            user = User(name=name, email=email, role=role, agency_id=agency.id, is_active=True)
+            # Created for Entra SSO (no local password) → hybrid login routes to Microsoft.
+            user = User(
+                name=name, email=email, role=role, agency_id=agency.id,
+                is_active=True, source="azure",
+            )
             s.add(user)
         s.commit()
         s.refresh(user)

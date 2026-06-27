@@ -13,6 +13,7 @@ from sqlmodel import Session
 
 from app.auth.base import AuthError, AuthProvider
 from app.auth.db_provider import DbAuthProvider
+from app.auth.hybrid_provider import HybridAuthProvider
 from app.auth.oidc_provider import OidcAuthProvider, OidcConfig
 from app.auth.provisioning import OidcProvisioner
 from app.auth.role_mapping import RoleMapper
@@ -30,13 +31,7 @@ from app.repositories.user_repo import SqlUserRepository
 _bearer = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=True)
 
 
-def get_auth_provider(session: Session = Depends(get_session)) -> AuthProvider:
-    if settings.auth_provider in ("entra", "oidc"):
-        return OidcAuthProvider(
-            config=_oidc_config(settings),
-            role_mapper=RoleMapper(settings.oidc_role_map),
-            resolver=OidcProvisioner(session, settings),
-        )
+def _db_provider(session: Session) -> DbAuthProvider:
     return DbAuthProvider(
         users=SqlUserRepository(session),
         secret=settings.jwt_secret,
@@ -45,10 +40,26 @@ def get_auth_provider(session: Session = Depends(get_session)) -> AuthProvider:
     )
 
 
+def _oidc_provider(session: Session) -> OidcAuthProvider:
+    return OidcAuthProvider(
+        config=_oidc_config(settings),
+        role_mapper=RoleMapper(settings.oidc_role_map),
+        resolver=OidcProvisioner(session, settings),
+    )
+
+
+def get_auth_provider(session: Session = Depends(get_session)) -> AuthProvider:
+    if settings.auth_provider in ("entra", "oidc"):
+        return _oidc_provider(session)
+    if settings.auth_provider == "hybrid":
+        return HybridAuthProvider(_db_provider(session), _oidc_provider(session), session)
+    return _db_provider(session)
+
+
 def _oidc_config(s: Settings) -> OidcConfig:
     """Build the OIDC validator config. `entra` mode is a preset that derives the issuer/JWKS
     from the tenant id (back-compat with the ENTRA_* envs); `oidc` mode is fully generic."""
-    if s.auth_provider == "entra":
+    if s.auth_provider in ("entra", "hybrid"):
         tenant = s.entra_tenant_id
         issuer = s.oidc_issuer or f"https://login.microsoftonline.com/{tenant}/v2.0"
         jwks_url = (

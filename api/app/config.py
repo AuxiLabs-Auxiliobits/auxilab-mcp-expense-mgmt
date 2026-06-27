@@ -25,10 +25,12 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
     # --- Auth -------------------------------------------------------------- #
-    # db    → local email/password (DbAuthProvider, HS256).
-    # entra → Microsoft Entra ID (OIDC) — a preset of the generic `oidc` provider.
-    # oidc  → any standard OIDC IdP (Entra/Google/Okta/Auth0/Ping/Keycloak) via config.
-    auth_provider: Literal["db", "entra", "oidc"] = "db"
+    # db     → local email/password (DbAuthProvider, HS256).
+    # entra  → Microsoft Entra ID (OIDC) — a preset of the generic `oidc` provider.
+    # oidc   → any standard OIDC IdP (Entra/Google/Okta/Auth0/Ping/Keycloak) via config.
+    # hybrid → BOTH at once: per-user `source` decides — "azure" users sign in via Entra,
+    #          everyone else via local password. Bearer tokens verify by alg (HS=local, RS=Entra).
+    auth_provider: Literal["db", "entra", "oidc", "hybrid"] = "db"
     jwt_secret: str = "dev-only-change-me"  # noqa: S105 — overridden via env/Key Vault
     jwt_algorithm: str = "HS256"
     # Access-token lifetime == the absolute session cap (8h). The client also enforces a

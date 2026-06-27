@@ -106,9 +106,11 @@ async function refreshAccessToken(token: JWT): Promise<void> {
 export const authConfig = {
   trustHost: true,
   pages: { signIn: "/login" },
-  // Absolute session cap (8h) mirroring the backend access-token lifetime; the client
-  // SessionManager additionally enforces a 30-minute idle timeout.
-  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
+  // No clock-based cap on an active session: the cookie lives long and is rolled
+  // forward on activity, so an active user is never logged out. Inactivity is enforced
+  // separately by the client SessionManager (10-minute idle timeout). updateAge keeps
+  // the JWT (and the refreshed access token) re-issued frequently while in use.
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60, updateAge: 5 * 60 },
   providers: [],
   callbacks: {
     async jwt({ token, user, account }) {
