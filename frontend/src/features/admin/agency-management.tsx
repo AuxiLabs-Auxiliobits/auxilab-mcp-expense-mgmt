@@ -103,13 +103,20 @@ export function AgencyManagement() {
           >
             <Icon name="edit" className="text-[18px]" />
           </button>
-          <button
-            onClick={() => remove(a)}
-            aria-label="Archive agency"
-            className="rounded p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-error"
-          >
-            <Icon name="archive" className="text-[18px]" />
-          </button>
+          {(() => {
+            const archiving = deleteAgency.isPending && deleteAgency.variables === a.id;
+            return (
+              <button
+                onClick={() => remove(a)}
+                disabled={archiving}
+                aria-label="Archive agency"
+                aria-busy={archiving || undefined}
+                className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-error disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Icon name={archiving ? "progress_activity" : "archive"} className={`text-[18px]${archiving ? " animate-spin" : ""}`} />
+              </button>
+            );
+          })()}
         </div>
       ),
     },

@@ -234,6 +234,9 @@ export function NotificationBell() {
                           onRead={() => markOne.mutate(n.id)}
                           onArchive={() => archive.mutate(n.id)}
                           onDelete={() => remove.mutate(n.id)}
+                          readPending={markOne.isPending && markOne.variables === n.id}
+                          archivePending={archive.isPending && archive.variables === n.id}
+                          deletePending={remove.isPending && remove.variables === n.id}
                         />
                       ))}
                     </div>
@@ -255,6 +258,9 @@ function NotificationRow({
   onRead,
   onArchive,
   onDelete,
+  readPending,
+  archivePending,
+  deletePending,
 }: {
   n: AppNotification;
   archivedView: boolean;
@@ -262,6 +268,9 @@ function NotificationRow({
   onRead: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  readPending?: boolean;
+  archivePending?: boolean;
+  deletePending?: boolean;
 }) {
   const cat = categoryOf(n);
   const priority = priorityOf(n);
@@ -296,9 +305,9 @@ function NotificationRow({
         </span>
       </button>
       <div className="flex flex-col items-center justify-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-        {!n.read && <IconBtn name="done" label="Mark read" small onClick={onRead} />}
-        {!archivedView && <IconBtn name="archive" label="Archive" small onClick={onArchive} />}
-        <IconBtn name="delete" label="Delete" small onClick={onDelete} />
+        {!n.read && <IconBtn name="done" label="Mark read" small onClick={onRead} loading={readPending} />}
+        {!archivedView && <IconBtn name="archive" label="Archive" small onClick={onArchive} loading={archivePending} />}
+        <IconBtn name="delete" label="Delete" small onClick={onDelete} loading={deletePending} />
       </div>
     </div>
   );
@@ -392,26 +401,33 @@ function IconBtn({
   label,
   onClick,
   small,
+  loading,
 }: {
   name: string;
   label: string;
   onClick: () => void;
   small?: boolean;
+  loading?: boolean;
 }) {
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        if (!loading) onClick();
       }}
+      disabled={loading}
       aria-label={label}
+      aria-busy={loading || undefined}
       title={label}
       className={cn(
-        "rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary",
+        "rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary disabled:pointer-events-none disabled:opacity-50",
         small && "p-1",
       )}
     >
-      <Icon name={name} className={small ? "text-[16px]" : "text-[18px]"} />
+      <Icon
+        name={loading ? "progress_activity" : name}
+        className={cn(small ? "text-[16px]" : "text-[18px]", loading && "animate-spin")}
+      />
     </button>
   );
 }
