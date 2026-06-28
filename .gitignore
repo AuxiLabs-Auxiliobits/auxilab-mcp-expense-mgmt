@@ -37,8 +37,11 @@ bicep/cache/
 local.settings.json
 appsettings.*.local.json
 
-# Local SQLite databases (dev / smoke runs)
+# Local SQLite databases (dev / smoke runs) + WAL journal files
 *.db
+*.db-shm
+*.db-wal
+*.sqlite
 *.sqlite
 *.sqlite3
 
@@ -48,6 +51,14 @@ policy_uploads/
 stitch_mcp_server_frontend (1)
 postman
 docs
+
+# Dev server runtime files (PID lists, captured stdout/stderr logs)
+.dev-pids.txt
+*.out.log
+*.err.log
+
+# Office/LibreOffice lock files
+~$*
 
 # OS / IDE
 .DS_Store
