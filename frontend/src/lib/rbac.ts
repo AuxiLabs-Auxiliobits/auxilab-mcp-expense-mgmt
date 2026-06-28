@@ -96,12 +96,12 @@ export function getNav(role: Role): NavGroup[] {
   return NAV[role];
 }
 
-/** Which portals each role may switch into (top-nav role switcher). */
+/** Which portals each role may access. Each role is strictly scoped to its own portal only. */
 export const ROLE_VIEW_ACCESS: Record<Role, Role[]> = {
   employee: ["employee"],
-  manager: ["employee", "manager"],
-  finance: ["employee", "manager", "finance"],
-  admin: ["employee", "manager", "finance", "admin"],
+  manager: ["manager"],
+  finance: ["finance"],
+  admin: ["admin"],
 };
 
 /** Capability matrix (SCOPING.md §3.2), used for fine-grained UI gating. */
