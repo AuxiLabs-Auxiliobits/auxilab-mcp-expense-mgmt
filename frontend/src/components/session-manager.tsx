@@ -84,10 +84,11 @@ export function SessionManager() {
   }, [status, router]);
 
   // 4) Track activity (refs only — no re-render per mouse move).
+  //    Unconditional setMsLeft(null) is a React no-op when already null — no msLeft dep needed.
   useEffect(() => {
     const onActivity = () => {
       lastActivity.current = Date.now();
-      if (msLeft !== null) setMsLeft(null); // any activity dismisses a pending warning
+      setMsLeft(null); // dismiss warning if showing; no-op otherwise
     };
     for (const ev of ACTIVITY_EVENTS) {
       window.addEventListener(ev, onActivity, { passive: true });
@@ -95,11 +96,14 @@ export function SessionManager() {
     return () => {
       for (const ev of ACTIVITY_EVENTS) window.removeEventListener(ev, onActivity);
     };
-  }, [msLeft]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 5) The ticker: every second, check the idle deadline and warn / log out.
   //    IDLE ONLY — an active user (any activity resets lastActivity) is never logged
   //    out on a clock. A genuinely-expired token is caught by the API 401 handler.
+  //    msLeft is intentionally NOT in deps: it caused an infinite render loop because
+  //    setMsLeft(remaining) fires with a slightly-different value on every tick,
+  //    re-triggering the effect and its immediate tick() call in an endless cycle.
   useEffect(() => {
     if (status !== "authenticated") return;
     const tick = () => {
@@ -112,14 +116,14 @@ export function SessionManager() {
         doLogout("expired");
       } else if (remaining <= WARNING_BEFORE_MS) {
         setMsLeft(remaining);
-      } else if (msLeft !== null) {
-        setMsLeft(null);
+      } else {
+        setMsLeft(null); // clear warning once user becomes active again
       }
     };
-    tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [status, doLogout, msLeft]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, doLogout]);
 
   function stayLoggedIn() {
     lastActivity.current = Date.now();

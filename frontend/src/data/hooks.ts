@@ -192,6 +192,7 @@ export const useActivity = (params: api.ActivityParams) =>
     queryKey: ["activity", params] as const,
     queryFn: () => api.getActivity(params),
     placeholderData: (prev) => prev, // keep the table stable while paging/filtering
+    refetchInterval: 30_000, // poll so live audit pages pick up new entries automatically
   });
 
 export function useApproveSheet() {
