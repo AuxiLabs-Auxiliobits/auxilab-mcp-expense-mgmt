@@ -39,7 +39,7 @@ router = APIRouter(
         403: {"description": "Admin role required"},
     },
 )
-_ph = PasswordHasher()
+_ph = PasswordHasher(memory_cost=16384, time_cost=2, parallelism=1)
 
 _OPEN_STATES = {
     SheetStatus.SUBMITTED, SheetStatus.IN_MANAGER_REVIEW, SheetStatus.IN_FINANCE_REVIEW,

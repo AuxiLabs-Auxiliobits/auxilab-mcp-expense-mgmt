@@ -53,7 +53,7 @@ interface FormState {
 
 const EMPTY: FormState = { name: "", email: "", role: "employee", agencyId: "", password: "" };
 
-export function UserManagement() {
+export function UserManagement({ view = "all" }: { view?: "all" | "agency" | "admins" }) {
   const { data: users, isLoading, isError } = useAdminUsers();
   const { data: agencies } = useAgencies();
   const createUser = useCreateUser();
@@ -89,11 +89,14 @@ export function UserManagement() {
   }
 
   const needsAgency = form.role !== "admin";
+  const passwordOk = editing
+    ? !form.password || form.password.length >= 10  // optional in edit; if provided must be ≥10
+    : form.password.length >= 10;                   // required on create
   const valid =
     form.name.trim().length >= 2 &&
     /.+@.+\..+/.test(form.email) &&
     (!needsAgency || !!form.agencyId) &&
-    (editing || form.password.length >= 10);
+    passwordOk;
 
   async function save() {
     if (!valid) return;
@@ -121,8 +124,8 @@ export function UserManagement() {
         toast.success(`Onboarded ${form.name} as ${ROLE_LABELS[form.role]}`);
       }
       setOpen(false);
-    } catch {
-      /* global toast surfaces the error */
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save changes. Please try again.");
     }
   }
 
@@ -233,113 +236,114 @@ export function UserManagement() {
     },
   ];
 
+  const agencyCard = (
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
+        <h3 className="flex items-center gap-2 text-body-lg font-bold text-primary">
+          <Icon name="group" className="text-primary" /> User Management
+        </h3>
+        <Button onClick={() => openCreate(roleTab, currentAgencyId)} size="sm">
+          <Icon name="person_add" className="text-[18px]" /> Add user
+        </Button>
+      </div>
+
+      <div className="border-b border-outline-variant bg-surface-container-lowest px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Icon name="business" className="shrink-0 text-[18px] text-on-surface-variant" />
+          <Select
+            value={currentAgencyId}
+            onValueChange={(v) => { setSelectedAgencyId(v); setRoleTab("employee"); }}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Select agency…" />
+            </SelectTrigger>
+            <SelectContent>
+              {activeAgencies.map((a) => (
+                <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {currentAgency && (
+            <span className="text-label-md text-on-surface-variant">
+              {(users ?? []).filter((u) => u.agencyId === currentAgencyId && AGENCY_ROLES.includes(u.role)).length} members
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-1 border-b border-outline-variant px-4 pt-3 pb-0">
+        {ROLE_TABS.map((t) => {
+          const count = (users ?? []).filter((u) => u.agencyId === currentAgencyId && u.role === t.key).length;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setRoleTab(t.key)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-t-md px-4 py-2 text-label-md font-medium transition-colors",
+                roleTab === t.key
+                  ? "border-b-2 border-primary bg-primary/5 text-primary"
+                  : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
+              )}
+            >
+              {t.label}
+              <span className={cn(
+                "rounded-full px-1.5 py-0.5 text-label-sm",
+                roleTab === t.key ? "bg-primary/15 text-primary" : "bg-surface-container-high text-on-surface-variant",
+              )}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2 p-3">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}
+        </div>
+      ) : isError ? (
+        <div className="p-8 text-center text-body-sm text-error">Couldn&apos;t load users. Please retry.</div>
+      ) : (
+        <DataGrid
+          columns={userColumns}
+          rows={agencyUsers}
+          getRowId={(u) => u.id}
+          emptyMessage={`No ${ROLE_LABELS[roleTab].toLowerCase()}s in ${currentAgency?.name ?? "this agency"}.`}
+        />
+      )}
+    </Card>
+  );
+
+  const adminsCard = (
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
+        <h3 className="flex items-center gap-2 text-body-lg font-bold text-secondary">
+          <Icon name="admin_panel_settings" className="text-secondary" /> Platform Admins
+        </h3>
+        <Button variant="outline" onClick={() => openCreate("admin")} size="sm">
+          <Icon name="person_add" className="text-[18px]" /> Add admin
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2 p-3">
+          {[0, 1].map((i) => <Skeleton key={i} className="h-12" />)}
+        </div>
+      ) : (
+        <DataGrid
+          columns={adminColumns}
+          rows={adminUsers}
+          getRowId={(u) => u.id}
+          emptyMessage="No platform admins."
+        />
+      )}
+    </Card>
+  );
+
   return (
     <div className="space-y-4">
-      {/* ── Agency section ── */}
-      <Card className="overflow-hidden">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
-          <h3 className="flex items-center gap-2 text-body-lg font-bold text-primary">
-            <Icon name="group" className="text-primary" /> User Management
-          </h3>
-          <Button onClick={() => openCreate(roleTab, currentAgencyId)} size="sm">
-            <Icon name="person_add" className="text-[18px]" /> Add user
-          </Button>
-        </div>
-
-        {/* Agency dropdown */}
-        <div className="border-b border-outline-variant bg-surface-container-lowest px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Icon name="business" className="shrink-0 text-[18px] text-on-surface-variant" />
-            <Select
-              value={currentAgencyId}
-              onValueChange={(v) => { setSelectedAgencyId(v); setRoleTab("employee"); }}
-            >
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Select agency…" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeAgencies.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {currentAgency && (
-              <span className="text-label-md text-on-surface-variant">
-                {(users ?? []).filter((u) => u.agencyId === currentAgencyId && AGENCY_ROLES.includes(u.role)).length} members
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Role tabs */}
-        <div className="flex gap-1 border-b border-outline-variant px-4 pt-3 pb-0">
-          {ROLE_TABS.map((t) => {
-            const count = (users ?? []).filter((u) => u.agencyId === currentAgencyId && u.role === t.key).length;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setRoleTab(t.key)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-t-md px-4 py-2 text-label-md font-medium transition-colors",
-                  roleTab === t.key
-                    ? "border-b-2 border-primary bg-primary/5 text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
-                )}
-              >
-                {t.label}
-                <span className={cn(
-                  "rounded-full px-1.5 py-0.5 text-label-sm",
-                  roleTab === t.key ? "bg-primary/15 text-primary" : "bg-surface-container-high text-on-surface-variant",
-                )}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* User table */}
-        {isLoading ? (
-          <div className="space-y-2 p-3">
-            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}
-          </div>
-        ) : isError ? (
-          <div className="p-8 text-center text-body-sm text-error">Couldn&apos;t load users. Please retry.</div>
-        ) : (
-          <DataGrid
-            columns={userColumns}
-            rows={agencyUsers}
-            getRowId={(u) => u.id}
-            emptyMessage={`No ${ROLE_LABELS[roleTab].toLowerCase()}s in ${currentAgency?.name ?? "this agency"}.`}
-          />
-        )}
-      </Card>
-
-      {/* ── Platform Admins section ── */}
-      <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
-          <h3 className="flex items-center gap-2 text-body-lg font-bold text-secondary">
-            <Icon name="admin_panel_settings" className="text-secondary" /> Platform Admins
-          </h3>
-          <Button variant="outline" onClick={() => openCreate("admin")} size="sm">
-            <Icon name="person_add" className="text-[18px]" /> Add admin
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-2 p-3">
-            {[0, 1].map((i) => <Skeleton key={i} className="h-12" />)}
-          </div>
-        ) : (
-          <DataGrid
-            columns={adminColumns}
-            rows={adminUsers}
-            getRowId={(u) => u.id}
-            emptyMessage="No platform admins."
-          />
-        )}
-      </Card>
+      {(view === "all" || view === "agency") && agencyCard}
+      {(view === "all" || view === "admins") && adminsCard}
 
       {/* ── Create / edit dialog ── */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -393,8 +397,13 @@ export function UserManagement() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder={editing ? "Leave blank to keep current" : "Min 10 chars, upper/lower/number"}
                 autoComplete="new-password"
+                className={cn(!passwordOk && form.password ? "border-error" : "")}
               />
-              {!editing && (
+              {form.password && !passwordOk ? (
+                <p className="text-label-sm text-error">Password must be at least 10 characters.</p>
+              ) : editing ? (
+                <p className="text-label-sm text-on-surface-variant">Leave blank to keep the current password.</p>
+              ) : (
                 <p className="text-label-sm text-on-surface-variant">
                   Local sign-in. Azure SSO users sign in with Microsoft instead.
                 </p>

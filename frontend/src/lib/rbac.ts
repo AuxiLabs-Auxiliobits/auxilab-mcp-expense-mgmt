@@ -83,7 +83,11 @@ const NAV: Record<Role, NavGroup[]> = {
   admin: [
     {
       title: "Administration",
-      items: [{ label: "Users & Agencies", href: "/admin", icon: "group" }],
+      items: [
+        { label: "User Management", href: "/admin/users", icon: "group" },
+        { label: "Platform Admins", href: "/admin/platform-admins", icon: "admin_panel_settings" },
+        { label: "Agency Management", href: "/admin/agencies", icon: "domain" },
+      ],
     },
     {
       title: "Oversight",

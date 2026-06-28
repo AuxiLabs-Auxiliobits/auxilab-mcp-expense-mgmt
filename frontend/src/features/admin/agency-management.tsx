@@ -152,7 +152,7 @@ export function AgencyManagement() {
             <DialogDescription>
               {editId
                 ? "Update the agency name. The change is recorded in the audit log."
-                : "Creates the agency and records it in the immutable audit log (§7 lifecycle)."}
+                : "Creates the agency and records it in the immutable audit log."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

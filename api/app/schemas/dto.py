@@ -584,7 +584,7 @@ class UserUpdate(BaseModel):
     role: str | None = None
     agency_id: str | None = None
     is_active: bool | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=10)
 
 
 class UserOut(BaseModel):

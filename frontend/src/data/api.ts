@@ -940,6 +940,7 @@ export interface ActivityParams {
   pageSize?: number;
   action?: string;
   q?: string;
+  actor_id?: string;
 }
 export interface ActivityPage {
   items: AuditLogEntry[];
@@ -958,6 +959,7 @@ export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> 
       const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (params.action) qs.set("action", params.action);
       if (params.q) qs.set("q", params.q);
+      if (params.actor_id) qs.set("actor_id", params.actor_id);
       return apiGet<Raw>(`/activity?${qs.toString()}`).then((r) => ({
         items: Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
         total: num(r.total),
@@ -970,6 +972,7 @@ export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> 
       const all = clone(auditLog).filter(
         (e) =>
           (!params.action || e.action === params.action) &&
+          (!params.actor_id || e.actorId === params.actor_id) &&
           (!ql || `${e.summary} ${e.action} ${e.entity ?? ""}`.toLowerCase().includes(ql)),
       );
       const start = (page - 1) * pageSize;

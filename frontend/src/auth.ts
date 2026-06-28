@@ -127,7 +127,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               /* keep defaults if /auth/me is unavailable */
             }
             return { id, name, email, role, agencyId, agencyName, accessToken: token };
-          } catch {
+          } catch (err) {
+            // Re-throw typed auth errors so NextAuth exposes the specific error code.
+            // Only swallow unexpected errors (network failures, JSON parse, etc.).
+            if (err instanceof CredentialsSignin) throw err;
             return null;
           }
         }

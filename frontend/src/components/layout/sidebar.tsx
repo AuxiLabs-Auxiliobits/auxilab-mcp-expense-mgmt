@@ -58,7 +58,7 @@ export function Sidebar({
     "group flex h-10 w-full items-center rounded-md px-3 text-body-sm transition-[background-color,box-shadow,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary";
   const collapsedRow = collapsed ? "md:justify-center md:px-0" : "";
   const label = cn(
-    "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-200 ml-3 max-w-[170px] opacity-100",
+    "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-200 ml-3 max-w-[200px] opacity-100",
     collapsed && "md:ml-0 md:max-w-0 md:opacity-0",
   );
 

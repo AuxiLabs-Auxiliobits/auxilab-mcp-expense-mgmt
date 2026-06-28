@@ -192,7 +192,7 @@ export const useActivity = (params: api.ActivityParams) =>
     queryKey: ["activity", params] as const,
     queryFn: () => api.getActivity(params),
     placeholderData: (prev) => prev, // keep the table stable while paging/filtering
-    refetchInterval: 30_000, // poll so live audit pages pick up new entries automatically
+    refetchInterval: 5_000, // poll every 5 s so audit pages stay near-real-time
   });
 
 export function useApproveSheet() {
@@ -274,7 +274,10 @@ export function useAssignRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.assignRole,
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.auditLog }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
 }
 
@@ -285,6 +288,7 @@ export function useAddAgency() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.agencies });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
     },
   });
 }
@@ -297,6 +301,7 @@ export function useUpdateAgency() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.agencies });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
     },
   });
 }
@@ -308,6 +313,7 @@ export function useDeleteAgency() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.agencies });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
     },
   });
 }

@@ -4,21 +4,25 @@ import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { Icon } from "@/components/ui/icon";
 import { ActivityTable } from "@/features/shared/activity-table";
+import { useCurrentUser } from "@/data/hooks";
 
 export default function AdminAuditPage() {
+  const { data: user, isLoading } = useCurrentUser("admin");
+
   return (
     <PageContainer>
       <PageHeader
-        title="Platform Audit Log"
-        description="Complete, replayable record of every action across employees, managers, finance, and the AI approver."
+        title="My Activity Log"
+        description="Actions you have performed on the platform."
       />
 
       <div className="mt-4 flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 text-body-sm text-on-surface-variant">
         <Icon name="shield_person" className="text-[18px] text-secondary" />
-        Org-wide view — Finance and Admin see the entire platform&apos;s activity, every role included.
+        Showing your actions only — actions taken under your admin account.
       </div>
 
-      <ActivityTable />
+      {/* Wait for the user ID so ActivityTable always fetches with the actor_id filter. */}
+      {!isLoading && <ActivityTable actorId={user?.id} />}
     </PageContainer>
   );
 }

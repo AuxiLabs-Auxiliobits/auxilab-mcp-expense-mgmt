@@ -52,6 +52,10 @@ async def login(
     except UserNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No account found for that email address.") from e
     except AuthError as e:
+        # 403 = account exists but is disabled (distinct from 401 = wrong credentials).
+        # The frontend auth.ts maps 403 → AccountDisabledError → deactivation message.
+        if "disabled" in str(e).lower():
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(e)) from e
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
     return TokenResponse(access_token=token)
 
