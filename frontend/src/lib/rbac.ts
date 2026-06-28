@@ -87,7 +87,7 @@ const NAV: Record<Role, NavGroup[]> = {
     },
     {
       title: "Oversight",
-      items: [{ label: "Audit Logs", href: "/finance/audit", icon: "history" }],
+      items: [{ label: "Audit Logs", href: "/admin/audit", icon: "history" }],
     },
   ],
 };

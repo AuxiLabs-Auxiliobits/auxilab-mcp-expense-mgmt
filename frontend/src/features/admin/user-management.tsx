@@ -10,7 +10,6 @@ import {
   useUpdateUser,
 } from "@/data/hooks";
 import { DataGrid, type Column } from "@/components/shared/data-grid";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -36,16 +35,15 @@ import { ROLE_LABELS, type Role, type User } from "@/data/types";
 import { cn } from "@/lib/utils";
 
 const MANAGED_ROLES: Role[] = ["employee", "manager", "finance", "admin"];
-const FILTERS: { key: "all" | Role; label: string }[] = [
-  { key: "all", label: "All" },
+const AGENCY_ROLES: Role[] = ["employee", "manager", "finance"];
+const ROLE_TABS: { key: Role; label: string }[] = [
   { key: "employee", label: "Employees" },
   { key: "manager", label: "Managers" },
   { key: "finance", label: "Finance" },
-  { key: "admin", label: "Admins" },
 ];
 
 interface FormState {
-  id?: string; // present → editing
+  id?: string;
   name: string;
   email: string;
   role: Role;
@@ -62,30 +60,31 @@ export function UserManagement() {
   const updateUser = useUpdateUser();
   const deactivate = useDeactivateUser();
 
-  const [filter, setFilter] = useState<"all" | Role>("all");
-  const [query, setQuery] = useState("");
+  const activeAgencies = useMemo(() => (agencies ?? []).filter((a) => a.status === "active"), [agencies]);
+
+  const [selectedAgencyId, setSelectedAgencyId] = useState<string>("");
+  const [roleTab, setRoleTab] = useState<Role>("employee");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const editing = !!form.id;
 
-  const agencyName = useMemo(() => {
-    const m = new Map((agencies ?? []).map((a) => [a.id, a.name]));
-    return (id?: string) => (id ? m.get(id) ?? "—" : "—");
-  }, [agencies]);
+  // Pick the first agency once loaded
+  const currentAgencyId = selectedAgencyId || activeAgencies[0]?.id || "";
+  const currentAgency = activeAgencies.find((a) => a.id === currentAgencyId);
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (users ?? [])
-      .filter((u) => filter === "all" || u.role === filter)
-      .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
-  }, [users, filter, query]);
+  const agencyUsers = useMemo(() => {
+    if (!currentAgencyId) return [];
+    return (users ?? []).filter((u) => u.agencyId === currentAgencyId && u.role === roleTab);
+  }, [users, currentAgencyId, roleTab]);
 
-  function openCreate() {
-    setForm({ ...EMPTY, agencyId: agencies?.[0]?.id ?? "" });
+  const adminUsers = useMemo(() => (users ?? []).filter((u) => u.role === "admin"), [users]);
+
+  function openCreate(defaultRole: Role = "employee", defaultAgencyId?: string) {
+    setForm({ ...EMPTY, role: defaultRole, agencyId: defaultAgencyId ?? currentAgencyId });
     setOpen(true);
   }
   function openEdit(u: User) {
-    setForm({ id: u.id, name: u.name, email: u.email, role: u.role, agencyId: u.agencyId, password: "" });
+    setForm({ id: u.id, name: u.name, email: u.email, role: u.role, agencyId: u.agencyId ?? "", password: "" });
     setOpen(true);
   }
 
@@ -141,7 +140,7 @@ export function UserManagement() {
     }
   }
 
-  const columns: Column<User>[] = [
+  const userColumns: Column<User>[] = [
     {
       key: "name",
       header: "Name",
@@ -153,29 +152,13 @@ export function UserManagement() {
       ),
     },
     {
-      key: "role",
-      header: "Role",
-      render: (u) => <Badge>{ROLE_LABELS[u.role]}</Badge>,
-    },
-    {
-      key: "agency",
-      header: "Agency",
-      render: (u) => (
-        <span className="text-on-surface-variant">
-          {u.role === "admin" ? "All agencies" : agencyName(u.agencyId)}
-        </span>
-      ),
-    },
-    {
       key: "status",
       header: "Status",
       render: (u) => (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-label-md",
-            u.isActive ? "bg-success-green/10 text-success-green" : "bg-error-container text-error",
-          )}
-        >
+        <span className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-label-md",
+          u.isActive ? "bg-success-green/10 text-success-green" : "bg-error-container text-error",
+        )}>
           <span className={cn("h-1.5 w-1.5 rounded-full", u.isActive ? "bg-success-green" : "bg-error")} />
           {u.isActive ? "Active" : "Inactive"}
         </span>
@@ -187,21 +170,62 @@ export function UserManagement() {
       align: "right",
       render: (u) => (
         <div className="flex items-center justify-end gap-1">
-          <button
-            onClick={() => openEdit(u)}
-            aria-label="Edit user"
-            className="rounded p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
-          >
+          <button onClick={() => openEdit(u)} aria-label="Edit user"
+            className="rounded p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-primary">
             <Icon name="edit" className="text-[18px]" />
           </button>
-          <button
-            onClick={() => toggleActive(u)}
-            aria-label={u.isActive ? "Deactivate user" : "Reactivate user"}
-            className={cn(
-              "rounded p-1.5 hover:bg-surface-container-high",
-              u.isActive ? "text-on-surface-variant hover:text-error" : "text-on-surface-variant hover:text-success-green",
-            )}
-          >
+          <button onClick={() => toggleActive(u)} aria-label={u.isActive ? "Deactivate" : "Reactivate"}
+            className={cn("rounded p-1.5 hover:bg-surface-container-high",
+              u.isActive ? "text-on-surface-variant hover:text-error" : "text-on-surface-variant hover:text-success-green")}>
+            <Icon name={u.isActive ? "person_off" : "person"} className="text-[18px]" />
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  const adminColumns: Column<User>[] = [
+    {
+      key: "name",
+      header: "Name",
+      render: (u) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-on-surface">{u.name}</span>
+          <span className="text-label-md text-on-surface-variant">{u.email}</span>
+        </div>
+      ),
+    },
+    {
+      key: "scope",
+      header: "Scope",
+      render: () => <span className="text-on-surface-variant">All agencies</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (u) => (
+        <span className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-label-md",
+          u.isActive ? "bg-success-green/10 text-success-green" : "bg-error-container text-error",
+        )}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", u.isActive ? "bg-success-green" : "bg-error")} />
+          {u.isActive ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      render: (u) => (
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={() => openEdit(u)} aria-label="Edit user"
+            className="rounded p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-primary">
+            <Icon name="edit" className="text-[18px]" />
+          </button>
+          <button onClick={() => toggleActive(u)} aria-label={u.isActive ? "Deactivate" : "Reactivate"}
+            className={cn("rounded p-1.5 hover:bg-surface-container-high",
+              u.isActive ? "text-on-surface-variant hover:text-error" : "text-on-surface-variant hover:text-success-green")}>
             <Icon name={u.isActive ? "person_off" : "person"} className="text-[18px]" />
           </button>
         </div>
@@ -210,68 +234,120 @@ export function UserManagement() {
   ];
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
-        <h3 className="flex items-center gap-2 text-body-lg font-bold text-primary">
-          <Icon name="group" className="text-primary" /> User Management
-        </h3>
-        <Button onClick={openCreate} size="sm">
-          <Icon name="person_add" className="text-[18px]" /> Add user
-        </Button>
-      </div>
+    <div className="space-y-4">
+      {/* ── Agency section ── */}
+      <Card className="overflow-hidden">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
+          <h3 className="flex items-center gap-2 text-body-lg font-bold text-primary">
+            <Icon name="group" className="text-primary" /> User Management
+          </h3>
+          <Button onClick={() => openCreate(roleTab, currentAgencyId)} size="sm">
+            <Icon name="person_add" className="text-[18px]" /> Add user
+          </Button>
+        </div>
 
-      {/* Filters + search */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant p-3">
-        <div className="flex flex-wrap gap-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={cn(
-                "rounded-full px-3 py-1 text-label-md transition-colors",
-                filter === f.key
-                  ? "bg-primary text-on-primary"
-                  : "text-on-surface-variant hover:bg-surface-container-high",
-              )}
+        {/* Agency dropdown */}
+        <div className="border-b border-outline-variant bg-surface-container-lowest px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Icon name="business" className="shrink-0 text-[18px] text-on-surface-variant" />
+            <Select
+              value={currentAgencyId}
+              onValueChange={(v) => { setSelectedAgencyId(v); setRoleTab("employee"); }}
             >
-              {f.label}
-            </button>
-          ))}
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select agency…" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeAgencies.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {currentAgency && (
+              <span className="text-label-md text-on-surface-variant">
+                {(users ?? []).filter((u) => u.agencyId === currentAgencyId && AGENCY_ROLES.includes(u.role)).length} members
+              </span>
+            )}
+          </div>
         </div>
-        <div className="relative ml-auto w-full sm:w-64">
-          <Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name or email…"
-            className="pl-9"
+
+        {/* Role tabs */}
+        <div className="flex gap-1 border-b border-outline-variant px-4 pt-3 pb-0">
+          {ROLE_TABS.map((t) => {
+            const count = (users ?? []).filter((u) => u.agencyId === currentAgencyId && u.role === t.key).length;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setRoleTab(t.key)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-t-md px-4 py-2 text-label-md font-medium transition-colors",
+                  roleTab === t.key
+                    ? "border-b-2 border-primary bg-primary/5 text-primary"
+                    : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
+                )}
+              >
+                {t.label}
+                <span className={cn(
+                  "rounded-full px-1.5 py-0.5 text-label-sm",
+                  roleTab === t.key ? "bg-primary/15 text-primary" : "bg-surface-container-high text-on-surface-variant",
+                )}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* User table */}
+        {isLoading ? (
+          <div className="space-y-2 p-3">
+            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}
+          </div>
+        ) : isError ? (
+          <div className="p-8 text-center text-body-sm text-error">Couldn&apos;t load users. Please retry.</div>
+        ) : (
+          <DataGrid
+            columns={userColumns}
+            rows={agencyUsers}
+            getRowId={(u) => u.id}
+            emptyMessage={`No ${ROLE_LABELS[roleTab].toLowerCase()}s in ${currentAgency?.name ?? "this agency"}.`}
           />
-        </div>
-      </div>
+        )}
+      </Card>
 
-      {isLoading ? (
-        <div className="space-y-2 p-3">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-12" />
-          ))}
+      {/* ── Platform Admins section ── */}
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-lowest p-4">
+          <h3 className="flex items-center gap-2 text-body-lg font-bold text-secondary">
+            <Icon name="admin_panel_settings" className="text-secondary" /> Platform Admins
+          </h3>
+          <Button variant="outline" onClick={() => openCreate("admin")} size="sm">
+            <Icon name="person_add" className="text-[18px]" /> Add admin
+          </Button>
         </div>
-      ) : isError ? (
-        <div className="p-8 text-center text-body-sm text-error">
-          Couldn&apos;t load users. Please retry.
-        </div>
-      ) : (
-        <DataGrid columns={columns} rows={rows} getRowId={(u) => u.id} emptyMessage="No users match." />
-      )}
 
-      {/* Create / edit dialog */}
+        {isLoading ? (
+          <div className="space-y-2 p-3">
+            {[0, 1].map((i) => <Skeleton key={i} className="h-12" />)}
+          </div>
+        ) : (
+          <DataGrid
+            columns={adminColumns}
+            rows={adminUsers}
+            getRowId={(u) => u.id}
+            emptyMessage="No platform admins."
+          />
+        )}
+      </Card>
+
+      {/* ── Create / edit dialog ── */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit user" : "Onboard a user"}</DialogTitle>
             <DialogDescription>
-              {editing
-                ? "Update the user's details, role, or agency."
-                : "Create an employee, manager, finance reviewer, or admin."}
+              {editing ? "Update the user's details, role, or agency." : "Create an employee, manager, finance reviewer, or admin."}
             </DialogDescription>
           </DialogHeader>
 
@@ -287,7 +363,7 @@ export function UserManagement() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Role</Label>
-                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as Role })}>
+                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as Role, agencyId: v === "admin" ? "" : form.agencyId })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {MANAGED_ROLES.map((r) => (
@@ -298,14 +374,10 @@ export function UserManagement() {
               </div>
               <div className="space-y-1.5">
                 <Label>Agency</Label>
-                <Select
-                  value={form.agencyId}
-                  onValueChange={(v) => setForm({ ...form, agencyId: v })}
-                  disabled={!needsAgency}
-                >
+                <Select value={form.agencyId} onValueChange={(v) => setForm({ ...form, agencyId: v })} disabled={!needsAgency}>
                   <SelectTrigger><SelectValue placeholder={needsAgency ? "Select…" : "All agencies"} /></SelectTrigger>
                   <SelectContent>
-                    {(agencies ?? []).map((a) => (
+                    {activeAgencies.map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -338,6 +410,6 @@ export function UserManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }

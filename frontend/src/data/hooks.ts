@@ -319,6 +319,8 @@ function _invalidateUsers(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: queryKeys.adminUsers });
   qc.invalidateQueries({ queryKey: queryKeys.agencies }); // user counts change
   qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+  qc.invalidateQueries({ queryKey: ["activity"] }); // invalidates all ["activity", ...] variants used by ActivityTable
+  qc.invalidateQueries({ queryKey: ["activity-log"] });
 }
 
 export function useCreateUser() {
