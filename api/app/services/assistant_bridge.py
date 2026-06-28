@@ -993,7 +993,7 @@ def _suggestions_for(role: str) -> list[str]:
     if role == "finance":
         return ["Show the finance queue", "Generate finance KPIs", "Spend by category"]
     if role == "admin":
-        return ["List users", "List agencies", "Show the dashboard", "System health"]
+        return ["List users", "List agencies", "Find user by name", "Assign role"]
     return ["Show my expenses", "Create a new expense sheet", "What do I need to do next?"]
 
 
