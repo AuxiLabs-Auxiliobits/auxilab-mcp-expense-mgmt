@@ -26,7 +26,7 @@ const PAGE_SIZE = 15;
  * decides what the caller may see (employee→own, manager→agency, finance/admin→org-wide),
  * so this component is identical across roles.
  */
-export function ActivityTable() {
+export function ActivityTable({ actorId }: { actorId?: string }) {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
@@ -43,6 +43,7 @@ export function ActivityTable() {
     page,
     pageSize: PAGE_SIZE,
     q: debouncedQ || undefined,
+    actor_id: actorId,
   });
   const items = data?.items ?? [];
   const total = data?.total ?? 0;

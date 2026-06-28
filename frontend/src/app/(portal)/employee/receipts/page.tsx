@@ -154,8 +154,12 @@ export default function EmployeeReceiptsPage() {
           hidden
           onChange={onFiles}
         />
-        <Button variant="outline" onClick={() => fileRef.current?.click()}>
-          <Icon name="upload_file" /> Upload Receipt
+        <Button
+          variant="outline"
+          loading={uploadReceiptMut.isPending}
+          onClick={() => { if (!uploadReceiptMut.isPending) fileRef.current?.click(); }}
+        >
+          <Icon name="upload_file" /> {uploadReceiptMut.isPending ? "Uploading…" : "Upload Receipt"}
         </Button>
       </PageHeader>
 
@@ -192,19 +196,21 @@ export default function EmployeeReceiptsPage() {
               <Badge className="bg-success-green/10 capitalize text-success-green" pill={false}>
                 <Icon name="verified" className="text-[12px]" /> {r.scanStatus}
               </Badge>
-              {r.uploadId && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteUpload(r);
-                  }}
-                  aria-label={`Delete ${r.fileName}`}
-                  className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error"
-                >
-                  <Icon name="delete" className="text-[18px]" />
-                </button>
-              )}
+              {r.uploadId && (() => {
+                const deleting = deleteReceiptMut.isPending && deleteReceiptMut.variables === r.uploadId;
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); deleteUpload(r); }}
+                    disabled={deleting}
+                    aria-label={`Delete ${r.fileName}`}
+                    aria-busy={deleting || undefined}
+                    className="rounded p-1.5 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Icon name={deleting ? "progress_activity" : "delete"} className={`text-[18px]${deleting ? " animate-spin" : ""}`} />
+                  </button>
+                );
+              })()}
             </Card>
           ))}
         </div>
@@ -253,6 +259,7 @@ export default function EmployeeReceiptsPage() {
                 {selected.uploadId && (
                   <Button
                     variant="outline"
+                    loading={deleteReceiptMut.isPending && deleteReceiptMut.variables === selected.uploadId}
                     onClick={() => deleteUpload(selected)}
                     className="text-error hover:text-error"
                   >

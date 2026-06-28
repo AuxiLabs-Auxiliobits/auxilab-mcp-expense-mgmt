@@ -168,7 +168,7 @@ def test_assign_role_by_email(client):
     email = "gap-roletest@demo.local"
     client.post(
         "/admin/users",
-        json={"name": "Role Test", "email": email, "role": "employee", "password": "demo"},
+        json={"name": "Role Test", "email": email, "role": "employee", "password": "Demo123456"},
         headers=auth(admin),
     )
     r = client.post(

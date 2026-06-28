@@ -95,9 +95,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
-      {/* Refetch the session periodically + on focus so the access token is refreshed
-          before it expires — an active user's API calls never 401, so they stay signed in. */}
-      <SessionProvider refetchInterval={5 * 60} refetchOnWindowFocus>
+      {/* Refetch the session on a 5-minute interval so the access token is refreshed before it
+          expires — an active user's API calls never 401. We deliberately do NOT refetch on every
+          window focus: that fired a /api/auth/session request on each tab switch, and any transient
+          failure surfaced as a noisy next-auth ClientFetchError. The interval keeps the token fresh
+          on its own. `refetchWhenOffline={false}` avoids guaranteed-failing fetches while offline. */}
+      <SessionProvider refetchInterval={5 * 60} refetchOnWindowFocus={false} refetchWhenOffline={false}>
         <QueryClientProvider client={queryClient}>
           <GlobalProgress />
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>

@@ -77,10 +77,10 @@ def _mcp():
     from expense_mcp import auth as mcp_auth  # noqa: PLC0415
     from expense_mcp.client import ApiError  # noqa: PLC0415
     from expense_mcp.tools import (  # noqa: PLC0415
-        approvals, assistant, auth_tools, dashboard, expenses, finance, system, users,
+        admin, approvals, assistant, auth_tools, dashboard, expenses, finance, system, users,
     )
     return mcp_auth, ApiError, {
-        "approvals": approvals, "assistant": assistant, "auth_tools": auth_tools,
+        "admin": admin, "approvals": approvals, "assistant": assistant, "auth_tools": auth_tools,
         "dashboard": dashboard, "expenses": expenses, "finance": finance,
         "system": system, "users": users,
     }
@@ -142,6 +142,14 @@ def _route(low: str) -> Callable:
         (("kpi", "auto-approval", "auto approval", "compliance rate"), _skill_kpis),
         (("dashboard", "metrics", "overview", "summary of spend", "total spend", "how much"), _skill_dashboard),
         (("list users", "all users", "user list", "accounts", "who has access"), _skill_users),
+        (("list agencies", "all agencies", "agency list", "show agencies"), _skill_list_agencies),
+        (("find user", "lookup user", "look up user", "user details", "who is", "is user",
+          "has permission", "has access", "has role", "check user", "user info"), _skill_find_user),
+        (("assign role", "change role", "set role", "promote", "make user", "give role",
+          "grant role"), _skill_assign_role_admin),
+        (("deactivate user", "disable user", "remove user", "revoke access"), _skill_deactivate_user_admin),
+        (("create agency", "add agency", "new agency", "onboard agency"), _skill_create_agency),
+        (("run escalation", "escalation sweep", "sla sweep", "aging check", "escalations"), _skill_run_escalations),
         (("system health", "is the system", "health check", "are services", "is everything up"), _skill_health),
         (("my activity", "my history", "audit", "what did i do"), _skill_activity),
         (("resubmit", "re-submit", "send it back in", "submit again"), _skill_resubmit),
@@ -246,11 +254,19 @@ def _skill_kpis(T, ApiError, msg, low, ctx, res, principal):
 def _skill_users(T, ApiError, msg, low, ctx, res, principal):
     rows = T["users"].list_users()
     res.tools_used = ["list_users"]
-    lines = "\n".join(f"- {u.get('name')} — {str(u.get('role','')).title()}" for u in rows[:25])
-    res.reply = f"**Users ({len(rows)})**\n{lines}"
-    res.actions = [f"Listed {len(rows)} user(s)"]
-
-
+    lines = []
+    for u in rows[:25]:
+        role = str(u.get("role", "")).title()
+        agency = u.get("agencyName") or u.get("agency_name") or ""
+        active = u.get("isActive", u.get("is_active", True))
+        parts = ["- **{}** \u2014 {}".format(u.get("name"), role)]
+        if agency:
+            parts.append(" \u00b7 {}".format(agency))
+        if not active:
+            parts.append(" (inactive)")
+        lines.append("".join(parts))
+    res.reply = "**Users ({})**\n".format(len(rows)) + "\n".join(lines)
+    res.actions = ["Listed {} user(s)".format(len(rows))]
 def _skill_health(T, ApiError, msg, low, ctx, res, principal):
     h = T["system"].server_health()
     res.tools_used = ["server_health"]
@@ -271,6 +287,207 @@ def _skill_activity(T, ApiError, msg, low, ctx, res, principal):
         res.reply = f"**Your recent activity**\n{lines}"
     res.actions = ["Read your activity trail"]
 
+
+
+# --- admin skills ------------------------------------------------------------------------- #
+_ROLE_PERMS = {
+    "employee": "can create and submit their own expense sheets",
+    "manager": "can approve or return expense sheets for their agency",
+    "finance": "can make finance decisions on all sheets and view audit logs",
+    "admin": "platform administrator — manages all users and agencies across the platform",
+}
+_ROLE_SYNONYMS: dict[str, str] = {
+    "employee": "employee", "staff": "employee", "worker": "employee",
+    "manager": "manager", "lead": "manager", "supervisor": "manager",
+    "finance": "finance", "financial": "finance", "accountant": "finance", "reviewer": "finance",
+    "admin": "admin", "administrator": "admin",
+}
+
+
+def _extract_name_hint(msg: str, low: str) -> str | None:
+    patterns = [
+        r"(?:find|lookup|look up|who is|is|check|show|about|for)\s+(?:user\s+)?([a-zA-Z0-9_.@\-]{2,40})",
+        r"([a-zA-Z0-9_.@\-]{2,40})(?:'s)?\s+(?:permission|role|access|account|status|profile)",
+        r"user\s+([a-zA-Z0-9_.@\-]{2,40})",
+        r"(?:deactivate|disable|remove|promote|assign\s+role\s+to)\s+([a-zA-Z0-9_.@\-]{2,40})",
+    ]
+    stopwords = {"a", "an", "the", "is", "has", "with", "user", "admin", "role", "please"}
+    for pat in patterns:
+        m = re.search(pat, msg, re.I)
+        if m:
+            name = m.group(1).strip().lower()
+            if name and name not in stopwords:
+                return name
+    return None
+
+
+def _match_user(hint: str, rows: list[dict]) -> list[dict]:
+    hint_l = hint.lower()
+    return [
+        u for u in rows
+        if hint_l in str(u.get("name", "")).lower() or hint_l in str(u.get("email", "")).lower()
+    ]
+
+
+def _extract_target_role(low: str) -> str | None:
+    for kw, role in _ROLE_SYNONYMS.items():
+        if re.search(rf"\b{kw}\b", low):
+            return role
+    return None
+
+
+def _format_user_card(u: dict) -> str:
+    role = str(u.get("role", "")).lower()
+    active = u.get("isActive", u.get("is_active", True))
+    agency = u.get("agencyName") or u.get("agency_name") or ("All agencies" if role == "admin" else "—")
+    perms = _ROLE_PERMS.get(role, role)
+    status_str = "Active ✓" if active else "Inactive ✗"
+    return (
+        "**{}** ({})\n- Role: {} · Agency: {}\n- Status: {}\n- Permissions: {}".format(
+            u.get("name"), u.get("email"), role.title(), agency, status_str, perms
+        )
+    )
+
+
+def _skill_find_user(T, ApiError, msg, low, ctx, res, principal):
+    name_hint = _extract_name_hint(msg, low)
+    rows = T["users"].list_users()
+    res.tools_used = ["list_users"]
+    matches = _match_user(name_hint, rows) if name_hint else rows
+    if not matches:
+        res.reply = "No user found matching {}.".format(repr(name_hint))
+        res.confidence = "low"
+        return
+    if len(matches) == 1:
+        res.reply = _format_user_card(matches[0])
+    elif len(matches) <= 5:
+        res.reply = "Found {} matching users:\n\n".format(len(matches)) + "\n\n".join(_format_user_card(u) for u in matches)
+    else:
+        lines = "\n".join(
+            "- **{}** ({}) — {}".format(u.get("name"), u.get("email"), str(u.get("role", "")).title())
+            for u in matches[:10]
+        )
+        res.reply = "Found {} users matching {}:\n{}".format(len(matches), repr(name_hint), lines)
+    res.actions = ["Looked up user details"]
+
+
+def _skill_list_agencies(T, ApiError, msg, low, ctx, res, principal):
+    rows = T["admin"].list_agencies()
+    res.tools_used = ["list_agencies"]
+    if not rows:
+        res.reply = "No agencies found."
+    else:
+        lines = "\n".join(
+            "- **{}** · {} user(s) · {}".format(
+                a.get("name"), a.get("userCount", a.get("user_count", 0)), str(a.get("status", "active")).title()
+            )
+            for a in rows
+        )
+        res.reply = "**Agencies ({})**\n{}".format(len(rows), lines)
+    res.actions = ["Listed {} agenc(ies)".format(len(rows))]
+
+
+def _skill_create_agency(T, ApiError, msg, low, ctx, res, principal):
+    m = re.search(r'(?:called|named|titled|agency)\s+["\']?([A-Za-z0-9 _\-&\.]{2,60})["\']?', msg, re.I)
+    name = m.group(1).strip() if m else None
+    if not name:
+        res.needs = ["name"]
+        res.pending = {"action": "create_agency"}
+        res.reply = "What should the new agency be **named**?"
+        return
+    res.pending = {"action": "create_agency_confirm", "name": name}
+    res.context = _carry(ctx)
+    res.reply = "Create a new agency named **{}**? Reply **yes** to confirm.".format(name)
+    res.confidence = "medium"
+
+
+def _skill_assign_role_admin(T, ApiError, msg, low, ctx, res, principal):
+    target_role = _extract_target_role(low)
+    name_hint = _extract_name_hint(msg, low)
+    if not name_hint:
+        res.reply = "Which user should I change the role for? Try: assign manager role to [name]."
+        res.confidence = "low"
+        return
+    rows = T["users"].list_users()
+    res.tools_used = ["list_users"]
+    matches = _match_user(name_hint, rows)
+    if not matches:
+        res.reply = "No user found matching {}.".format(repr(name_hint))
+        res.confidence = "low"
+        return
+    if len(matches) > 1:
+        lines = "\n".join(
+            "- {} ({}) — {}".format(u.get("name"), u.get("email"), str(u.get("role", "")).title())
+            for u in matches[:5]
+        )
+        res.reply = "Multiple users match {}:\n{}\n\nPlease be more specific (use their email).".format(repr(name_hint), lines)
+        res.confidence = "low"
+        return
+    u = matches[0]
+    if not target_role:
+        res.reply = "What role should **{}** have? Choose: employee, manager, finance, or admin.".format(u.get("name"))
+        res.pending = {"action": "assign_role_await_role", "user_id": u.get("id"), "user_name": u.get("name"), "user_email": u.get("email")}
+        res.context = _carry(ctx)
+        res.confidence = "medium"
+        return
+    res.pending = {
+        "action": "assign_role_admin",
+        "user_id": u.get("id"), "user_name": u.get("name"),
+        "user_email": u.get("email"), "role": target_role,
+    }
+    res.context = _carry(ctx)
+    res.reply = (
+        "Change **{}**'s role from {} to **{}**? Reply **yes** to confirm.".format(
+            u.get("name"), str(u.get("role", "")).title(), target_role.title()
+        )
+    )
+    res.confidence = "medium"
+
+
+def _skill_deactivate_user_admin(T, ApiError, msg, low, ctx, res, principal):
+    name_hint = _extract_name_hint(msg, low)
+    if not name_hint:
+        res.reply = "Which user should I deactivate? Try: deactivate [name or email]."
+        res.confidence = "low"
+        return
+    rows = T["users"].list_users()
+    res.tools_used = ["list_users"]
+    matches = _match_user(name_hint, rows)
+    if not matches:
+        res.reply = "No user found matching {}.".format(repr(name_hint))
+        res.confidence = "low"
+        return
+    if len(matches) > 1:
+        lines = "\n".join("- {} ({})".format(u.get("name"), u.get("email")) for u in matches[:5])
+        res.reply = "Multiple users match {}:\n{}\n\nPlease be more specific.".format(repr(name_hint), lines)
+        res.confidence = "low"
+        return
+    u = matches[0]
+    if not u.get("isActive", u.get("is_active", True)):
+        res.reply = "**{}** is already inactive.".format(u.get("name"))
+        res.tools_used = ["list_users"]
+        return
+    res.pending = {"action": "deactivate_user_admin", "user_id": u.get("id"), "user_name": u.get("name")}
+    res.context = _carry(ctx)
+    res.reply = (
+        "Deactivate **{}** ({})? They will no longer be able to sign in. Reply **yes** to confirm.".format(
+            u.get("name"), u.get("email")
+        )
+    )
+    res.confidence = "medium"
+
+
+def _skill_run_escalations(T, ApiError, msg, low, ctx, res, principal):
+    res.pending = {"action": "run_escalations"}
+    res.context = _carry(ctx)
+    res.reply = (
+        "Run the SLA/aging escalation sweep now? This scans all queues and flags overdue sheets. "
+        "Reply **yes** to confirm."
+    )
+    res.confidence = "medium"
+
+
+# --- end admin skills --------------------------------------------------------------------- #
 
 def _skill_next(T, ApiError, msg, low, ctx, res, principal):
     """'What do I need to do next?' — role-aware summary of outstanding work."""
@@ -302,6 +519,8 @@ def _skill_next(T, ApiError, msg, low, ctx, res, principal):
 
 
 def _skill_cross_user(T, ApiError, msg, low, ctx, res, principal):
+    if str(principal.role).lower() == "admin":
+        return _skill_find_user(T, ApiError, msg, low, ctx, res, principal)
     res.confidence = "low"
     res.reply = (
         "I can only access **your own** expenses and whatever your role already lets you see "
@@ -407,6 +626,41 @@ def _skill_create(T, ApiError, msg, low, ctx, res, principal):
 def _resolve_pending(T, ApiError, msg, low, ctx, pending, res, principal):
     action = pending.get("action")
 
+    # 0) Admin slot-filling: awaiting a role name.
+    if action == "assign_role_await_role":
+        role = _extract_target_role(low)
+        if not role:
+            res.pending = pending
+            res.context = _carry(ctx)
+            res.reply = "Which role? Reply with: **employee**, **manager**, **finance**, or **admin**."
+            res.confidence = "medium"
+        else:
+            res.pending = {
+                "action": "assign_role_admin",
+                "user_id": pending["user_id"], "user_name": pending["user_name"],
+                "user_email": pending["user_email"], "role": role,
+            }
+            res.context = _carry(ctx)
+            res.reply = "Change **{}**'s role to **{}**? Reply **yes** to confirm.".format(
+                pending["user_name"], role.title()
+            )
+            res.confidence = "medium"
+        res.suggestions = _suggestions_for(principal.role)
+        return res.as_dict()
+
+    # 0b) Admin agency name slot-filling.
+    if action == "create_agency":
+        name = _strip(msg)
+        if not name:
+            res.needs = ["name"]; res.pending = pending; res.reply = "What should the agency be named?"
+        else:
+            res.pending = {"action": "create_agency_confirm", "name": name}
+            res.context = _carry(ctx)
+            res.reply = "Create a new agency named **{}**? Reply **yes** to confirm.".format(name)
+            res.confidence = "medium"
+        res.suggestions = _suggestions_for(principal.role)
+        return res.as_dict()
+
     # 1) Guided create slot-filling: the message supplies the next missing field.
     if action == "create":
         merged = dict(pending)
@@ -498,6 +752,34 @@ def _execute(T, ApiError, action, pending, res, principal):
             res.actions = [f"Resubmitted “{pending['title']}”"]
         elif action == "create_confirm":
             _do_create(T, ApiError, pending["title"], pending["period"], res, principal, {}, force=True)
+        elif action == "create_agency_confirm":
+            out = T["admin"].create_agency(pending["name"])
+            res.tools_used = ["create_agency"]
+            res.reply = "Created agency **{}**. You can now onboard users into it.".format(
+                out.get("name", pending["name"])
+            )
+            res.actions = ["Created agency '{}'".format(pending["name"])]
+        elif action == "assign_role_admin":
+            T["admin"].assign_role(pending["user_email"], pending["role"])
+            res.tools_used = ["assign_role"]
+            res.reply = "Updated **{}**'s role to **{}**.".format(
+                pending["user_name"], str(pending["role"]).title()
+            )
+            res.actions = ["Assigned role {} to {}".format(pending["role"], pending["user_name"])]
+        elif action == "deactivate_user_admin":
+            T["admin"].deactivate_user(pending["user_id"])
+            res.tools_used = ["deactivate_user"]
+            res.reply = "Deactivated **{}** — they can no longer sign in.".format(pending["user_name"])
+            res.actions = ["Deactivated user {}".format(pending["user_name"])]
+        elif action == "run_escalations":
+            out = T["admin"].run_escalations()
+            res.tools_used = ["run_escalations"]
+            scanned = out.get("sheets_checked", out.get("checked", "?"))
+            raised = out.get("newly_raised", out.get("escalated", "?"))
+            res.reply = "Escalation sweep complete — scanned **{}** sheet(s), raised **{}** new alert(s).".format(
+                scanned, raised
+            )
+            res.actions = ["Ran the SLA escalation sweep"]
         elif action == "logout":
             T["auth_tools"].logout()
             res.tools_used = ["logout"]
@@ -540,12 +822,19 @@ def _do_create(T, ApiError, title, period, res, principal, ctx, force=False):
 
 def _skill_fallback(T, ApiError, msg, low, ctx, res, principal):
     res.confidence = "low"
-    # Near-miss nudge: if the message *almost* matched an intent, name it so the user can
-    # rephrase in one step instead of guessing what the assistant understands.
     _fn, label, score = _fuzzy_route(low)
+    role = str(principal.role).lower()
+    if role == "admin":
+        base = (
+            "As admin I can: **list users**, **find a user** by name or email, **list agencies**, "
+            "**create an agency**, **assign a role** to a user, **deactivate a user**, "
+            "**run the escalation sweep**, check **system health**, or show the **dashboard**."
+        )
+    else:
+        base = "I can help with expenses, approvals, receipts, policy questions, reports, and dashboards."
     hint = f" Did you mean *“{label}”*?" if label and score >= _NEARMISS_THRESHOLD else ""
     res.reply = (
-        "I can help with expenses, approvals, receipts, policy questions, reports, and dashboards."
+        base
         + hint
         + " Try one of the suggestions below, or ask *“what do I need to do next?”*"
     )
@@ -704,7 +993,7 @@ def _suggestions_for(role: str) -> list[str]:
     if role == "finance":
         return ["Show the finance queue", "Generate finance KPIs", "Spend by category"]
     if role == "admin":
-        return ["List users", "System health", "Show the dashboard"]
+        return ["List users", "List agencies", "Find user by name", "Assign role"]
     return ["Show my expenses", "Create a new expense sheet", "What do I need to do next?"]
 
 
@@ -716,7 +1005,7 @@ def suggestions_for_screen(role: str, screen: str | None) -> list[str]:
     if "finance" in screen:
         return ["Review the finance queue", "Generate finance KPIs", "Find likely duplicate expenses"]
     if "admin" in screen:
-        return ["List users", "System health", "Show the dashboard"]
+        return ["List users", "List agencies", "Find user by name", "Run escalation sweep"]
     if "employee" in screen:
         return ["Create a new expense sheet", "What do I need to do next?", "Show my expenses"]
     return _suggestions_for(role)
@@ -727,6 +1016,9 @@ _LEADING_VERBS.update({
     "approve": _skill_approve, "reject": _skill_reject, "return": _skill_reject,
     "decline": _skill_reject, "submit": _skill_submit, "resubmit": _skill_resubmit,
     "withdraw": _skill_withdraw, "recall": _skill_withdraw, "create": _skill_create,
+    "assign": _skill_assign_role_admin, "promote": _skill_assign_role_admin,
+    "deactivate": _skill_deactivate_user_admin, "disable": _skill_deactivate_user_admin,
+    "find": _skill_find_user, "lookup": _skill_find_user,
 })
 
 
@@ -759,6 +1051,18 @@ _INTENT_VOCAB: list[tuple[Callable, str, tuple[str, ...]]] = [
     (_skill_kpis, "show finance KPIs", ("kpi", "auto approval", "compliance rate", "interventions")),
     (_skill_dashboard, "show the dashboard", ("dashboard", "overview", "summary", "total spend", "spending")),
     (_skill_users, "list users", ("list users", "all users", "user list", "accounts", "who has access", "team members")),
+    (_skill_list_agencies, "list agencies", ("list agencies", "all agencies", "agency list", "agencies", "show agencies")),
+    (_skill_find_user, "find user by name or email", (
+        "find user", "lookup user", "look up user", "who is", "user details", "user info",
+        "has permission", "has role", "has access", "check user", "user permission")),
+    (_skill_assign_role_admin, "assign a role to a user", (
+        "assign role", "change role", "set role", "promote user", "make manager",
+        "make admin", "grant role", "role change")),
+    (_skill_deactivate_user_admin, "deactivate a user", (
+        "deactivate user", "disable user", "remove user", "revoke access", "disable account")),
+    (_skill_create_agency, "create an agency", ("create agency", "new agency", "add agency", "onboard agency")),
+    (_skill_run_escalations, "run escalation sweep", (
+        "run escalation", "escalation sweep", "sla sweep", "aging check", "escalations", "flag overdue")),
     (_skill_health, "check system health", ("system health", "health check", "services up", "everything up")),
     (_skill_activity, "show my activity", ("my activity", "my history", "audit trail", "what did i do", "recent activity")),
     (_skill_resubmit, "resubmit a sheet", ("resubmit", "submit again", "send back in")),

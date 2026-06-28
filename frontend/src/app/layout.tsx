@@ -29,6 +29,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={inter.variable}
+      // next-themes writes the theme class/style onto <html> on the client before hydration
+      // (to avoid a flash of the wrong theme), so the server markup can't match. This is the
+      // documented, intended use of suppressHydrationWarning — scoped to the <html> tag only.
       suppressHydrationWarning
     >
       <head>

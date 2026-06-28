@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anchor the default SQLite file to the repo root (this file is api/app/config.py), so the
@@ -94,8 +95,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     # Base URL the reset link points at (the frontend portal origin).
     app_base_url: str = "http://localhost:3000"
-    # Reset tokens are single-use and time-limited.
-    reset_token_ttl_minutes: int = 30
+    # Reset tokens are single-use and time-limited. 24 hours per product requirement.
+    reset_token_ttl_minutes: int = 24 * 60
     password_min_length: int = 10
 
     @property
@@ -161,9 +162,31 @@ class Settings(BaseSettings):
     escalation_warning_hours: int = 48
     escalation_critical_hours: int = 120
 
+    # --- Security: rate limiting (slowapi) -------------------------------- #
+    # Throttle the pre-auth surface (login/token/forgot-password) and uploads. Disabled in
+    # tests so the suite can hammer /auth freely; on by default everywhere else.
+    rate_limit_enabled: bool = True
+    rate_limit_auth: str = "10/minute"  # per-IP cap on login/token attempts
+    rate_limit_forgot: str = "5/minute"  # per-IP cap on forgot-password
+
     @property
     def is_postgres(self) -> bool:
         return self.database_url.startswith("postgresql")
+
+    @model_validator(mode="after")
+    def _guard_production_secrets(self) -> "Settings":
+        """Fail fast rather than boot insecurely: outside dev, a provider that mints local
+        HS256 tokens (db/hybrid) must have a strong, non-default JWT secret. A shipped default
+        would let anyone forge an admin token (security: S-C1)."""
+        if self.environment != "dev" and self.auth_provider in ("db", "hybrid"):
+            if self.jwt_secret == "dev-only-change-me":
+                raise ValueError(
+                    "APP_JWT_SECRET is still the dev default — set a strong secret in "
+                    f"{self.environment}."
+                )
+            if len(self.jwt_secret) < 32:
+                raise ValueError("APP_JWT_SECRET must be at least 32 characters outside dev.")
+        return self
 
 
 settings = Settings()

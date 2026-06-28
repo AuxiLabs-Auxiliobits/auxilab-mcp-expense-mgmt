@@ -13,7 +13,7 @@ from app.models.attachment import Attachment
 from app.models.decision import Decision
 from app.models.expense_sheet import ExpenseSheet
 from app.models.line_item import LineItem
-from app.principal import Principal
+from app.principal import Principal, Role
 from app.rbac import scope as rbac_scope
 from app.rbac.permissions import Capability
 from app.config import settings
@@ -29,7 +29,8 @@ from app.schemas.dto import (
     SheetOut,
     SheetUpdate,
 )
-from app.serializers import decision_to_out
+from app.pagination import PageParams
+from app.serializers import decision_to_out, sheets_to_out
 from app.serializers import sheet_to_out as _to_out
 from app.services import receipt_library_service, receipt_scan_service, sheet_service
 from app.storage import read_receipt_blob
@@ -67,16 +68,22 @@ async def create_sheet(
 
 @router.get("", response_model=list[SheetOut], summary="List my own sheets")
 async def list_my_sheets(
+    page: PageParams = Depends(),
     principal: Principal = Depends(current_principal),
     session: Session = Depends(get_session),
 ) -> list[SheetOut]:
     # Policy flags are intentionally NOT computed here: running the checker per line item for
     # every sheet would make the list O(sheets × items). They are computed lazily on the
     # detail route (GET /sheets/{id}); in the list `policy_flags` stays at its zero default.
+    # Batched serializer (no N+1) + bounded pagination.
     rows = session.exec(
-        select(ExpenseSheet).where(ExpenseSheet.employee_id == principal.subject_id)
+        select(ExpenseSheet)
+        .where(ExpenseSheet.employee_id == principal.subject_id)
+        .order_by(ExpenseSheet.updated_at.desc())  # type: ignore[attr-defined]
+        .limit(page.limit)
+        .offset(page.offset)
     ).all()
-    return [_to_out(session, s) for s in rows]
+    return sheets_to_out(session, list(rows))
 
 
 @router.get(
@@ -397,11 +404,14 @@ async def scan_receipt(
     if not attachments:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no receipt attached to scan")
     result = receipt_scan_service.scan_receipt(attachments[-1].blob_uri, item.amount, settings)
-    # Persist the review flag for Finance (employee UI shows nothing).
-    item.needs_human_review = result.human_intervention_required
-    item.review_reason = result.detail if result.human_intervention_required else None
-    session.add(item)
-    session.commit()
+    # Only Finance/Admin scans MUTATE the human-review flag. The submitter (read scope on
+    # their own sheet) may scan to preview the reconcile, but must not be able to set — or,
+    # worse, clear — this fraud-control flag with a clean re-scan (security: S-H3).
+    if principal.role in (Role.FINANCE, Role.ADMIN):
+        item.needs_human_review = result.human_intervention_required
+        item.review_reason = result.detail if result.human_intervention_required else None
+        session.add(item)
+        session.commit()
     return result
 
 

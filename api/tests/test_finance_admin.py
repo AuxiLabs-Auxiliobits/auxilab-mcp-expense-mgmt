@@ -158,7 +158,7 @@ def test_user_crud_lifecycle(client):
     email = f"crud-{next(_counter)}@demo.local"
     created = client.post(
         "/admin/users",
-        json={"name": "CRUD User", "email": email, "role": "employee", "password": "demo"},
+        json={"name": "CRUD User", "email": email, "role": "employee", "password": "Demo123456"},
         headers=auth(admin),
     )
     assert created.status_code == 201, created.text

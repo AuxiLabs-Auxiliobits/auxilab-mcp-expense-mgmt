@@ -117,7 +117,19 @@ export function LoginExperience() {
       }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        showError("Invalid email or password. Please try again.");
+        // NextAuth v5 beta doesn't reliably propagate CredentialsSignin subclass codes
+        // to res.error. On any failure, probe the backend directly to get the real reason.
+        let errorMsg = "Incorrect password. Please try again.";
+        try {
+          const probe = await fetch(`${API_BASE}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          if (probe.status === 404) errorMsg = "No account found for this email address.";
+          else if (probe.status === 403) errorMsg = "This account has been deactivated. Please contact your administrator.";
+        } catch { /* keep default message if probe fails */ }
+        showError(errorMsg);
         setLoading(null);
         return;
       }

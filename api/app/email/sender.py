@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import logging
 import smtplib
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Protocol
 
 from app.config import Settings
@@ -21,7 +22,7 @@ logger = logging.getLogger("app.email")
 
 
 class EmailSender(Protocol):
-    def send(self, *, to: str, subject: str, body: str) -> None: ...
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> None: ...
 
 
 class ConsoleEmailSender:
@@ -31,7 +32,7 @@ class ConsoleEmailSender:
     def __init__(self, sender: str) -> None:
         self._from = sender
 
-    def send(self, *, to: str, subject: str, body: str) -> None:
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> None:
         logger.info(
             "\n----- EMAIL (console backend) -----\nFrom: %s\nTo: %s\nSubject: %s\n\n%s\n"
             "-----------------------------------",
@@ -45,18 +46,21 @@ class SmtpEmailSender:
         self._user, self._password = user, password
         self._from, self._use_tls = sender, use_tls
 
-    def send(self, *, to: str, subject: str, body: str) -> None:
-        msg = EmailMessage()
-        msg["From"] = self._from
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> None:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"Auxilab Expense Management <{self._from}>"
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        msg.attach(MIMEText(body, "plain"))
+        if html:
+            msg.attach(MIMEText(html, "html"))
         with smtplib.SMTP(self._host, self._port, timeout=15) as smtp:
             if self._use_tls:
                 smtp.starttls()
             if self._user:
                 smtp.login(self._user, self._password)
-            smtp.send_message(msg)
+            envelope_from = self._user or self._from
+            smtp.sendmail(envelope_from, to, msg.as_string())
         logger.info("Sent email to %s via SMTP", to)
 
 

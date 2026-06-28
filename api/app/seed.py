@@ -10,7 +10,7 @@ from app.models.agency import Agency
 from app.models.user import User
 from app.principal import Role
 
-_ph = PasswordHasher()
+_ph = PasswordHasher(memory_cost=16384, time_cost=2, parallelism=1)
 _DEMO_PASSWORD = "demo"  # noqa: S105 — dev-only seed
 
 

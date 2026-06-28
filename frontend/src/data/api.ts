@@ -940,6 +940,7 @@ export interface ActivityParams {
   pageSize?: number;
   action?: string;
   q?: string;
+  actor_id?: string;
 }
 export interface ActivityPage {
   items: AuditLogEntry[];
@@ -958,6 +959,7 @@ export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> 
       const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (params.action) qs.set("action", params.action);
       if (params.q) qs.set("q", params.q);
+      if (params.actor_id) qs.set("actor_id", params.actor_id);
       return apiGet<Raw>(`/activity?${qs.toString()}`).then((r) => ({
         items: Array.isArray(r.items) ? (r.items as Raw[]).map(mapAudit) : [],
         total: num(r.total),
@@ -970,6 +972,7 @@ export function getActivity(params: ActivityParams = {}): Promise<ActivityPage> 
       const all = clone(auditLog).filter(
         (e) =>
           (!params.action || e.action === params.action) &&
+          (!params.actor_id || e.actorId === params.actor_id) &&
           (!ql || `${e.summary} ${e.action} ${e.entity ?? ""}`.toLowerCase().includes(ql)),
       );
       const start = (page - 1) * pageSize;
@@ -1211,10 +1214,9 @@ export function getBaselinePolicy() {
 }
 
 export function getAuditLog() {
-  return backend(
-    () => apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit)),
-    () => delay(clone(auditLog)),
-  );
+  // Admin compliance view — ALWAYS the real immutable backend trail, never the mock store
+  // (showing fabricated audit entries would be a correctness/compliance hazard).
+  return apiGet<Raw[]>("/finance/audit?limit=200").then((rows) => rows.map(mapAudit));
 }
 
 export interface AssignRoleInput {
@@ -1429,6 +1431,42 @@ export async function markNotificationsRead(role: Role): Promise<AppNotification
   );
 }
 
+/** Mark a single notification read (recipient-scoped server-side). */
+export function markNotificationRead(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/read`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id);
+      if (n) n.read = true;
+      return delay(undefined, 120);
+    },
+  );
+}
+
+/** Archive a single notification — hidden from the default inbox, kept in history. */
+export function archiveNotification(id: string): Promise<void> {
+  return backend(
+    () => apiPost<Raw>(`/notifications/${id}/archive`).then(() => undefined),
+    () => {
+      const n = notificationStore.find((x) => x.id === id) as { archived?: boolean } | undefined;
+      if (n) n.archived = true;
+      return delay(undefined, 120);
+    },
+  );
+}
+
+/** Permanently delete a single notification. */
+export function deleteNotification(id: string): Promise<void> {
+  return backend(
+    () => apiDelete<void>(`/notifications/${id}`).then(() => undefined),
+    () => {
+      const i = notificationStore.findIndex((x) => x.id === id);
+      if (i >= 0) notificationStore.splice(i, 1);
+      return delay(undefined, 120);
+    },
+  );
+}
+
 // ── User settings / preferences ──────────────────────────────────────────────
 export type UserPreferences = Record<string, boolean | string | number>;
 
@@ -1484,20 +1522,55 @@ export interface AdminUserInput {
   password: string;
   agencyId?: string;
 }
-export const getUsers = (isActive?: boolean) =>
-  apiGet<Raw[]>(`/admin/users${isActive != null ? `?is_active=${isActive}` : ""}`);
-export const getAdminUser = (id: string) => apiGet<Raw>(`/admin/users/${id}`);
-export const createUser = (input: AdminUserInput) =>
+/** Map a backend UserOut row to the typed User (agencyName is resolved client-side). */
+function mapAdminUser(r: Raw): User {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    email: String(r.email ?? ""),
+    role: String(r.role ?? "employee").toLowerCase() as Role,
+    agencyId: (r.agency_id as string) ?? "",
+    isActive: (r.is_active as boolean) ?? true,
+  };
+}
+
+export const listAdminUsers = (opts?: { isActive?: boolean }): Promise<User[]> =>
+  apiGet<Raw[]>(
+    `/admin/users${opts?.isActive != null ? `?is_active=${opts.isActive}` : ""}`,
+  ).then((rows) => rows.map(mapAdminUser));
+
+export const getAdminUser = (id: string) => apiGet<Raw>(`/admin/users/${id}`).then(mapAdminUser);
+
+export const createUser = (input: AdminUserInput): Promise<User> =>
   apiPost<Raw>("/admin/users", {
     name: input.name,
     email: input.email,
     role: input.role,
     password: input.password,
     agency_id: input.agencyId,
-  });
-export const updateUser = (id: string, patch: Partial<{ role: Role; name: string }>) =>
-  apiPatch<Raw>(`/admin/users/${id}`, patch);
-export const deleteUser = (id: string) => apiDelete<Raw>(`/admin/users/${id}`);
+  }).then(mapAdminUser);
+
+export interface AdminUserPatch {
+  name?: string;
+  email?: string;
+  role?: Role;
+  agencyId?: string;
+  isActive?: boolean;
+  password?: string;
+}
+export const updateUser = (id: string, patch: AdminUserPatch): Promise<User> =>
+  apiPatch<Raw>(`/admin/users/${id}`, {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.email !== undefined ? { email: patch.email } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.agencyId !== undefined ? { agency_id: patch.agencyId } : {}),
+    ...(patch.isActive !== undefined ? { is_active: patch.isActive } : {}),
+    ...(patch.password ? { password: patch.password } : {}),
+  }).then(mapAdminUser);
+
+/** Soft-delete (deactivate). Re-enable via updateUser({ isActive: true }). */
+export const deleteUser = (id: string): Promise<User> =>
+  apiDelete<Raw>(`/admin/users/${id}`).then(mapAdminUser);
 
 // Admin — agencies CRUD
 export const getAgency = (id: string) => apiGet<Raw>(`/admin/agencies/${id}`).then(mapAgency);

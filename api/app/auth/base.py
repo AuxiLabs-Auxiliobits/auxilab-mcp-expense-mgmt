@@ -14,6 +14,10 @@ class AuthError(Exception):
     """Raised on any authentication failure (bad creds, invalid/expired token)."""
 
 
+class UserNotFoundError(AuthError):
+    """Raised when no account exists for the supplied email."""
+
+
 class AuthProvider(ABC):
     @abstractmethod
     async def authenticate(self, email: str, password: str) -> str:

@@ -21,6 +21,7 @@ export const queryKeys = {
   policyDocuments: ["policy-documents"] as const,
   spendByCategory: ["spend-by-category"] as const,
   agencies: ["agencies"] as const,
+  adminUsers: ["admin-users"] as const,
   baselinePolicy: ["baseline-policy"] as const,
   auditLog: ["audit-log"] as const,
   myAuditLog: (id: string) => ["my-audit", id] as const,
@@ -191,6 +192,7 @@ export const useActivity = (params: api.ActivityParams) =>
     queryKey: ["activity", params] as const,
     queryFn: () => api.getActivity(params),
     placeholderData: (prev) => prev, // keep the table stable while paging/filtering
+    refetchInterval: 5_000, // poll every 5 s so audit pages stay near-real-time
   });
 
 export function useApproveSheet() {
@@ -261,13 +263,21 @@ export const useBaselinePolicy = () =>
   useQuery({ queryKey: queryKeys.baselinePolicy, queryFn: api.getBaselinePolicy });
 
 export const useAuditLog = () =>
-  useQuery({ queryKey: queryKeys.auditLog, queryFn: api.getAuditLog });
+  useQuery({
+    queryKey: queryKeys.auditLog,
+    queryFn: api.getAuditLog,
+    refetchInterval: 30_000, // live: re-poll the immutable trail every 30s
+    staleTime: 0, // always considered stale so admin mutations refetch immediately
+  });
 
 export function useAssignRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.assignRole,
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.auditLog }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
 }
 
@@ -278,7 +288,70 @@ export function useAddAgency() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.agencies });
       qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
     },
+  });
+}
+
+// ── Admin: agency CRUD (rename / soft-delete) ──
+export function useUpdateAgency() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateAgency(id, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.agencies });
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export function useDeleteAgency() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteAgency(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.agencies });
+      qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+// ── Admin: user CRUD (onboard employee / manager / finance) ──
+export const useAdminUsers = () =>
+  useQuery({ queryKey: queryKeys.adminUsers, queryFn: () => api.listAdminUsers() });
+
+function _invalidateUsers(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: queryKeys.adminUsers });
+  qc.invalidateQueries({ queryKey: queryKeys.agencies }); // user counts change
+  qc.invalidateQueries({ queryKey: queryKeys.auditLog });
+  qc.invalidateQueries({ queryKey: ["activity"] }); // invalidates all ["activity", ...] variants used by ActivityTable
+  qc.invalidateQueries({ queryKey: ["activity-log"] });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: api.AdminUserInput) => api.createUser(input),
+    onSuccess: () => _invalidateUsers(qc),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: api.AdminUserPatch }) =>
+      api.updateUser(id, patch),
+    onSuccess: () => _invalidateUsers(qc),
+  });
+}
+
+export function useDeactivateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteUser(id),
+    onSuccess: () => _invalidateUsers(qc),
   });
 }
 
@@ -329,6 +402,32 @@ export function useMarkNotificationsRead(role: Role) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.markNotificationsRead(role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+// Per-item notification mutations. Invalidating the role-prefixed key refreshes BOTH the
+// bell (`notifications(role)`) and the center (`[...notifications(role), "all"]`).
+export function useMarkOneNotificationRead(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.markNotificationRead(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+export function useArchiveNotification(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveNotification(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
+  });
+}
+
+export function useDeleteNotification(role: Role) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteNotification(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.notifications(role) }),
   });
 }

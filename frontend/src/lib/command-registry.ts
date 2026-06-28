@@ -25,10 +25,10 @@ export interface AppCommand {
   shortcut?: string;
 }
 
-/** Roles that have a Policy Assistant page (employees don't) → where AI commands point. */
+/** Roles that have a Policy Assistant page (employees + admin use widget only). */
 function assistantHref(role: Role): string | null {
   if (role === "manager") return "/manager/assistant";
-  if (role === "finance" || role === "admin") return "/finance/assistant";
+  if (role === "finance") return "/finance/assistant";
   return null;
 }
 
@@ -62,7 +62,7 @@ export function buildCommands(role: Role): AppCommand[] {
       { id: "act:approvals", label: "Review Pending Approvals", group: "Quick Actions", icon: "fact_check", kind: "action", href: "/manager", keywords: ["pending approvals", "review", "approve", "queue", "team expenses"] },
     );
   }
-  if (role === "finance" || role === "admin") {
+  if (role === "finance") {
     cmds.push(
       { id: "act:finance-queue", label: "Open Finance Queue", group: "Quick Actions", icon: "gavel", kind: "action", href: "/finance", keywords: ["finance queue", "routed", "manual review", "exceptions"] },
       { id: "act:reports", label: "View Reports", group: "Quick Actions", icon: "monitoring", kind: "action", href: "/finance", keywords: ["reports", "analytics", "kpi", "spend", "generate report"] },
@@ -73,6 +73,7 @@ export function buildCommands(role: Role): AppCommand[] {
     cmds.push(
       { id: "act:add-user", label: "Add User", group: "Quick Actions", icon: "person_add", kind: "action", href: "/admin", keywords: ["add user", "create user", "invite", "new user", "user management"] },
       { id: "act:roles", label: "Manage Roles", group: "Quick Actions", icon: "admin_panel_settings", kind: "action", href: "/admin", keywords: ["manage roles", "permissions", "rbac", "assign role"] },
+      { id: "act:audit-admin", label: "View Audit Logs", group: "Quick Actions", icon: "history", kind: "action", href: "/admin/audit", keywords: ["audit logs", "audit trail", "history", "platform log"] },
     );
   }
 
@@ -84,7 +85,7 @@ export function buildCommands(role: Role): AppCommand[] {
     if (role === "manager") {
       cmds.push({ id: "ai:approvals", label: "Ask AI to summarize pending approvals", group: "AI", icon: "summarize", kind: "ai", href: `${ai}?q=${encodeURIComponent("Summarize my pending approvals")}`, keywords: ["summarize approvals", "pending", "what needs review"] });
     }
-    if (role === "finance" || role === "admin") {
+    if (role === "finance") {
       cmds.push({ id: "ai:report", label: "Ask AI to generate a finance report", group: "AI", icon: "summarize", kind: "ai", href: `${ai}?q=${encodeURIComponent("Generate a finance summary for this month")}`, keywords: ["finance report", "generate report", "summary", "month"] });
     }
   }

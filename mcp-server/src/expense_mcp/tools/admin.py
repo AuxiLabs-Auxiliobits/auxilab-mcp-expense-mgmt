@@ -89,3 +89,9 @@ def deactivate_user(user_id: str) -> dict[str, Any] | None:
 def assign_role(email: str, role: Annotated[str, Field(description=_ROLES)]) -> dict[str, Any]:
     """Assign/change a user's role by email (admin only)."""
     return client.post("/admin/users/assign-role", json={"email": email, "role": role})
+
+
+@mcp.tool(annotations=WRITE)
+def run_escalations() -> dict[str, Any]:
+    """Run the SLA/aging escalation sweep now (admin only). Returns counts of sheets scanned and newly flagged."""
+    return client.post("/admin/escalations/run", json={})

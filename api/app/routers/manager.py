@@ -13,7 +13,8 @@ from app.models.line_item import LineItem
 from app.principal import Principal
 from app.rbac.permissions import Capability
 from app.schemas.dto import ManagerActionRequest, SheetOut
-from app.serializers import sheet_to_out
+from app.pagination import PageParams
+from app.serializers import sheet_to_out, sheets_to_out
 from app.services import sheet_service
 from expense_core.schemas.enums import LineItemStatus, SheetStatus
 
@@ -35,17 +36,23 @@ _ALLOWED_ACTIONS = {
 
 @router.get("/queue", response_model=list[SheetOut], summary="My agency's manager-review queue")
 async def manager_queue(
+    page: PageParams = Depends(),
     principal: Principal = Depends(require(Capability.MANAGER_ACTION_LINE_ITEM)),
     session: Session = Depends(get_session),
 ) -> list[SheetOut]:
-    """Sheets awaiting manager review in the manager's own agency only (SCOPING §19.1)."""
+    """Sheets awaiting manager review in the manager's own agency only (SCOPING §19.1).
+    Paginated + bounded."""
     rows = session.exec(
-        select(ExpenseSheet).where(
+        select(ExpenseSheet)
+        .where(
             ExpenseSheet.agency_id == principal.agency_id,
             ExpenseSheet.status == SheetStatus.IN_MANAGER_REVIEW,
         )
+        .order_by(ExpenseSheet.updated_at.desc())  # type: ignore[attr-defined]
+        .limit(page.limit)
+        .offset(page.offset)
     ).all()
-    return [sheet_to_out(session, s) for s in rows]
+    return sheets_to_out(session, list(rows))
 
 
 @router.post(

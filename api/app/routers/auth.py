@@ -5,13 +5,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
-from app.auth.base import AuthError, AuthProvider
+from app.auth.base import AuthError, AuthProvider, UserNotFoundError
 from app.auth.dependencies import current_principal, get_auth_provider
 from app.config import settings
+from app.rate_limit import limiter
 from app.db import get_session
 from app.email.sender import get_email_sender
 from app.models.agency import Agency
@@ -37,8 +38,9 @@ router = APIRouter(
 
 
 @router.post("/login", response_model=TokenResponse, summary="Log in (JSON) and get a bearer token")
+@limiter.limit(settings.rate_limit_auth)
 async def login(
-    body: LoginRequest, provider: AuthProvider = Depends(get_auth_provider)
+    request: Request, body: LoginRequest, provider: AuthProvider = Depends(get_auth_provider)
 ) -> TokenResponse:
     """Authenticate with an email + password (JSON body) and receive a JWT bearer token.
 
@@ -47,13 +49,21 @@ async def login(
     in `entra` mode the token is minted by Entra's hosted login (ADR-001)."""
     try:
         token = await provider.authenticate(body.email, body.password)
+    except UserNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No account found for that email address.") from e
     except AuthError as e:
+        # 403 = account exists but is disabled (distinct from 401 = wrong credentials).
+        # The frontend auth.ts maps 403 → AccountDisabledError → deactivation message.
+        if "disabled" in str(e).lower():
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(e)) from e
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
     return TokenResponse(access_token=token)
 
 
 @router.post("/token", response_model=TokenResponse, summary="OAuth2 token endpoint (for Swagger Authorize)")
+@limiter.limit(settings.rate_limit_auth)
 async def token(
+    request: Request,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     provider: AuthProvider = Depends(get_auth_provider),
 ) -> TokenResponse:
@@ -93,14 +103,22 @@ async def auth_method(email: str, session: Session = Depends(get_session)) -> Au
 
 
 @router.post("/forgot-password", response_model=MessageResponse, summary="Request a local password reset")
+@limiter.limit(settings.rate_limit_forgot)
 async def forgot_password(
-    body: ForgotPasswordRequest, session: Session = Depends(get_session)
+    request: Request, body: ForgotPasswordRequest, session: Session = Depends(get_session)
 ) -> MessageResponse:
     """Email a single-use, time-limited reset link for a local account. Always returns the
-    same generic message (no user enumeration); SSO-only accounts get no link."""
-    prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    same generic message (no user enumeration); SSO-only accounts get no link. In DEV only,
+    the link is echoed back (`dev_reset_link`) so the flow is testable without an SMTP server."""
+    try:
+        link = prs.request_reset(session, settings, get_email_sender(settings), body.email)
+    except prs.UserNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+    except prs.SsoAccountError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     return MessageResponse(
-        message="If an account exists for that email, a password-reset link is on its way."
+        message="A password-reset link is on its way. It is valid for 24 hours and can be used once.",
+        dev_reset_link=link if settings.environment == "dev" else None,
     )
 
 

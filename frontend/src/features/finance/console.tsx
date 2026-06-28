@@ -162,6 +162,20 @@ export function FinanceConsole() {
     [all],
   );
 
+  // Triage-tile aggregates derived from queue aging (escalation = SLA breach, warning = approaching).
+  const { breaches, warnings, oldestLabel } = useMemo(() => {
+    let breaches = 0;
+    let warnings = 0;
+    let oldest = { hours: -1, label: "—" };
+    for (const s of all) {
+      const a = agingLevel(s.submittedAt);
+      if (a.level === "escalation") breaches += 1;
+      else if (a.level === "warning") warnings += 1;
+      if (a.hours > oldest.hours) oldest = { hours: a.hours, label: a.label };
+    }
+    return { breaches, warnings, oldestLabel: oldest.label };
+  }, [all]);
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all

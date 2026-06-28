@@ -78,24 +78,20 @@ const NAV: Record<Role, NavGroup[]> = {
       ],
     },
   ],
-  // Admin has full platform rights — every item is accessible (no locks).
+  // Admin is the platform administrator: onboarding & managing users and agencies.
+  // No policy or operational reporting (those belong to Finance/Manager).
   admin: [
     {
       title: "Administration",
-      items: [{ label: "Platform Settings", href: "/admin", icon: "settings" }],
-    },
-    {
-      title: "Policy",
-      items: [{ label: "Policy Console", href: "/finance", icon: "gavel" }],
-    },
-    {
-      title: "Operations",
       items: [
-        { label: "Analytics", href: "/finance/insights", icon: "insights" },
-        { label: "Expense Sheets", href: "/finance/sheets", icon: "description" },
-        { label: "Review Queue", href: "/manager", icon: "fact_check" },
-        { label: "Audit Logs", href: "/finance/audit", icon: "history" },
+        { label: "User Management", href: "/admin/users", icon: "group" },
+        { label: "Platform Admins", href: "/admin/platform-admins", icon: "admin_panel_settings" },
+        { label: "Agency Management", href: "/admin/agencies", icon: "domain" },
       ],
+    },
+    {
+      title: "Oversight",
+      items: [{ label: "Audit Logs", href: "/admin/audit", icon: "history" }],
     },
   ],
 };
@@ -104,12 +100,12 @@ export function getNav(role: Role): NavGroup[] {
   return NAV[role];
 }
 
-/** Which portals each role may switch into (top-nav role switcher). */
+/** Which portals each role may access. Each role is strictly scoped to its own portal only. */
 export const ROLE_VIEW_ACCESS: Record<Role, Role[]> = {
   employee: ["employee"],
-  manager: ["employee", "manager"],
-  finance: ["employee", "manager", "finance"],
-  admin: ["employee", "manager", "finance", "admin"],
+  manager: ["manager"],
+  finance: ["finance"],
+  admin: ["admin"],
 };
 
 /** Capability matrix (SCOPING.md §3.2), used for fine-grained UI gating. */

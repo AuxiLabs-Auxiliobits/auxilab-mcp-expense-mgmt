@@ -30,7 +30,7 @@ export function ForgotPasswordCard() {
       .catch(() => {});
   }, []);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
@@ -41,7 +41,12 @@ export function ForgotPasswordCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { detail?: string };
+        setError(body.detail ?? "Unable to send reset link. Please try again.");
+        return;
+      }
+      await res.json().catch(() => {});
       setSent(true);
     } catch {
       setError("Unable to connect. Please try again.");
@@ -83,8 +88,9 @@ export function ForgotPasswordCard() {
         <h1 className="mt-4 text-headline-lg font-semibold text-on-surface">Check your email</h1>
         <p className="mt-2 text-body-sm text-on-surface-variant">
           If an account exists for <span className="font-medium text-on-surface">{email}</span>, a
-          password-reset link is on its way. It expires shortly and can be used once.
+          password-reset link is on its way. It is valid for 24 hours and can be used once.
         </p>
+
         <BackToSignIn />
       </div>
     );

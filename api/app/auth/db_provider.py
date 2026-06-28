@@ -13,12 +13,14 @@ from typing import Protocol
 
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import VerificationError, VerifyMismatchError
 
-from app.auth.base import AuthError, AuthProvider
+from app.auth.base import AuthError, AuthProvider, UserNotFoundError
 from app.principal import Principal, Role, scope_for
 
-_ph = PasswordHasher()
+# Lower memory_cost (16 MB) avoids allocation failures on Windows dev machines.
+# The default (64 MB) causes argon2.exceptions.VerificationError: Memory allocation error.
+_ph = PasswordHasher(memory_cost=16384, time_cost=2, parallelism=1)
 
 
 @dataclass
@@ -45,16 +47,22 @@ class DbAuthProvider(AuthProvider):
 
     async def authenticate(self, email: str, password: str) -> str:
         user = await self._users.get_by_email(email)
-        # Verify even when user is None to keep timing roughly constant.
+        # Always run verify to keep timing constant regardless of whether the user exists.
+        # Cache the error so we can prioritise the "account disabled" message over
+        # "wrong password" — deactivated users should know why they can't log in.
+        _verify_err: Exception | None = None
         try:
-            if user is None:
-                _ph.verify(_DUMMY_HASH, password)
-                raise AuthError("invalid credentials")
-            _ph.verify(user.password_hash, password)
+            _ph.verify(user.password_hash if user else _DUMMY_HASH, password)
         except VerifyMismatchError as e:
-            raise AuthError("invalid credentials") from e
+            _verify_err = e
+        except VerificationError as e:
+            _verify_err = e
+        if user is None:
+            raise UserNotFoundError("no account found for that email")
         if not user.is_active:
             raise AuthError("account disabled")
+        if _verify_err is not None:
+            raise AuthError("invalid credentials") from _verify_err
 
         now = int(time.time())
         claims = {

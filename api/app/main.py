@@ -10,10 +10,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlmodel import Session
 
 from app.config import settings
 from app.db import engine, init_db
+from app.rate_limit import limiter
 from app.routers import ALL_ROUTERS
 from app.seed import seed_demo
 
@@ -83,12 +86,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting (security: S-H1). The limiter is shared; routes opt in via @limiter.limit.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    # Also accept any localhost / 127.0.0.1 origin (any port) in dev, so the Next.js
-    # server works whether it's on localhost:3000, 127.0.0.1:3000, or another port.
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    # Accept any localhost / 127.0.0.1 origin (any port) ONLY in dev so the Next.js server
+    # works on whatever port; in staging/prod the explicit cors_origins allowlist applies
+    # (no wildcard localhost — security: S-M1).
+    allow_origin_regex=(
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?" if settings.environment == "dev" else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

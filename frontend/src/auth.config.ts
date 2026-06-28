@@ -149,7 +149,9 @@ export const authConfig = {
       if (token.role) session.user.role = token.role as Role;
       if (token.agencyId) session.user.agencyId = token.agencyId as string;
       if (token.agencyName) session.user.agencyName = token.agencyName as string;
-      if (token.accessToken) session.accessToken = token.accessToken as string;
+      // S-H2: the access token is deliberately NOT placed on the session — it stays only in
+      // the encrypted HttpOnly JWT cookie and is read server-side by the BFF proxy. Exposing
+      // it here would serve it to client JS via /api/auth/session.
       // Surface refresh/identity failures so the client can force a clean re-login.
       if (token.error) session.error = token.error;
       return session;

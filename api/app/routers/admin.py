@@ -25,8 +25,10 @@ from app.schemas.dto import (
     UserOut,
     UserUpdate,
 )
+from app.config import settings
 from app.serializers import agencies_to_out, agency_to_out
 from app.services import audit_service, escalation_service
+from app.services import password_reset_service as prs
 from expense_core.schemas.enums import SheetStatus
 
 router = APIRouter(
@@ -37,7 +39,7 @@ router = APIRouter(
         403: {"description": "Admin role required"},
     },
 )
-_ph = PasswordHasher()
+_ph = PasswordHasher(memory_cost=16384, time_cost=2, parallelism=1)
 
 _OPEN_STATES = {
     SheetStatus.SUBMITTED, SheetStatus.IN_MANAGER_REVIEW, SheetStatus.IN_FINANCE_REVIEW,
@@ -254,9 +256,18 @@ async def create_user(
     if session.exec(select(User).where(User.email == body.email)).first():
         raise HTTPException(status.HTTP_409_CONFLICT, detail="email already exists")
 
+    # Enforce the same password policy as the reset flow — admins must not be able to seed
+    # weak credentials (security: S-H5). SSO/no-password accounts skip this.
+    if body.password:
+        try:
+            prs.validate_password(body.password, settings)
+        except prs.PasswordPolicyError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
     user = User(
         name=body.name, email=body.email, role=_parse_role(body.role), agency_id=body.agency_id,
         password_hash=_ph.hash(body.password) if body.password else None,
+        source="manual" if body.password else "azure",
     )
     session.add(user)
     audit_service.record(session, actor=principal, action="USER_CREATED",
