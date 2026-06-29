@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "description": "Exception overrides for VIP roles, specific locations, and emergency scenarios",
+  "vip_overrides": {
+    "CEO": {
+      "max_multiplier": 3.0,
+      "auto_approve": true,
+      "notes": "CEO expenses auto-approved up to 3x the standard category cap"
+    },
+    "VP": {
+      "max_multiplier": 2.0,
+      "auto_approve": true,
+      "notes": "VP expenses auto-approved up to 2x the standard category cap"
+    },
+    "Director": {
+      "max_multiplier": 1.5,
+      "auto_approve": false,
+      "notes": "Directors get 1.5x cap but still require approval for overages"
+    }
+  },
+  "location_overrides": {
+    "NY_HQ": {
+      "Meals": {
+        "max_amount_override": 100.0,
+        "notes": "NYC cost-of-living adjustment for meals"
+      },
+      "Travel-Ground": {
+        "max_amount_override": 150.0,
+        "notes": "NYC taxi/ride-share rates are higher"
+      }
+    },
+    "SF_OFFICE": {
+      "Meals": {
+        "max_amount_override": 95.0,
+        "notes": "SF cost-of-living adjustment for meals"
+      },
+      "Travel-Ground": {
+        "max_amount_override": 130.0,
+        "notes": "SF ride-share premium"
+      }
+    },
+    "LONDON": {
+      "Meals": {
+        "max_amount_override": 120.0,
+        "notes": "London international adjustment (GBP→USD conversion buffer)"
+      },
+      "Travel-Hotel": {
+        "max_amount_override": 400.0,
+        "notes": "London hotel rates significantly above US average"
+      }
+    }
+  },
+  "emergency_overrides": {
+    "EMERGENCY_TRAVEL": {
+      "applies_to_categories": ["Travel-Air", "Travel-Hotel", "Travel-Ground"],
+      "max_multiplier": 2.5,
+      "requires_justification": true,
+      "approval_required_from": "department_head",
+      "notes": "Emergency travel (e.g. client escalation, natural disaster) allows 2.5x cap with justification"
+    },
+    "CLIENT_MEETING": {
+      "applies_to_categories": ["Meals", "Entertainment"],
+      "max_multiplier": 2.0,
+      "requires_justification": true,
+      "approval_required_from": "direct_manager",
+      "notes": "Client-facing meals and entertainment can go up to 2x with manager approval"
+    }
+  }
+}

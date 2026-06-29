@@ -1,0 +1,414 @@
+ExpenseOps — Product Design Document (PDD)
+Project Title
+ExpenseOps — AI-Powered Expense Management MCP Server
+1. Executive Summary
+ExpenseOps is an AI-assisted Expense Management MCP Server designed to automate employee expense validation, policy compliance checking, duplicate detection, expense categorization, and finance review workflows.
+The platform simulates a real enterprise finance automation product used by Accounts Payable (AP) and Finance Operations teams.
+The project exposes reusable MCP-compatible tools that can be consumed by AI agents or enterprise workflows.
+The solution aims to reduce manual expense review effort, improve compliance accuracy, detect suspicious claims, and provide finance teams with a modern analytics dashboard.
+2. Problem Statement
+Finance teams manually review hundreds of employee expense claims every month.
+Current problems:
+Manual policy validation is time-consuming.
+Duplicate expense claims often go unnoticed.
+Missing receipts create audit issues.
+Expense categorization is inconsistent.
+Managers spend excessive time reviewing routine claims.
+Fraudulent or suspicious patterns are difficult to detect.
+Existing systems are often rigid and difficult to configure.
+The goal of ExpenseOps is to automate these validations and provide a reusable intelligence layer through MCP tools.
+3. Objectives
+Primary Objectives
+Automate expense policy validation.
+Detect duplicate expense claims.
+Classify expense categories intelligently.
+Parse receipt text into structured data.
+Generate compliance summaries.
+Build a configurable business rules engine.
+Expose tools through MCP architecture.
+Create a modern dashboard experience.
+Secondary Objectives
+Add AI-generated summaries.
+Add fraud risk scoring.
+Support role-based business exceptions.
+Provide approval workflow simulation.
+Create enterprise-style analytics.
+4. Scope
+In Scope
+Expense upload and processing
+Policy validation
+Business rules engine
+Exception handling
+Duplicate detection
+Receipt parsing
+AI categorization
+Dashboard analytics
+MCP tool exposure
+Risk scoring
+Approval workflow simulation
+Exportable reports
+Out of Scope
+Real ERP integration
+Production authentication systems
+Multi-tenant deployment
+Real banking/payment systems
+Cloud infrastructure deployment
+Live OCR APIs requiring payment
+5. Target Users
+Employee
+Can:
+Submit expense claims
+Upload receipts
+View claim status
+Finance Reviewer
+Can:
+Review flagged claims
+Approve/reject claims
+View risk indicators
+Access compliance reports
+Finance Admin
+Can:
+Configure policies
+Configure business exceptions
+View analytics dashboard
+Manage approval thresholds
+6. System Architecture
+High-Level Architecture
+Frontend Dashboard (React/Gradio)            ↓FastAPI Backend            ↓Expense Validation Engine            ↓Rule Engine + Exception Engine            ↓SQLite Database            ↓MCP Tool Layer            ↓AI/LLM Services 
+7. Core Modules
+7.1 Expense Policy Checker
+Purpose
+Validate expense claims against configurable company policies.
+Inputs
+Expense category
+Amount
+Merchant
+Employee role
+Receipt status
+Outputs
+Compliance status
+Violated rule
+Recommended action
+Risk score
+Example
+Input:
+{  "category": "Meals",  "amount": 180}
+Output:
+{  "status": "Non-Compliant",  "reason": "Meal limit exceeded",  "recommended_action": "Manager Review"}
+7.2 Receipt Parser
+Purpose
+Extract structured data from receipt text.
+Inputs
+Receipt text
+Receipt image (optional)
+Outputs
+Merchant name
+Date
+Amount
+Tax
+Line items
+Example
+Marriott Hotels2 Nights @ $210Tax $42Total $462
+Output:
+{  "merchant": "Marriott Hotels",  "total": 462,  "tax": 42}
+7.3 Spend Category Classifier
+Purpose
+Automatically classify expenses into standard categories.
+Categories
+Meals & Entertainment
+Travel - Air
+Travel - Hotel
+Travel - Ground
+Office Supplies
+Software/Subscriptions
+Client Entertainment
+Other
+Inputs
+Merchant
+Description
+Outputs
+Category
+Confidence score
+7.4 Duplicate Claim Detector
+Purpose
+Identify duplicate or suspicious claims.
+Detection Logic
+Same merchant
+Same amount
+Similar date range
+Same employee
+Outputs
+Duplicate risk level
+Matched historical claim
+7.5 Expense Report Summarizer
+Purpose
+Generate overall compliance reports.
+Outputs
+Total expenses
+Compliance rate
+Violation count
+Duplicate count
+High-risk claims
+AI-generated narrative
+8. MCP Tool Layer
+MCP Tools
+Tool Name
+Purpose
+check_policy
+Policy validation
+parse_receipt
+Receipt extraction
+classify_expense
+Category classification
+detect_duplicate
+Duplicate detection
+generate_summary
+Report generation
+MCP Example
+from fastmcp import FastMCPmcp = FastMCP("ExpenseOps")@mcp.tool()def check_policy(category: str, amount: float):    pass
+9. Business Rules Engine
+Purpose
+Allow configurable expense validation without changing code.
+Rule Types
+Global Rules
+Example:
+{  "receipt_required_above": 50}
+Category Rules
+{  "Meals": {    "limit": 75  },  "Hotel": {    "limit": 300  }}
+Role-Based Exceptions
+{  "CEO": {    "Meals": 150  }}
+10. Business Exception Engine
+Purpose
+Handle exceptional business scenarios.
+Exception Types
+Exception Type
+Example
+Policy Violation
+Meal exceeds limit
+Missing Receipt
+Receipt not uploaded
+Duplicate Claim
+Same claim repeated
+VIP Override
+CEO special limit
+Emergency Travel
+Temporary exception
+Location Override
+NYC hotel limit
+Severity Levels
+Severity
+Action
+Low
+Auto Approve
+Medium
+Manager Review
+High
+Reject
+11. Risk Scoring System
+Purpose
+Assign risk score to each claim.
+Risk Factors
+Condition
+Score
+Over policy limit
++40
+Duplicate detected
++50
+Missing receipt
++20
+Weekend claim
++10
+Suspicious merchant
++25
+Risk Levels
+Score Range
+Level
+0–30
+Low
+31–70
+Medium
+71–100
+High
+12. Dashboard Features
+Dashboard Widgets
+Total Expenses
+Compliance Rate
+High-Risk Claims
+Duplicate Claims
+Monthly Spend Trend
+Expense Category Breakdown
+Violations by Employee
+Approval Status Distribution
+Charts
+Pie charts
+Bar charts
+Line charts
+Risk distribution charts
+13. Approval Workflow
+Workflow States
+State
+Submitted
+Under Review
+Approved
+Rejected
+Escalated
+Workflow Logic
+Employee submits claim        ↓Policy validation        ↓Risk assessment        ↓Manager review (if needed)        ↓Final approval/rejection
+14. Database Design
+Tables
+expense_claims
+Field
+claim_id
+employee_name
+category
+amount
+merchant
+date
+status
+risk_score
+policy_rules
+Field
+category
+limit_amount
+receipt_required
+duplicate_history
+Field
+merchant
+amount
+employee
+date
+15. Tech Stack
+Component
+Technology
+Backend
+FastAPI
+Frontend
+React or Gradio
+Database
+SQLite
+Data Processing
+Pandas
+OCR
+pytesseract
+AI Integration
+OpenAI / Claude
+Charts
+Plotly
+Styling
+Tailwind CSS
+MCP Framework
+FastMCP
+16. UI/UX Design Guidelines
+Design Principles
+Clean enterprise UI
+Minimal color palette
+Modern dashboard design
+Finance-product aesthetic
+Responsive layout
+Theme
+Dark mode preferred
+Glassmorphism cards
+Soft gradients
+Professional typography
+17. Demo Flow
+Demo Scenario
+Step 1
+Upload employee expense CSV.
+Step 2
+System processes claims.
+Step 3
+Dashboard displays:
+Violations
+Risk scores
+Duplicate claims
+Compliance statistics
+Step 4
+Manager reviews flagged claims.
+Step 5
+AI generates executive summary.
+18. Synthetic Data Plan
+Dataset Requirements
+Generate:
+20–30 employee expense claims
+5 policy violations
+2 duplicate claims
+3 high-risk expenses
+Multiple categories
+Example Employees
+John Smith
+Sarah Lee
+Mike Johnson
+Natasha Kapoor
+Example Merchants
+Uber
+Marriott
+KFC
+Starbucks
+Amazon
+Delta Airlines
+19. AI Features
+AI-Powered Features
+Expense Categorization
+LLM classifies ambiguous expenses.
+AI Summary Generator
+Generate finance-ready narratives.
+Rule Explanation Generator
+Explain why a claim was rejected.
+Fraud Pattern Detection
+Identify suspicious behavior patterns.
+20. Project Folder Structure
+expenseops/│├── backend/│   ├── main.py│   ├── rules_engine.py│   ├── duplicate_detector.py│   ├── receipt_parser.py│   ├── classifier.py│   ├── summarizer.py│   └── database.py│├── frontend/│   ├── dashboard/│   └── components/│├── policies/│   ├── policy_rules.json│   └── exceptions.json│├── data/│   ├── expenses.csv│   └── receipts/│├── reports/│├── requirements.txt└── README.md
+21. Future Enhancements
+Possible Future Features
+ERP integration
+Multi-language receipt parsing
+Real-time notifications
+Slack/Teams approval integration
+Mobile app
+Cloud deployment
+Multi-company support
+Advanced fraud analytics
+22. Success Criteria
+The project will be considered successful if:
+Expense claims are validated automatically.
+Policy violations are detected correctly.
+Duplicate claims are identified.
+Dashboard analytics are functional.
+MCP tools are operational.
+AI-generated summaries work correctly.
+Demo flow runs smoothly.
+UI feels enterprise-grade.
+23. Expected Business Impact
+Operational Benefits
+Reduced manual review effort
+Faster expense approvals
+Improved compliance accuracy
+Better fraud detection
+Reduced finance workload
+Improved reporting visibility
+Estimated Efficiency Gains
+Activity
+Manual
+Automated
+Expense validation
+5–10 mins
+<10 seconds
+Duplicate detection
+Manual review
+Instant
+Report generation
+30 mins
+<5 seconds
+Policy checking
+Manual
+Automated
+24. Conclusion
+ExpenseOps demonstrates how AI-assisted automation and MCP-compatible tooling can modernize finance operations.
+The project combines:
+rule-based automation,
+configurable business logic,
+AI-assisted intelligence,
+modern dashboard analytics,
+and reusable MCP tools
+into a realistic enterprise finance automation platform.
+The solution is designed to simulate a production-grade expense compliance product while remaining lightweight, modular, and beginner-friendly for hackathon implementation.

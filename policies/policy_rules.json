@@ -1,0 +1,150 @@
+{
+  "version": "1.0.0",
+  "currency_baseline": "USD",
+  "global_rules": {
+    "receipt_required_above": 50,
+    "max_claim_age_days": 90,
+    "duplicate_window_days": 2,
+    "auto_approve_below": 25,
+    "auto_approval_threshold": 350.0
+  },
+  "rules": [
+    {
+      "rule_id": "RULE_MEAL_ENG",
+      "category": "Meals",
+      "max_amount": 750.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Analyst",
+        "Manager"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 10,
+      "description": "Standard meal allowance for engineering and mid-level staff"
+    },
+    {
+      "rule_id": "RULE_MEAL_DIR",
+      "category": "Meals",
+      "max_amount": 150.0,
+      "allowed_roles": [
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 20,
+      "description": "Elevated meal allowance for senior leadership"
+    },
+    {
+      "rule_id": "RULE_ENT_CAP",
+      "category": "Entertainment",
+      "max_amount": 200.0,
+      "allowed_roles": [
+        "Manager",
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 10,
+      "description": "Client entertainment cap — requires prior approval above $150"
+    },
+    {
+      "rule_id": "RULE_HOTEL_STD",
+      "category": "Travel-Hotel",
+      "max_amount": 250.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Analyst",
+        "Manager"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 10,
+      "description": "Standard nightly hotel rate cap"
+    },
+    {
+      "rule_id": "RULE_HOTEL_DIR",
+      "category": "Travel-Hotel",
+      "max_amount": 500.0,
+      "allowed_roles": [
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 20,
+      "description": "Elevated hotel rate for senior leadership"
+    },
+    {
+      "rule_id": "RULE_TRAVEL_AIR",
+      "category": "Travel-Air",
+      "max_amount": 1500.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Analyst",
+        "Manager",
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 10,
+      "description": "Economy-class air travel cap — business class requires exception"
+    },
+    {
+      "rule_id": "RULE_SOFTWARE",
+      "category": "Software",
+      "max_amount": 500.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Manager",
+        "Director",
+        "VP"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": false,
+      "precedence": 10,
+      "description": "Software subscriptions and licenses"
+    },
+    {
+      "rule_id": "RULE_OFFICE",
+      "category": "Office Supplies",
+      "max_amount": 200.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Analyst",
+        "Manager",
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": true,
+      "precedence": 10,
+      "description": "General office supplies and equipment under $200"
+    },
+    {
+      "rule_id": "RULE_GROUND",
+      "category": "Travel-Ground",
+      "max_amount": 100.0,
+      "allowed_roles": [
+        "Software Engineer",
+        "Analyst",
+        "Manager",
+        "Director",
+        "VP",
+        "CEO"
+      ],
+      "location_restrictions": [],
+      "requires_receipt": false,
+      "precedence": 10,
+      "description": "Ride-share and taxi reimbursement"
+    }
+  ]
+}
