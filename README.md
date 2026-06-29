@@ -155,4 +155,4 @@ MIT
 
 ## Setup
 1. Install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki
-2. Copy .env.example to .env and set your Tesseract path
+2. Copy .env.example to .env and set your Tesseract path.
