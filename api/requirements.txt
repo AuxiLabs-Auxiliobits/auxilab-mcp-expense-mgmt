@@ -1,0 +1,55 @@
+# Backend — pinned production dependencies
+# Generated from the virtual environment (pip freeze).
+# Python 3.12+ required.
+#
+# Install (production):
+#   pip install -r requirements.txt
+#
+# Install (development — includes test/lint/type-check tools):
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# Install (with Azure integrations):
+#   pip install -r requirements.txt ".[postgres,azure,docintel,images]"
+
+# Core framework
+fastapi==0.137.0
+uvicorn[standard]==0.34.0
+starlette==0.46.2
+
+# Data / ORM
+sqlmodel==0.0.22
+sqlalchemy==2.0.41
+alembic==1.18.4
+
+# Validation
+pydantic==2.13.4
+pydantic-settings==2.14.1
+pydantic-core==2.46.4
+annotated-types==0.7.0
+
+# Auth
+pyjwt[crypto]==2.13.0
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
+cryptography==49.0.0
+
+# HTTP
+httpx==0.28.1
+httpcore==1.0.9
+anyio==4.13.0
+h11==0.16.0
+
+# Multipart / uploads
+python-multipart==0.0.32
+
+# Rate limiting
+slowapi==0.1.9
+limits==5.8.0
+
+# Utilities
+python-dotenv==1.2.2
+click==8.4.1
+orjson==3.11.9
+
+# Local workspace packages (install editable from monorepo root)
+# pip install -e ./core-engine -e ./api

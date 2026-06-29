@@ -1,0 +1,8 @@
+# Development / test / lint dependencies — install alongside requirements.txt
+# pip install -r requirements.txt -r requirements-dev.txt
+
+pytest==9.1.0
+pytest-asyncio==1.4.0
+ruff==0.11.13
+mypy==2.1.0
+mypy-extensions==1.1.0

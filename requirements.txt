@@ -1,0 +1,14 @@
+# Expense Management Platform — one-command install
+# Installs all three local packages + their dependencies in editable mode.
+#
+# Usage:
+#   pip install -r requirements.txt   # installs everything
+#   python demo.py                    # offline demo (no server, no Azure needed)
+#   cd api && pytest                  # full test suite (SQLite in-memory)
+#
+# Python 3.12+ required.
+
+# Local packages (editable so imports resolve from source)
+-e ./core-engine
+-e ./api[dev]
+-e ./mcp-server

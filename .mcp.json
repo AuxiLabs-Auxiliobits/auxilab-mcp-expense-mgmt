@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "expense-server": {
+      "command": "c:\\Users\\hp\\Expense-Management-Server\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "expense_mcp.server"]
+    }
+  }
+}

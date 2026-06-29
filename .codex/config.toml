@@ -1,0 +1,9 @@
+[mcp_servers.expense-server]
+command = "C:\\Users\\hp\\Expense-Management-Server\\.venv\\Scripts\\python.exe"
+args = ["-m", "expense_mcp"]
+cwd = "C:\\Users\\hp\\Expense-Management-Server"
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.expense-server.env]
+EXPENSE_API_URL = "http://localhost:8000"

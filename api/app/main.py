@@ -1,0 +1,108 @@
+"""FastAPI entry point (SCOPING §2, §9). Wires routers, creates tables for local/dev, and
+seeds demo data. RBAC + agency-scope + SoD are enforced in the routers/services; this file
+only assembles the app.
+"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from sqlmodel import Session
+
+from app.config import settings
+from app.db import engine, init_db
+from app.rate_limit import limiter
+from app.routers import ALL_ROUTERS
+from app.seed import seed_demo
+
+# Surface app loggers (auth resolution/denials) on the console alongside uvicorn's.
+logging.getLogger("app").setLevel(logging.INFO)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # In production Alembic owns the schema; for local/dev we create tables directly.
+    init_db()
+    if settings.seed_demo_data and settings.environment == "dev":
+        with Session(engine) as session:
+            seed_demo(session)
+    yield
+
+
+_DESCRIPTION = """
+Enterprise expense-compliance platform — RBAC, agency-scoped workflow, audit, and the
+LLM-finance-approver webhook. **The whole API is testable from this page.**
+
+### How to test from here
+1. Click **Authorize** (top right) and log in with a demo account — username is the email,
+   password is `demo`:
+
+   | Role | Username |
+   |------|----------|
+   | Employee | `employee@demo.local` |
+   | Manager  | `manager@demo.local`  |
+   | Finance  | `finance@demo.local`  |
+   | Admin    | `admin@demo.local`    |
+   | Agent (LLM approver) | `agent@demo.local` |
+
+   The token is then attached to every request automatically. Call **`GET /auth/me`** to
+   confirm your role.
+2. Walk the lifecycle: as **employee** `POST /sheets` → `POST /sheets/{id}/submit`; as
+   **manager** `GET /manager/queue` → `POST /manager/sheets/{id}/action`; as **agent**
+   `POST /finance/sheets/{id}/llm-decision`; as **finance** `GET /finance/queue` →
+   `POST /finance/sheets/{id}/decision` and `GET /finance/audit`.
+3. RBAC is real — calling an endpoint your role lacks returns **403**; re-Authorize as a
+   different demo user to switch roles.
+
+Auth provider is `db` by default (this flow); in `entra` mode tokens come from Entra (ADR-001).
+"""
+
+_TAGS_METADATA = [
+    {"name": "auth", "description": "Log in (`/auth/token` powers Authorize) and inspect the current principal."},
+    {"name": "sheets", "description": "Employee: create a draft sheet with line items, view, submit/resubmit."},
+    {"name": "manager", "description": "Manager: per-line-item approve/reject/request-info — own agency only (SoD enforced)."},
+    {"name": "finance", "description": "Finance: manual-review queue, human decisions, override the LLM, audit log, + the LLM-approver webhook."},
+    {"name": "policy", "description": "Finance/Admin: upload + maker-checker publish of agency policy docs (feeds RAG); ingestion-worker callback."},
+    {"name": "admin", "description": "Admin: manage agencies and users/roles."},
+    {"name": "reports", "description": "Dashboard KPIs, spend-by-category, and compliance — role-scoped."},
+    {"name": "audit", "description": "Self-service: a user's own activity trail (org-wide log stays on /finance/audit)."},
+    {"name": "notifications", "description": "Per-recipient in-app notifications generated at workflow transitions."},
+    {"name": "health", "description": "Liveness probe."},
+]
+
+app = FastAPI(
+    title="Expense Management API",
+    version="0.1.0",
+    description=_DESCRIPTION,
+    openapi_tags=_TAGS_METADATA,
+    contact={"name": "Expense Platform", "email": "operations@retinex.ai"},
+    lifespan=lifespan,
+)
+
+# Rate limiting (security: S-H1). The limiter is shared; routes opt in via @limiter.limit.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    # Accept any localhost / 127.0.0.1 origin (any port) ONLY in dev so the Next.js server
+    # works on whatever port; in staging/prod the explicit cors_origins allowlist applies
+    # (no wildcard localhost — security: S-M1).
+    allow_origin_regex=(
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?" if settings.environment == "dev" else None
+    ),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+for router in ALL_ROUTERS:
+    app.include_router(router)

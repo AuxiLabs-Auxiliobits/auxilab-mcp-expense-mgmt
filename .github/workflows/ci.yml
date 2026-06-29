@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python — lint + test (engine, api, workers, mcp)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Engine first — the other packages depend on it.
+      - run: pip install -e ./core-engine[dev]
+      - run: pip install -e ./api[dev] -e ./workers[dev] -e ./mcp-server[dev]
+      - name: Lint
+        run: ruff check core-engine api workers mcp-server
+      - name: Test core-engine
+        run: cd core-engine && pytest -q
+      - name: Test api
+        run: cd api && pytest -q
+      - name: Test workers
+        run: cd workers && pytest -q
+      - name: Test mcp-server
+        run: cd mcp-server && pytest -q
+
+  frontend:
+    name: Frontend — lint + typecheck + build (release gate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      # Typecheck is the gate that catches the kind of build-breakers a stabilization
+      # sprint exists to prevent (undefined vars, missing exports) — fail the build on any error.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+        env:
+          # Build-time only; real secrets are injected at deploy. A stable value lets the
+          # Next.js production build complete without a configured Auth.js secret.
+          AUTH_SECRET: ci-build-only-not-a-real-secret-please-rotate
+
+  evals:
+    name: Eval — golden-dataset regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Offline, deterministic eval — no Azure/network. Exits non-zero on accuracy regression.
+      - run: pip install -e ./core-engine[dev]
+      - name: Golden-dataset regression gate (classifier + parser)
+        run: cd core-engine && python -m expense_core.evals
+
+  infra:
+    name: Infra — Bicep build + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bicep build (compile check)
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+      # what-if against a real subscription runs in the deploy workflow, not on PRs.
