@@ -1,0 +1,54 @@
+{
+  "version": "1.0",
+  "currency": "INR",
+  "daily_limits": {
+    "hotel": 5000,
+    "meals": 800,
+    "miscellaneous": 400
+  },
+  "per_trip_limits": {
+    "transport": 2750
+  },
+  "trip_limits": {
+    "max_duration_days": 14,
+    "max_total_budget_multiplier": 1.15,
+    "require_pre_approval_above": 50000
+  },
+  "city_overrides": {
+    "New York": {
+      "hotel": 6000,
+      "meals": 1000,
+      "transport": 3000
+    },
+    "San Francisco": {
+      "hotel": 6000,
+      "meals": 1000,
+      "transport": 3000
+    },
+    "London": {
+      "hotel": 5500,
+      "meals": 950,
+      "transport": 2800
+    },
+    "Tokyo": {
+      "hotel": 5500,
+      "meals": 900,
+      "transport": 2800
+    },
+    "Paris": {
+      "hotel": 5500,
+      "meals": 950,
+      "transport": 2800
+    }
+  },
+  "purpose_multipliers": {
+    "client_meeting": 1.0,
+    "conference": 1.1,
+    "training": 0.95,
+    "sales_visit": 1.05,
+    "internal": 0.9
+  },
+  "prohibited_categories": ["entertainment", "personal"],
+  "receipt_required_above": 2000,
+  "duplicate_window_days": 3
+}

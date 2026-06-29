@@ -1,129 +1,158 @@
-# auxilab-mcp-expense-mgmt
+# TripSense
 
-> MCP Server · Expense policy enforcement, receipt parsing, category classification, and duplicate claim detection
+AI-powered business travel expense management via MCP (Model Context Protocol).
 
-**Part of [AuxiLab](https://auxiliobits.com/auxilab) — Auxiliobits' open-source agentic AI lab for Finance and AP operations.**
+TripSense provides 8 MCP tools for trip budgeting, policy compliance, receipt OCR, spend classification, duplicate detection, reconciliation, and manager reporting — backed by SQLite and a React dashboard.
 
----
+## Stack
 
-## What This Does
+| Layer | Technology |
+|-------|-----------|
+| MCP Server | Python 3.11, MCP Python SDK |
+| Chat agent | Anthropic API (`claude-sonnet-4-6`) with tool use over the 8 MCP tools |
+| API | FastAPI + Uvicorn |
+| Database | SQLite |
+| OCR | pytesseract + Pillow |
+| Frontend | React 18, Tailwind CSS, Vite |
 
-<!-- TODO: Replace this section with a clear 2-3 sentence description of what the tool does,
-     what problem it solves, and who would use it. -->
+## Project Structure
 
-*This is a scaffold placeholder. The team building this brief should replace all TODO sections
-before the hackathon submission deadline.*
+```
+tripsense/
+├── backend/
+│   ├── mcp_server/
+│   │   ├── server.py              # MCP server entry point
+│   │   ├── policy_engine.py       # Company policy evaluation
+│   │   └── tools/
+│   │       ├── trip_tools.py      # plan_trip_budget, pre_approve_trip
+│   │       ├── policy_tools.py    # check_policy_compliance
+│   │       ├── receipt_tools.py   # parse_receipt, classify, duplicate
+│   │       └── report_tools.py    # reconcile_trip, generate_trip_report
+│   ├── api/main.py                # FastAPI REST endpoints
+│   └── database/
+│       ├── schema.sql
+│       ├── db.py
+│       └── company_policy.json
+├── frontend/src/                  # React dashboard
+├── demo_data/seed_claims.py       # 15 synthetic demo claims
+└── pyproject.toml
+```
 
----
+## MCP Tools
 
-## Tools / Capabilities
-
-<!-- TODO: List each tool or agent step with a one-line description.
-     Example:
-     | Tool | Description |
-     |------|-------------|
-     | invoice_extractor | Extracts structured fields from raw invoice text |
--->
-
-| Name | Description |
+| Tool | Description |
 |------|-------------|
-| _tool_1_ | _description_ |
-| _tool_2_ | _description_ |
+| `plan_trip_budget` | Budget breakdown by category for destination/duration/purpose |
+| `check_policy_compliance` | Returns compliant bool + violations list |
+| `pre_approve_trip` | Issues approval_token, budget_cap, expiry |
+| `parse_receipt` | OCR receipt → merchant, date, amount, line_items, reconciliation_flag |
+| `classify_spend_category` | Merchant/description → category + confidence |
+| `detect_duplicate_claim` | Checks SQLite for same merchant+amount within ±3 days |
+| `reconcile_trip` | Match receipts to approval, overage per category, compliance % |
+| `generate_trip_report` | Totals, violations, at-risk amount, manager narrative |
 
----
+## Quick Start
 
-## Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt.git
-cd auxilab-mcp-expense-mgmt
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and fill in your values:
+### 1. Install dependencies
 
 ```bash
-cp .env.example .env
+pip install -e ".[dev]"
 ```
 
-```env
-ANTHROPIC_API_KEY=your_key_here
-# Add any other required keys
-```
+> **OCR note:** Install [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) on your system for receipt parsing.
 
----
-
-## Usage
-
-```python
-# TODO: Add a realistic usage example with a sample input and the expected output.
-# This is mandatory for submission.
-```
-
-### Run the Demo
+### 2. Seed demo data
 
 ```bash
-python demo/demo.py
+python demo_data/seed_claims.py
 ```
 
----
+This creates 15 synthetic claims: 8 compliant, 4 violations, 2 near-duplicates, 1 missing receipt.
 
-## Example
+### 3. Run the MCP server
 
-**Input:**
+```bash
+tripsense-mcp
+# or
+python -m backend.mcp_server.server
+```
+
+### 4. Run the API
+
+The chat interface drives Claude (`claude-sonnet-4-6`) via the Anthropic API, so
+the API server needs an Anthropic API key in its environment:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # PowerShell: $env:ANTHROPIC_API_KEY="sk-ant-..."
+uvicorn backend.api.main:app --reload --port 8000
+```
+
+The key stays server-side — the browser only talks to `/api/chat`, never to Anthropic directly.
+
+### 5. Run the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. The primary view is a **chat interface** — type natural-language
+requests (e.g. "Plan a 3 day trip to Bangalore for a client meeting") and Claude autonomously
+calls the relevant MCP tools, showing a per-message tool-call log. The form-based Trip Planner,
+Claims, and Reports tabs remain available as secondary views. Use the 📎 button in the chat to
+upload a receipt image — try `demo_data/sample_receipts/taj_hotel_receipt.png`, whose line items
+intentionally don't match its total to demonstrate the reconciliation flag. Regenerate it with
+`python demo_data/sample_receipts/generate_receipt.py`.
+
+## MCP Configuration
+
+Add to your MCP client config (e.g. Cursor):
+
 ```json
 {
-  "TODO": "replace with a realistic sample input"
+  "mcpServers": {
+    "tripsense": {
+      "command": "tripsense-mcp",
+      "args": []
+    }
+  }
 }
 ```
 
-**Output:**
-```json
-{
-  "TODO": "replace with the expected output"
-}
-```
+## Company Policy
 
----
+Policy rules live in `backend/database/company_policy.json`:
 
-## Running Tests
+- Daily limits: hotel $250, meals $75, transport $100, miscellaneous $50
+- City overrides for New York, San Francisco, London, Tokyo, Paris
+- Purpose multipliers for client_meeting, conference, training, etc.
+- Prohibited categories: entertainment, personal
+- Receipt required above $25
 
-```bash
-pytest tests/ -v
-```
+## API Endpoints
 
----
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| POST | `/api/chat` | Chat with Claude; runs the tool-use loop over all 8 MCP tools |
+| POST | `/api/budget/plan` | Plan trip budget |
+| POST | `/api/policy/check` | Check compliance |
+| POST | `/api/trip/pre-approve` | Pre-approve trip |
+| POST | `/api/receipt/parse` | Parse receipt by file path (OCR) |
+| POST | `/api/receipts/parse` | Parse an uploaded receipt image (multipart; used by the chat 📎 upload) |
+| POST | `/api/spend/classify` | Classify spend |
+| POST | `/api/claim/duplicate-check` | Detect duplicates |
+| POST | `/api/trip/reconcile` | Reconcile trip |
+| POST | `/api/trip/report` | Generate report |
+| GET | `/api/dashboard/stats` | Dashboard statistics |
+| GET | `/api/claims` | List expense claims |
+| GET | `/api/trips` | List trip plans |
 
-## Known Limitations
+## License
 
-<!-- TODO: Be honest about what the tool does not handle yet.
-     Example: "Does not support multi-currency invoices." -->
+MIT
 
-- _Add known limitations here before submission_
-
----
-
-## Built By
-
-| Name | GitHub | Role |
-|------|--------|------|
-| _Team Member 1_ | [@handle](https://github.com/handle) | _Role_ |
-| _Team Member 2_ | [@handle](https://github.com/handle) | _Role_ |
-| _Team Member 3_ | [@handle](https://github.com/handle) | _Role_ |
-
-Built during the **AuxiLab Founding Hackathon** by [Auxiliobits Technologies](https://auxiliobits.com).
-
----
-
-## Licence
-
-MIT — see [LICENSE](./LICENSE)
+## Setup
+1. Install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki
+2. Copy .env.example to .env and set your Tesseract path

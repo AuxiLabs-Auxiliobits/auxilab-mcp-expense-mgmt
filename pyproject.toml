@@ -1,26 +1,59 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "auxilab-mcp-expense-mgmt"
-version = "0.1.0"
-description = "MCP Server · Expense policy enforcement, receipt parsing, category classification, and duplicate claim detection"
+version = "1.0.0"
+description = "TripSense — MCP server for AI-powered business travel expense management"
 readme = "README.md"
-license = { file = "LICENSE" }
-requires-python = ">=3.10"
-keywords = ["agentic-ai", "mcp", "finance", "ap-automation", "auxiliobits"]
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Auxilab", email = "dev@auxilab.io" },
+]
+keywords = ["mcp", "expense", "travel", "ocr", "fastapi"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Accounting",
 ]
 
-[project.urls]
-Homepage = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt"
-Organisation = "https://github.com/AuxiLabs-Auxiliobits"
-Website = "https://auxiliobits.com/auxilab"
+dependencies = [
+    "mcp>=1.0.0",
+    "anthropic>=0.40.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.110.0",
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.27.0",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+tripsense-mcp = "backend.mcp_server.server:run"
+tripsense-seed = "demo_data.seed_claims:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "demo_data"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
