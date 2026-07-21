@@ -12,8 +12,16 @@ from typing import Any
 from backend.database.db import get_db, row_to_dict, rows_to_dicts
 import os
 import pytesseract
+from pytesseract import TesseractNotFoundError
 tesseract_path = os.getenv("TESSERACT_CMD", "tesseract")
 pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+TESSERACT_NOT_FOUND_MESSAGE = (
+    "Tesseract OCR is not installed or is not available on PATH. "
+    "Install Tesseract system-wide and check the README Prerequisites section. "
+    "requirements.txt only installs the pytesseract Python wrapper, not the "
+    "Tesseract binary."
+)
 
 # ---------------------------------------------------------------------------
 # FIX #3 — Expanded to exactly 8 standard categories as per build brief
@@ -301,6 +309,8 @@ def parse_receipt(image_path: str) -> dict[str, Any]:
         confidences = [int(c) for c in ocr_data["conf"] if int(c) > 0]
         avg_confidence = round(sum(confidences) / len(confidences) / 100, 3) if confidences else 0.5
         text = pytesseract.image_to_string(img)
+    except TesseractNotFoundError as exc:
+        raise RuntimeError(TESSERACT_NOT_FOUND_MESSAGE) from exc
     except ImportError:
         text = path.stem.replace("_", " ").replace("-", " ")
         avg_confidence = 0.3
