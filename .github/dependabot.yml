@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  # Runtime and dev dependencies. There are only a handful, so weekly is enough to stay
+  # current without generating noise.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # One PR for routine bumps; anything that breaks CI is obvious from a single check.
+      python-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Actions move slowly and are pinned to major versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(ci)"
+
+# enterprise/ is deliberately not watched. It is archived reference code that is never
+# installed by this package, so dependency PRs against it would be pure noise.

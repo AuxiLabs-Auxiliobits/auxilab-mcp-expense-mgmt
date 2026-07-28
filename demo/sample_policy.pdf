@@ -1,0 +1,53 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Length 849 >>
+stream
+BT /F1 10 Tf 12 TL 54 738 Td
+(ACME CORP - EXPENSE POLICY) Tj T*
+(====================================================) Tj T*
+() Tj T*
+(Prohibited categories:) Tj T*
+(  - Client Entertainment) Tj T*
+() Tj T*
+(Per-expense category limits \(USD\):) Tj T*
+(  Meals & Entertainment              75) Tj T*
+(  Travel - Hotel                    250) Tj T*
+(  Travel - Air                    1,200) Tj T*
+(  Travel - Ground                   150) Tj T*
+(  Office Supplies                   300) Tj T*
+(  Software / Subscriptions          500) Tj T*
+() Tj T*
+(Receipt required over:     25 USD) Tj T*
+(Claim window:              90 days) Tj T*
+(Duplicate near-match:      3 days) Tj T*
+(Cap boundary:              inclusive \(an amount equal to the cap is allowed\)) Tj T*
+() Tj T*
+(The machine-readable version of this policy is sample_policy.json.) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000309 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1209
+%%EOF
