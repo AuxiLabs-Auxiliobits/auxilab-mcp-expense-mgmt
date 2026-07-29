@@ -14,7 +14,7 @@ No cloud account. No API keys. No network. Clone it and it runs.
 [![MCP](https://img.shields.io/badge/MCP-5%20tools-6E56CF)](#use-it-from-an-ai-agent-mcp)
 [![Offline](https://img.shields.io/badge/network%20calls-zero-informational)](#the-offline-guarantee)
 
-[Quick start](#quick-start) · [The five tools](#the-five-tools) · [MCP setup](#use-it-from-an-ai-agent-mcp) · [Architecture](ARCHITECTURE.md) · [FAQ](#faq)
+[Quick start](#quick-start) · [The five tools](#the-five-tools) · [MCP setup](#use-it-from-an-ai-agent-mcp) · [Architecture](ARCHITECTURE.md) · [Limitations](#known-limitations) · [FAQ](#faq)
 
 <img src="docs/images/demo.gif" alt="All five tools running in the browser demo" width="820">
 
@@ -618,6 +618,35 @@ python docs/capture_screenshots.py
 
 Starts the real app against a throwaway database, drives each tab with a headless browser, and
 writes the PNGs and GIF in [docs/images/](docs/images/). Run it after any visible UI change.
+
+---
+
+## Known limitations
+
+These are deliberate scope decisions, documented so nobody discovers them the hard way:
+
+- **The receipt parser reads text, not pixels.** It parses strings and PDFs that carry a text
+  layer. A scanned image or photo has no text layer and yields nothing — run OCR first and pass
+  the output in. It also never "corrects" characters: a misread `O` for `0` stays wrong, because
+  silently rewriting digits in a financial document would be worse than reporting a failure.
+- **Receipt labels are matched in English** — `Total`, `Subtotal`, `Tax`, `VAT`, card and cash
+  settlement words. Amounts in international formats (`1.234,56`, `1 234,56`, `1'234.56`) parse
+  correctly, but a receipt whose *labels* are in another language falls back to layout heuristics.
+- **A line starting with a totals keyword is a totals row.** `Total Recall DVD 10.00` is read as
+  a total, not a purchase. The looser alternative silently dropped real items, and a wrong total
+  is easier to notice than a missing line. The full list of parser trade-offs is in
+  [ARCHITECTURE.md](ARCHITECTURE.md#what-the-parser-deliberately-does-not-do).
+- **The category classifier is keyword-based.** Eight fixed categories; the confidence score is a
+  fixed heuristic, not a model probability. An unrecognised merchant lands in `Other` with low
+  confidence rather than a guess.
+- **Duplicate detection sees only its own database.** Exact and near matches are found within the
+  local SQLite store; expenses recorded in any other system are invisible to it.
+- **One currency per receipt.** Reconciliation assumes the amounts on a receipt share a single
+  currency; there is no FX conversion.
+- **The baseline policy is a demo default, not advice.** The caps in
+  [baseline_policy.json](compliance_tools/baseline_policy.json) are illustrative numbers for a
+  mid-market company. Replace them with your organisation's real policy
+  ([Bring your own policy](#bring-your-own-policy)); nothing here is tax or legal guidance.
 
 ---
 

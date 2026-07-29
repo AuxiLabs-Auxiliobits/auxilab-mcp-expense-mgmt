@@ -7,7 +7,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Known limitations** section in the README: text-not-pixels parsing, English label matching,
+  totals-keyword precedence, keyword-based classification, local-only duplicate detection,
+  single-currency reconciliation, and the demo nature of the baseline policy.
 
 ## [1.1.0] — 2026-07-28
 
