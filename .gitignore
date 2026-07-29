@@ -55,6 +55,14 @@ Expense-Management-Credentials.*
 .claude/settings.local.json
 .claude/*.lock
 
+# Not published from this repo — kept local only.
+/enterprise/
+/DEPLOYMENT.md
+/api/
+/frontend/
+/policy_uploads/
+/receipt_uploads/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
