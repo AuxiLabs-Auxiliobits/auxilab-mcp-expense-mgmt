@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, mcp-mavericks]
   pull_request:
   workflow_dispatch:
 
@@ -42,7 +42,7 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
-      # Archived Azure code is not restyled, but it is still checked for real defects:
+      # Archived enterprise code is not restyled, but it is still checked for real defects:
       # unused imports, dead locals, undefined names. `--isolated` bypasses the nested
       # per-package configs so this root invocation actually applies.
       - name: Lint enterprise for correctness only

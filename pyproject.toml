@@ -7,8 +7,8 @@ description = "Five offline expense-compliance tools — policy checks, receipt 
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-authors = [{ name = "AuxiLab" }]
-maintainers = [{ name = "AuxiLab" }]
+authors = [{ name = "Ankit Kumar" }, { name = "Parteek" }]
+maintainers = [{ name = "Ankit Kumar" }, { name = "Parteek" }]
 keywords = [
     "mcp",
     "model-context-protocol",
@@ -51,13 +51,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Parteek-git2813/expense-management-mcp-server"
-Documentation = "https://github.com/Parteek-git2813/expense-management-mcp-server#readme"
-Repository = "https://github.com/Parteek-git2813/expense-management-mcp-server"
-Changelog = "https://github.com/Parteek-git2813/expense-management-mcp-server/blob/main/CHANGELOG.md"
-Architecture = "https://github.com/Parteek-git2813/expense-management-mcp-server/blob/main/ARCHITECTURE.md"
-Issues = "https://github.com/Parteek-git2813/expense-management-mcp-server/issues"
-Security = "https://github.com/Parteek-git2813/expense-management-mcp-server/blob/main/SECURITY.md"
+Homepage = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt"
+Documentation = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt#readme"
+Repository = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt"
+Changelog = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/CHANGELOG.md"
+Architecture = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/ARCHITECTURE.md"
+Issues = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/issues"
+Security = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/SECURITY.md"
 
 [project.optional-dependencies]
 demo = ["gradio>=5,<7"]
@@ -82,7 +82,7 @@ path = "compliance_tools/__init__.py"
 packages = ["compliance_tools", "local_db"]
 
 # Hatchling's default sdist is "everything git does not ignore", which here would mean
-# shipping all 450+ files of enterprise/ — an archived Azure implementation, Word
+# shipping all 450+ files of enterprise/ — an archived enterprise implementation, Word
 # documents and a Next.js frontend — plus ~1.7 MB of README screenshots, to anyone who
 # installs from source. That took the sdist to 2.8 MB against a 37 KB wheel.
 #

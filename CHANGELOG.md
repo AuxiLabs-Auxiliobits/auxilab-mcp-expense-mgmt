@@ -13,6 +13,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   totals-keyword precedence, keyword-based classification, local-only duplicate detection,
   single-currency reconciliation, and the demo nature of the baseline policy.
 
+### Changed
+
+- Canonical repository is now
+  [AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt),
+  development branch `mcp-mavericks`. Every repository URL, branch reference, badge and clone
+  command updated accordingly.
+- Package authors and maintainers set to team **MCP Mavericks** (Ankit Kumar, Parteek), credited
+  in the README and LICENSE.
+- Documentation outside [`enterprise/`](enterprise/) and [DEPLOYMENT.md](DEPLOYMENT.md) no longer
+  names specific cloud services — the standalone tool is cloud-agnostic, and the only remaining
+  cloud mentions describe the offline-guarantee test that bans them.
+
 ## [1.1.0] — 2026-07-28
 
 Architectural work on the two areas an independent audit flagged: the receipt parser's
@@ -80,10 +92,10 @@ once instead of several times:
 
 First public release.
 
-This release extracts five expense-compliance tools from an Azure enterprise platform and turns them
+This release extracts five expense-compliance tools from an enterprise cloud platform and turns them
 into a standalone, offline, open-source tool. The enterprise implementation remains in the repository
 under [`enterprise/`](enterprise/) but is fully isolated — see
-[ARCHITECTURE.md](ARCHITECTURE.md#why-the-azure-code-is-isolated-rather-than-deleted).
+[ARCHITECTURE.md](ARCHITECTURE.md#why-the-enterprise-code-is-isolated-rather-than-deleted).
 
 ### Added
 
@@ -194,6 +206,6 @@ under [`enterprise/`](enterprise/) but is fully isolated — see
 - **No credentials anywhere.** No secrets, no tokens, no auth flow, and a test that fails the build
   if one appears.
 
-[Unreleased]: https://github.com/Parteek-git2813/expense-management-mcp-server/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/Parteek-git2813/expense-management-mcp-server/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/Parteek-git2813/expense-management-mcp-server/releases/tag/v1.0.0
+[Unreleased]: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/releases/tag/v1.0.0

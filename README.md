@@ -6,7 +6,7 @@
 
 No cloud account. No API keys. No network. Clone it and it runs.
 
-[![CI](https://github.com/Parteek-git2813/expense-management-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Parteek-git2813/expense-management-mcp-server/actions/workflows/ci.yml)
+[![CI](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/actions/workflows/ci.yml/badge.svg?branch=mcp-mavericks)](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)](#testing)
 [![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -15,6 +15,8 @@ No cloud account. No API keys. No network. Clone it and it runs.
 [![Offline](https://img.shields.io/badge/network%20calls-zero-informational)](#the-offline-guarantee)
 
 [Quick start](#quick-start) · [The five tools](#the-five-tools) · [MCP setup](#use-it-from-an-ai-agent-mcp) · [Architecture](ARCHITECTURE.md) · [Limitations](#known-limitations) · [FAQ](#faq)
+
+*An AuxiLab MCP Hackathon project by team **MCP Mavericks** — Ankit Kumar · Parteek*
 
 <img src="docs/images/demo.gif" alt="All five tools running in the browser demo" width="820">
 
@@ -25,8 +27,8 @@ No cloud account. No API keys. No network. Clone it and it runs.
 ## Quick start
 
 ```bash
-git clone https://github.com/Parteek-git2813/expense-management-mcp-server.git
-cd expense-management-mcp-server
+git clone https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt.git
+cd auxilab-mcp-expense-mgmt
 pip install -r requirements.txt && python app.py
 ```
 
@@ -324,7 +326,7 @@ For **Claude Desktop**, add this to `claude_desktop_config.json`:
   "mcpServers": {
     "expense-compliance": {
       "command": "python",
-      "args": ["/absolute/path/to/expense-management-mcp-server/mcp_server.py"]
+      "args": ["/absolute/path/to/auxilab-mcp-expense-mgmt/mcp_server.py"]
     }
   }
 }
@@ -522,8 +524,8 @@ Three properties worth keeping if you extend this:
 3. **The model seam is a Protocol, not a base class.** No SDK, no registration, no inheritance.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the reasoning behind these and every other design
-decision — the determinism boundary, why there are exactly five MCP tools, why the Azure code is
-isolated rather than deleted.
+decision — the determinism boundary, why there are exactly five MCP tools, why the enterprise code
+is isolated rather than deleted.
 
 ---
 
@@ -561,13 +563,13 @@ isolated rather than deleted.
 │
 ├── docs/                       Screenshots and the script that captures them
 ├── tests/                      96% coverage, 3 Python versions
-├── enterprise/                 Azure implementation — isolated, not installed
+├── enterprise/                 archived enterprise implementation — isolated, not installed
 │
 ├── ARCHITECTURE.md             why the design is the way it is
 ├── CONTRIBUTING.md             how to work on it
 ├── SECURITY.md                 threat model and reporting
 ├── CHANGELOG.md                what changed and when
-└── DEPLOYMENT.md               enterprise / Azure deployment
+└── DEPLOYMENT.md               enterprise deployment (archived)
 ```
 
 ---
@@ -701,11 +703,11 @@ result to `parse_receipt()`.
 </details>
 
 <details>
-<summary><b>What happened to the Azure version?</b></summary>
+<summary><b>What happened to the enterprise version?</b></summary>
 
-It is still here, in [enterprise/](enterprise/) — FastAPI with Entra ID SSO, Service Bus workers, a
-RAG pipeline, a Next.js portal and Bicep infrastructure. It is not installed, not imported, and not
-needed. See [DEPLOYMENT.md](DEPLOYMENT.md).
+It is still here, in [enterprise/](enterprise/) — the multi-tenant platform these tools were
+extracted from. It is not installed, not imported, and not needed; a test fails the build if any of
+it leaks into the published package. See [DEPLOYMENT.md](DEPLOYMENT.md).
 </details>
 
 <details>
@@ -788,10 +790,10 @@ Delete the database file — it rebuilds and reseeds on the next run. Not sure w
 
 ## Enterprise deployment
 
-This repository also contains the original Azure enterprise implementation — a FastAPI backend with
-Entra ID SSO and RBAC, Service Bus workers, an AI Search RAG pipeline, a Next.js portal, and Bicep
-infrastructure. It lives in **[enterprise/](enterprise/)**, is not installed by `requirements.txt`,
-and is not needed for anything above.
+The multi-tenant platform these tools were extracted from — a full backend with SSO, background
+workers, a document-retrieval pipeline and a web portal — is archived in
+**[enterprise/](enterprise/)**. It is not installed by `requirements.txt` and is not needed for
+anything above.
 
 See **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
@@ -805,7 +807,7 @@ test suite that fails if any of it leaks back in.
 Issues and pull requests are welcome — including "the docs confused me", which is a real bug.
 
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup, style, tests, commit conventions, PR process
-- **[Report a bug or request a feature](https://github.com/Parteek-git2813/expense-management-mcp-server/issues/new/choose)**
+- **[Report a bug or request a feature](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/issues/new/choose)**
 - **[SECURITY.md](SECURITY.md)** — vulnerabilities go through a private advisory, not an issue
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — Contributor Covenant
 
@@ -818,6 +820,8 @@ See [CHANGELOG.md](CHANGELOG.md). This project follows
 [Keep a Changelog](https://keepachangelog.com/).
 
 ## Acknowledgements
+
+Built by team **MCP Mavericks** — **Ankit Kumar** and **Parteek** — for the AuxiLab MCP Hackathon.
 
 - [**Model Context Protocol**](https://modelcontextprotocol.io/) — the open standard that lets these
   tools plug into any compatible AI client

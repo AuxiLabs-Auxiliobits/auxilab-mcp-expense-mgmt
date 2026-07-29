@@ -16,8 +16,8 @@ Thanks for taking a look. Issues and pull requests are both welcome — includin
 ## Development setup
 
 ```bash
-git clone https://github.com/Parteek-git2813/expense-management-mcp-server.git
-cd expense-management-mcp-server
+git clone https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt.git
+cd auxilab-mcp-expense-mgmt
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
@@ -90,7 +90,7 @@ drifts by a cent is worse than no reconciliation system.
 **3. The published package stays offline.**
 No cloud SDK, no network client, no credential handling, no `AZURE_*` variable.
 [tests/test_offline_guarantee.py](tests/test_offline_guarantee.py) parses the AST of every
-shipped file and fails the build otherwise. The Azure implementation lives in
+shipped file and fails the build otherwise. The archived enterprise implementation lives in
 `enterprise/` and stays there.
 
 **4. A model may phrase things. It may not decide them.**
@@ -162,7 +162,7 @@ not obvious. Add `!` after the type for a breaking change (`feat(mcp)!: ...`).
 
 ## Pull request process
 
-1. Fork, branch from `develop`, and give the branch a descriptive name.
+1. Fork, branch from `mcp-mavericks`, and give the branch a descriptive name.
 2. Make the change, with tests.
 3. Run `ruff format . && ruff check . && pytest`.
 4. Add an entry under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
@@ -182,14 +182,14 @@ be right.
 
 ## Reporting issues
 
-Use the [issue templates](https://github.com/Parteek-git2813/expense-management-mcp-server/issues/new/choose).
+Use the [issue templates](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/issues/new/choose).
 There is one each for bugs, feature requests and questions.
 
 For a bug, the single most useful thing is a short reproduction. These tools have no setup,
 so that is usually five lines of Python.
 
 **Security vulnerabilities do not go in issues.** Open a
-[private advisory](https://github.com/Parteek-git2813/expense-management-mcp-server/security/advisories/new)
+[private advisory](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/security/advisories/new)
 instead — see [SECURITY.md](SECURITY.md) for the policy and the threat model.
 
 ## Releasing

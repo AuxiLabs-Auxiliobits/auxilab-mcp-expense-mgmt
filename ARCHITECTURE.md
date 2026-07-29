@@ -224,11 +224,11 @@ variables, which can't express a per-category limit table.
 
 ---
 
-## Why the Azure code is isolated rather than deleted
+## Why the enterprise code is isolated rather than deleted
 
-[enterprise/](enterprise/) holds the multi-tenant platform this tool was extracted from: FastAPI with
-Entra ID SSO and RBAC, Service Bus workers, an AI Search RAG pipeline, a Next.js portal, and Bicep
-infrastructure.
+[enterprise/](enterprise/) holds the multi-tenant platform this tool was extracted from: a FastAPI
+backend with SSO and RBAC, queue-driven workers, a retrieval pipeline, a Next.js portal, and
+infrastructure-as-code.
 
 **Why keep it.** It works, it represents real design decisions, and someone evaluating this tool for
 an organisation will reasonably ask "what does this look like at scale?" Deleting it would throw away
@@ -248,10 +248,10 @@ open-source tool. So the separation is enforced, not merely intended:
 That last point is the important one. With both codebases in the same repository, leakage is a
 question of when, not whether — so it is a test, not a convention.
 
-**Why the five tools were rewritten rather than shared.** `enterprise/core-engine/` carries an Azure
-extra and enterprise workflow enums. Sharing it would have made the published package depend on a
-package with an Azure code path. `compliance_tools/` is a clean reimplementation that depends only on
-`pydantic`.
+**Why the five tools were rewritten rather than shared.** `enterprise/core-engine/` carries a
+cloud-LLM extra and enterprise workflow enums. Sharing it would have made the published package
+depend on a package with a cloud code path. `compliance_tools/` is a clean reimplementation that
+depends only on `pydantic`.
 
 `enterprise/` is still checked for real defects — CI runs `ruff check enterprise --select F --isolated`,
 catching unused imports, dead locals and undefined names while ignoring style. Restyling 200+ archived
@@ -294,13 +294,13 @@ Design choices worth keeping if you extend the server:
 The two are independent; running one does not involve the other.
 
 - **The standalone tool** — `pip install -r requirements.txt`, then `python app.py`. No account.
-- **The enterprise platform** — an Azure subscription and a Bicep deployment. See
+- **The enterprise platform** — a cloud subscription and an infrastructure deployment. See
   [DEPLOYMENT.md](DEPLOYMENT.md), or [enterprise/README.md](enterprise/README.md) for the layout.
 
 There is no migration path between them and no shared configuration, which is deliberate: a shared
 config file is how a "runs offline" tool ends up needing a cloud account.
 
-If you want the enterprise behaviour without Azure, the useful seam is the LLM `Protocol` in
+If you want the enterprise behaviour without the cloud stack, the useful seam is the LLM `Protocol` in
 [compliance_tools/llm.py](compliance_tools/llm.py). Point it at any model you like — including a local
 one — and the three LLM-assisted tools will use it, with the deterministic fallbacks still in place.
 

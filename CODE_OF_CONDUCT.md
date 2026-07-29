@@ -52,7 +52,7 @@ an appointed representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community
 leaders responsible for enforcement by opening a **private report** through
-[GitHub Security Advisories](https://github.com/Parteek-git2813/expense-management-mcp-server/security/advisories/new).
+[GitHub Security Advisories](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/security/advisories/new).
 That channel is visible only to you and the maintainers, which makes it suitable for sensitive
 reports even though it is nominally intended for security issues. Serious incidents involving GitHub
 accounts can also be escalated directly to [GitHub Support](https://support.github.com/contact/report-abuse).

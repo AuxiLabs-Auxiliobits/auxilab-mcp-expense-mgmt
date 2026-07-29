@@ -14,7 +14,7 @@ Fixes land on the latest minor release. There are no long-term-support branches.
 **Please do not open a public issue for a security problem.**
 
 Report it privately through
-[GitHub Security Advisories](https://github.com/Parteek-git2813/expense-management-mcp-server/security/advisories/new).
+[GitHub Security Advisories](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/security/advisories/new).
 That opens a channel visible only to you and the maintainers, and lets us collaborate on a fix and
 issue a CVE if warranted.
 

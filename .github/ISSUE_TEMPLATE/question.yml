@@ -12,10 +12,10 @@ body:
 
         Quick pointers:
 
-        - **How do I use it?** → [README.md](../blob/main/README.md)
-        - **Why is it built this way?** → [ARCHITECTURE.md](../blob/main/ARCHITECTURE.md)
-        - **How do I contribute?** → [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)
-        - **How do I run the Azure version?** → [DEPLOYMENT.md](../blob/main/DEPLOYMENT.md)
+        - **How do I use it?** → [README.md](../blob/mcp-mavericks/README.md)
+        - **Why is it built this way?** → [ARCHITECTURE.md](../blob/mcp-mavericks/ARCHITECTURE.md)
+        - **How do I contribute?** → [CONTRIBUTING.md](../blob/mcp-mavericks/CONTRIBUTING.md)
+        - **How do I deploy the enterprise version?** → [DEPLOYMENT.md](../blob/mcp-mavericks/DEPLOYMENT.md)
 
   - type: textarea
     id: question
@@ -43,7 +43,7 @@ body:
         - The browser or terminal demo
         - Architecture and design decisions
         - Contributing
-        - The enterprise / Azure version
+        - The archived enterprise version
         - Something else
     validations:
       required: true
