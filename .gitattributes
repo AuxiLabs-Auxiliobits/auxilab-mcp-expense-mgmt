@@ -1,0 +1,29 @@
+# Line-ending policy.
+#
+# Without this file, behaviour depends on each contributor's `core.autocrlf`, which
+# produces two problems: whole files showing as changed in a diff for no reason, and —
+# far worse — binary assets being corrupted by line-ending conversion.
+
+# Normalise text to LF in the repository, whatever the platform.
+* text=auto eol=lf
+
+# Binary assets must never be converted. The sample PDFs are generated with a minimal
+# writer whose cross-reference table stores byte offsets, so a single CRLF substitution
+# shifts every offset and the file stops opening.
+*.pdf   binary
+*.png   binary
+*.gif   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.docx  binary
+*.pptx  binary
+*.db    binary
+*.sqlite binary
+*.whl   binary
+*.gz    binary
+
+# PowerShell and batch files are read by Windows tooling that expects CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

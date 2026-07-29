@@ -1,0 +1,18 @@
+{
+  "currency": "USD",
+  "prohibited_categories": [
+    "Client Entertainment"
+  ],
+  "category_limits": {
+    "Meals & Entertainment": 75,
+    "Travel - Hotel": 250,
+    "Travel - Air": 1200,
+    "Travel - Ground": 150,
+    "Office Supplies": 300,
+    "Software / Subscriptions": 500
+  },
+  "receipt_required_over": 25,
+  "max_expense_age_days": 90,
+  "duplicate_near_match_days": 3,
+  "cap_boundary": "inclusive"
+}

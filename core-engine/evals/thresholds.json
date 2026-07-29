@@ -1,8 +1,0 @@
-{
-  "_comment": "Regression gate thresholds for the golden-dataset eval. Set just below the deterministic/offline path's actual scores (which are all 1.0 on the current golden set) so the gate catches real regressions in the keyword map and reconciliation math without being flaky. python -m expense_core.evals exits non-zero if any metric falls below its threshold.",
-  "category_accuracy": 0.9,
-  "category_macro_recall": 0.9,
-  "receipt_total_match": 0.95,
-  "receipt_tax_match": 0.95,
-  "receipt_reconcile_accuracy": 0.95
-}

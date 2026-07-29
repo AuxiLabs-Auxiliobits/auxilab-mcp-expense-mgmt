@@ -1,0 +1,53 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Length 891 >>
+stream
+BT /F1 10 Tf 12 TL 54 738 Td
+(EXPENSE REPORT - JUNE 2026) Tj T*
+(====================================================) Tj T*
+() Tj T*
+(Employee: emp-001) Tj T*
+() Tj T*
+(  Category                        Amount  Status) Tj T*
+(  --------------------------------------------------) Tj T*
+(  Meals & Entertainment            48.88  compliant) Tj T*
+(  Travel - Air                    320.00  compliant) Tj T*
+(  Travel - Hotel                  462.00  FLAGGED) Tj T*
+(  Software / Subscriptions        100.00  compliant) Tj T*
+(  Office Supplies                  28.50  FLAGGED) Tj T*
+(  --------------------------------------------------) Tj T*
+(  TOTAL                           959.38) Tj T*
+() Tj T*
+(  Flagged items:   2 of 5) Tj T*
+(  Amount at risk:  490.50 USD) Tj T*
+(  Compliance rate: 60%) Tj T*
+() Tj T*
+(The machine-readable version of this report is sample_report.json.) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000309 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1251
+%%EOF

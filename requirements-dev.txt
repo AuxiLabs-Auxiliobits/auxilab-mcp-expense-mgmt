@@ -1,0 +1,17 @@
+# Development dependencies — linting and tests.
+#
+#   pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8
+pytest-cov>=5
+ruff>=0.5
+
+# Property-based tests for the receipt parser. It is the one component built on stacked
+# regexes, and generated inputs have caught defects the example tests did not.
+hypothesis>=6
+
+# Regenerating README screenshots also needs `playwright` and `pillow`. They are not
+# listed here because they are a maintainer task, not something you need to run the
+# tests — see docs/capture_screenshots.py.

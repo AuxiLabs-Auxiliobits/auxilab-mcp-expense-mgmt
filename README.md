@@ -1,732 +1,838 @@
-# Expense Management Platform
+<div align="center">
 
-> Enterprise-grade AI-powered expense compliance — multi-role approval workflow, real-time policy checking, LangGraph finance approver, and an MCP server with 60+ tools for Claude Desktop.
+# Expense Compliance Tools
 
-**Status:** Release Candidate &nbsp;|&nbsp; **Tests:** 278 passing / 302 total &nbsp;|&nbsp; **Offline Demo:** No credentials required
+**Five offline tools that check expense claims against policy — and expose them to AI agents over MCP.**
 
----
+No cloud account. No API keys. No network. Clone it and it runs.
 
-## Table of Contents
+[![CI](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/actions/workflows/ci.yml/badge.svg?branch=mcp-mavericks)](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)](#testing)
+[![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![MCP](https://img.shields.io/badge/MCP-5%20tools-6E56CF)](#use-it-from-an-ai-agent-mcp)
+[![Offline](https://img.shields.io/badge/network%20calls-zero-informational)](#the-offline-guarantee)
 
-1. [Project Overview](#1-project-overview)
-2. [Architecture](#2-architecture)
-3. [Technology Stack](#3-technology-stack)
-4. [Prerequisites](#4-prerequisites)
-5. [Quick Start (Offline Demo)](#5-quick-start-offline-demo)
-6. [Installation](#6-installation)
-7. [Running the Backend](#7-running-the-backend)
-8. [Running the Frontend](#8-running-the-frontend)
-9. [Running the MCP Server](#9-running-the-mcp-server)
-10. [Authentication](#10-authentication)
-11. [Database](#11-database)
-12. [Testing](#12-testing)
-13. [Production Build](#13-production-build)
-14. [Deployment (Azure)](#14-deployment-azure)
-15. [Known Limitations](#15-known-limitations)
-16. [Future Enhancements](#16-future-enhancements)
-17. [Acknowledgements](#17-acknowledgements)
+[Quick start](#quick-start) · [The five tools](#the-five-tools) · [MCP setup](#use-it-from-an-ai-agent-mcp) · [Architecture](ARCHITECTURE.md) · [Limitations](#known-limitations) · [FAQ](#faq)
+
+*An AuxiLab MCP Hackathon project by team **MCP Mavericks** — Ankit Kumar · Parteek*
+
+<img src="docs/images/demo.gif" alt="All five tools running in the browser demo" width="820">
+
+</div>
 
 ---
 
-## 1. Project Overview
+## Quick start
 
-### Problem Statement
+```bash
+git clone https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt.git
+cd auxilab-mcp-expense-mgmt
+pip install -r requirements.txt && python app.py
+```
 
-Most companies approve expenses through email chains and spreadsheets. Policy violations surface late — or not at all. Reimbursement queues stall. Audit trails are incomplete.
+That opens **http://127.0.0.1:7860** with all five tools ready to use. There is no step four —
+no account to create, no key to paste, no `.env` to fill in, no database to migrate.
 
-### Business Value
+Prefer the terminal, or on a headless box?
 
-This platform automates the full expense compliance lifecycle — from employee submission through manager review, AI-assisted finance approval, and immutable audit logging — while remaining fully auditable because **deterministic code makes the decisions; the AI only advises**.
+```bash
+python cli.py          # runs all five tools and prints the results
+python mcp_server.py   # serves the five tools to an AI agent over MCP
+```
 
-### Key Features
-
-- **5 core compliance tools** — policy checker, receipt parser, category classifier, duplicate detector, report summariser — run fully offline with no AI model required
-- **4-role web portal** — Employee, Manager, Finance, Admin; built as a Next.js 15 app
-- **3-step approval workflow** — Employee → Manager (per-line-item) → AI Finance Approver → Finance human override
-- **LangGraph AI Finance Approver** — bounded LLM authority with mandatory policy citations, deterministic numeric caps, reproducible audit records
-- **60+ MCP tools** — ask Claude Desktop questions against your live expense data
-- **Pluggable authentication** — local password, Microsoft Entra ID, any OIDC IdP, or hybrid (all simultaneously)
-- **Agency-scoped RBAC** — managers and finance staff can only see their own agency's data
-- **Immutable audit log** — every state transition, decision, and override is logged
-- **Offline-capable** — SQLite database, local file storage, deterministic AI fallbacks; zero cloud required to run locally
-
-### Approval Flow
+<details>
+<summary><b>What <code>python cli.py</code> prints</b></summary>
 
 ```
-Employee → Manager review (per line item) → AI Finance Approver → Finance human (if escalated)
+------------------------------------------------------------------------
+  1. Policy Checker  (deterministic, no model)
+------------------------------------------------------------------------
+  [ok]   Compliant team lunch, receipt attached
+  [flag] Dinner over the $75 category cap
+          OVER_CATEGORY_LIMIT: 187.00 USD exceeds the 75 USD limit for 'Meals & Entertainment'
+  [flag] Prohibited category
+          PROHIBITED_CATEGORY: Category 'Client Entertainment' is not reimbursable
+  [flag] Receipt missing above the $25 threshold
+          RECEIPT_REQUIRED: A receipt is required for expenses over 25 USD
+  [flag] Entered amount disagrees with the receipt
+          AMOUNT_MISMATCH: Entered amount 50.00 does not match the parsed receipt total 47.50
+
+------------------------------------------------------------------------
+  2. Receipt Parser  (extraction + arithmetic verification)
+------------------------------------------------------------------------
+  Merchant   : NOODLE HOUSE
+  Timestamp  : 2026-06-01 12:47:00
+  Total      : 48.88
+  [ok]   Reconciles (items + tax == total, delta=0)
+  [flag] Same receipt with the total altered to 58.88 -> caught, off by 10.00
+
+------------------------------------------------------------------------
+  4. Duplicate Detector  (screened against local SQLite history)
+------------------------------------------------------------------------
+  Stored history for emp-002: 3 item(s)
+  [flag] Re-submitting the $42.50 Uber ride -> risk=high (score 1.0)
+          EXACT_KEY against li-0005 (2026-06-05 07:30:00, 42.50)
+  [ok]   A genuinely new $19.99 expense -> risk=none
 ```
+
+</details>
 
 ---
 
-## 2. Architecture
+## Why this exists
 
-```
-┌─────────────────────────────────┐     ┌──────────────────────────────┐
-│   Web Portal (Next.js 15)       │     │  MCP Server (Claude Desktop) │
-│   4 role portals + BFF proxy    │     │  60+ tools, 10 resources,    │
-│   NextAuth v5 (local/Entra/OIDC)│     │  8 prompts, 7 agent personas │
-└────────────┬────────────────────┘     └──────────────┬───────────────┘
-             │  Bearer JWT                              │  Bearer JWT
-             ▼                                         ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    FastAPI REST API (Python 3.12)                       │
-│  RBAC · Agency-scope · SoD · Audit log · Rate limiting · CORS          │
-│  Auth providers: db | entra | oidc | hybrid                            │
-│  Routers: auth, sheets, manager, finance, policy, admin, reports       │
-└──────────┬──────────────────────────────────┬─────────────────────────┘
-           │                                  │
-           ▼                                  ▼
-┌──────────────────────┐         ┌────────────────────────────────────┐
-│  Compliance Engine   │         │  Workers (LangGraph + Service Bus) │
-│  (expense-core)      │         │  Finance Approver · Doc Ingestion  │
-│  5 pure-Python tools │         │  RAG pipeline (Azure AI Search)    │
-│  No web framework    │         └───────────────────┬────────────────┘
-└──────────────────────┘                             │
-           │                                         │
-           ▼                                         ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│             Storage Layer                                             │
-│  SQLite (dev) / PostgreSQL (prod) · Azure Blob · Azure Service Bus   │
-│  Azure AI Foundry · Azure AI Search · Azure Document Intelligence    │
-└──────────────────────────────────────────────────────────────────────┘
-```
+Expense compliance is mostly arithmetic and rule-checking, and both should be **reproducible**.
+If a claim is rejected, someone will eventually ask why — and "the model said so" is not an answer
+that survives an audit.
 
-**Key design principle:** All business rules live in the API and compliance engine. The MCP server is a thin stateless proxy — it forwards bearer tokens so the API enforces all auth, RBAC, and audit.
+So the split here is deliberate:
 
----
+- **Rules and arithmetic are plain Python.** The policy checker, the duplicate detector, and every
+  number in the report summariser are deterministic. Same input, same verdict, forever.
+- **A language model is optional, and only ever does language.** It can phrase a summary or read an
+  awkward receipt layout, but it is handed the finished figures as facts. It cannot change a total,
+  invent a category outside the enum, or make a receipt reconcile that doesn't.
 
-## 3. Technology Stack
+The practical payoff is that the whole thing runs offline with zero credentials — which is also what
+makes it easy to test, easy to embed, and easy to trust.
 
-| Layer | Technology |
+## Features
+
+|  | |
 |---|---|
-| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v3 |
-| **Auth (Frontend)** | NextAuth v5 (Credentials, Microsoft Entra ID, Keycloak/OIDC) |
-| **Backend API** | FastAPI 0.137, SQLModel, Alembic, Uvicorn |
-| **Compliance Engine** | Pure Python 3.12, Pydantic v2 |
-| **AI Finance Approver** | LangGraph 1.2, Azure AI Foundry (GPT-4o) |
-| **MCP Server** | MCP Python SDK 1.27, FastMCP |
-| **Database** | SQLite (dev) / PostgreSQL 16 (prod) |
-| **Auth (Backend)** | PyJWT, argon2-cffi, slowapi |
-| **Azure Services** | Container Apps, AI Foundry, AI Search, Document Intelligence, Blob Storage, Service Bus, Key Vault |
-| **Infrastructure** | Azure Bicep, GitHub Actions (OIDC federated auth, no stored secrets) |
-| **Testing** | pytest, pytest-asyncio, Playwright |
+| **Zero setup** | No account, no key, no `.env`, no Docker. `pip install` then run. |
+| **Fully offline** | No outbound network call anywhere in the package — [enforced by a test](#the-offline-guarantee). |
+| **Four dependencies** | `pydantic`, `mcp`, `gradio`, `pypdf` — three if you skip the browser demo. Prebuilt wheels on every major platform, so no compiler is needed. |
+| **Exact arithmetic** | Money is `Decimal` end to end. No float drift, ever. |
+| **MCP-native** | Five tools with fully described, typed schemas. Ready for Claude Desktop. |
+| **Local persistence** | SQLite via the standard library. Created and seeded on first run. |
+| **Bring your own policy** | Rules are JSON you version in git and diff in a pull request. |
+| **Bring your own model** | Any object with a `complete()` method. No provider SDK shipped. |
+| **Well tested** | 96% coverage across Python 3.11, 3.12 and 3.13. |
 
 ---
 
-## 4. Prerequisites
+## The five tools
 
-| Requirement | Minimum Version | Notes |
-|---|---|---|
-| Python | 3.12 | Required for all backend packages |
-| Node.js | 18.x | Required for the web portal only |
-| npm | 9.x | Or pnpm 8.x |
-| Git | Any | |
-| PostgreSQL | 16 | Production only; SQLite used locally |
-| Docker | 24+ | For local Postgres/Redis parity (optional) |
+| # | Tool | What it does | Uses a model? |
+|---|------|--------------|---------------|
+| 1 | **Policy Checker** | Validates one expense against caps, prohibited categories, receipt rules and the claim window | Never |
+| 2 | **Receipt Parser** | Extracts merchant, total, tax and line items — then re-checks the arithmetic | Optional |
+| 3 | **Category Classifier** | Sorts an expense into one of eight categories with a confidence score | Optional |
+| 4 | **Duplicate Detector** | Screens a claim against previously seen ones | Never |
+| 5 | **Report Summariser** | Aggregates spend, violations and a compliance rate, with a narrative | Optional (prose only) |
+
+### 1. Policy Checker
+
+<img src="docs/images/policy-checker.png" alt="Policy Checker flagging an over-cap dinner" width="820">
+
+Returns a status, the specific violations, and what the caller should do about it.
+
+```python
+from datetime import date
+from decimal import Decimal
+from compliance_tools import check_policy, load_policy
+from compliance_tools.schemas import Category, LineItemInput
+
+result = check_policy(
+    LineItemInput(
+        employee_id="emp-001",
+        category=Category.MEALS_ENTERTAINMENT,
+        amount=Decimal("187.00"),
+        merchant="The Chophouse",
+        expense_date=date.today(),
+        has_receipt=True,
+    ),
+    load_policy(),
+)
+```
+
+```python
+PolicyResult(
+    status=<PolicyCheckStatus.FAIL: 'fail'>,
+    violations=[
+        PolicyViolation(
+            code='OVER_CATEGORY_LIMIT',
+            message="187.00 USD exceeds the 75 USD limit for 'Meals & Entertainment'",
+            field='amount',
+        )
+    ],
+    recommended_action=<RecommendedAction.RETURN_TO_EMPLOYEE: 'return_to_employee'>,
+)
+```
+
+Every rule it applies:
+
+| Code | Fires when |
+|------|-----------|
+| `NON_POSITIVE_AMOUNT` | Amount is zero or negative |
+| `FUTURE_DATE` | The expense is dated in the future |
+| `EXPENSE_TOO_OLD` | The expense predates the claim window (default 90 days) |
+| `PROHIBITED_CATEGORY` | The category is never reimbursable |
+| `OVER_CATEGORY_LIMIT` | The amount exceeds that category's cap |
+| `RECEIPT_REQUIRED` | Over the receipt threshold with no receipt attached |
+| `AMOUNT_MISMATCH` | The claimed amount disagrees with the parsed receipt total |
+
+### 2. Receipt Parser
+
+<img src="docs/images/receipt-parser.png" alt="Receipt Parser reconciling a restaurant receipt" width="820">
+
+The interesting output is `reconciles`. It is **always recomputed** from the extracted line items —
+never taken from whatever produced them.
+
+```python
+from compliance_tools import parse_receipt
+
+parse_receipt("Marriott Hotels, 2 nights @ $210, Tax $42, Total $462")
+```
+
+```python
+ReceiptParseResult(
+    merchant="Marriott Hotels",
+    total=Decimal("462"),
+    tax=Decimal("42"),
+    line_items=[ParsedLineItem(description="2 nights @ $210", amount=Decimal("420"))],
+    reconciles=True,
+    delta=Decimal("0"),
+)
+```
+
+Change the total to `$472` and you get `reconciles=False, delta=Decimal('10')`. That is the whole
+point of the tool: a receipt whose parts don't add up to its total gets caught, no matter how
+convincing the document looks.
+
+It reads `.txt`, `.text`, `.md` and `.pdf` from disk too:
+
+```python
+from compliance_tools import parse_receipt_file
+
+parse_receipt_file("demo/sample_receipt.pdf")
+```
+
+### 3. Category Classifier
+
+<img src="docs/images/category-classifier.png" alt="Category Classifier assigning Travel - Ground" width="820">
+
+```python
+from compliance_tools import classify_category
+
+classify_category("Airport transfer", "Uber")
+# CategoryResult(category=<Category.TRAVEL_GROUND>, confidence=0.94, rationale="Matched keyword 'uber'")
+```
+
+The eight categories are fixed: `Meals & Entertainment`, `Travel - Air`, `Travel - Hotel`,
+`Travel - Ground`, `Office Supplies`, `Software / Subscriptions`, `Client Entertainment`, `Other`.
+A confidence below `0.5` means nothing matched and it fell back to `Other` — worth routing to a human.
+
+### 4. Duplicate Detector
+
+<img src="docs/images/duplicate-detector.png" alt="Duplicate Detector finding an exact-key match" width="820">
+
+An expense is identified by `(employee, receipt timestamp, total)`.
+
+```python
+from datetime import datetime
+from decimal import Decimal
+from compliance_tools import detect_duplicates
+from compliance_tools.schemas import CandidateLineItem
+from local_db import get_store
+
+candidate = CandidateLineItem(
+    employee_id="emp-002",
+    receipt_datetime=datetime(2026, 6, 5, 7, 30),
+    total=Decimal("42.50"),
+)
+detect_duplicates(candidate, get_store().history_for("emp-002"))
+```
+
+```python
+DuplicateResult(
+    risk_score=1.0,
+    risk=<DuplicateRisk.HIGH: 'high'>,
+    matches=[DuplicateMatch(line_item_id='li-0005', reason='EXACT_KEY', total=Decimal('42.50'))],
+)
+```
+
+| Reason | Meaning | Risk |
+|--------|---------|------|
+| `EXACT_KEY` | Same employee, timestamp and total | HIGH |
+| `INTRA_SHEET` | The same item claimed twice in one submission | HIGH |
+| `NEAR_MATCH_WINDOW` | Same employee and total, timestamps within N days | MEDIUM |
+
+Differing totals never match, and cross-employee collisions are deliberately ignored — shared
+receipts and expense splitting need a human, not an automatic block.
+
+### 5. Report Summariser
+
+<img src="docs/images/report-summariser.png" alt="Report Summariser aggregating spend by category" width="820">
+
+```python
+from decimal import Decimal
+from compliance_tools import summarise_report
+from compliance_tools.schemas import Category, SummaryLineItem
+
+summarise_report(
+    [
+        SummaryLineItem(
+            category=Category.TRAVEL_HOTEL, amount=Decimal("462.00"), is_compliant=False
+        ),
+        SummaryLineItem(category=Category.TRAVEL_AIR, amount=Decimal("320.00"), is_compliant=True),
+    ]
+)
+```
+
+```python
+ReportSummary(
+    total_by_category={<Category.TRAVEL_HOTEL>: Decimal('462.00'), <Category.TRAVEL_AIR>: Decimal('320.00')},
+    violation_count=1,
+    total_at_risk=Decimal('462.00'),
+    compliance_rate_pct=50.0,
+    narrative='Reviewed 2 line item(s) totalling 782.00. Highest spend category: Travel - Hotel. '
+              '1 item(s) flagged (462.00 at risk); compliance rate 50.0%.',
+)
+```
 
 ---
 
-## 5. Quick Start (Offline Demo)
+## Use it as a Python library
 
-No server, no database, no credentials needed. Runs the 5 compliance tools against synthetic data:
+`compliance_tools/` has no dependency on the MCP server, the demo, or the database — only
+`pydantic`. Import it straight into your own project:
+
+```python
+from compliance_tools import (
+    check_policy,
+    classify_category,
+    detect_duplicates,
+    parse_receipt,
+    summarise_report,
+)
+```
+
+## Use it from an AI agent (MCP)
 
 ```bash
-git clone https://github.com/Parteek-git2813/expense-management-mcp-server.git
-cd expense-management-mcp-server
-
-pip install -r requirements.txt
-python demo.py
+python mcp_server.py
 ```
 
-Sample output:
+Serves all five tools over stdio. No auth, no network, no cloud.
 
-```
---------------------------------------------------------------
-  Expense Management Platform -- Core Engine Demo
-  (offline mode: no Azure, no LLM credentials needed)
---------------------------------------------------------------
-
-[PASS]  Valid client lunch $45.00, receipt matches
-[FAIL]  Amount mismatch: entered $50.00, receipt says $47.50
-[FAIL]  Future-dated expense (date: 2025-01-01)
-
-  Receipt parsed: NOODLE HOUSE · $45.00 · reconciles ✓
-  Category: Meals & Entertainment (94% confidence)
-  Duplicate check: first submission → risk=none ✓
-  Report: $416.38 total · 75.0% compliance · 1 violation
-```
-
----
-
-## 6. Installation
-
-### Step 1 — Clone the repository
-
-```bash
-git clone https://github.com/Parteek-git2813/expense-management-mcp-server.git
-cd expense-management-mcp-server
-```
-
-### Step 2 — Install Python packages
-
-```bash
-# Install all workspace packages (core-engine + api + mcp-server) in editable mode
-pip install -r requirements.txt
-
-# Optional: include workers (LangGraph AI approver)
-pip install -e ./workers
-```
-
-### Step 3 — Configure the backend
-
-```bash
-cd api
-cp .env.example .env
-# Edit .env if needed — defaults work for SQLite local dev
-```
-
-### Step 4 — Install frontend packages
-
-```bash
-cd frontend
-npm install
-cp .env.example .env.local
-# AUTH_SECRET is required — generate one:
-#   npx auth secret
-```
-
-### Step 5 — Configure the MCP server (optional)
-
-```bash
-cd mcp-server
-cp .env.example .env
-# EXPENSE_API_URL=http://localhost:8000 (default, no change needed for local)
-```
-
----
-
-## 7. Running the Backend
-
-### Development
-
-```bash
-cd api
-uvicorn app.main:app --reload
-```
-
-Or from the repo root:
-
-```bash
-uvicorn api.app.main:app --reload --app-dir .
-```
-
-The API starts at **`http://localhost:8000`**
-
-| URL | Description |
-|---|---|
-| `http://localhost:8000/docs` | Swagger UI (interactive API explorer) |
-| `http://localhost:8000/redoc` | ReDoc documentation |
-| `http://localhost:8000/healthz` | Liveness probe |
-
-### Production
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-Or via Docker:
-
-```bash
-docker build -t expense-api ./api
-docker run -p 8000:8000 --env-file api/.env expense-api
-```
-
-### Demo login credentials (password: `demo`)
-
-| Email | Role |
-|---|---|
-| `employee@demo.local` | Employee |
-| `manager@demo.local` | Manager |
-| `finance@demo.local` | Finance |
-| `admin@demo.local` | Admin |
-| `agent@demo.local` | AI Finance Agent |
-
----
-
-## 8. Running the Frontend
-
-### Development
-
-```bash
-cd frontend
-npm run dev
-```
-
-Portal available at **`http://localhost:3000`**
-
-### Production build
-
-```bash
-cd frontend
-npm run build
-npm start
-```
-
-### Type checking
-
-```bash
-npm run typecheck   # runs tsc --noEmit
-npm run lint        # runs ESLint
-```
-
----
-
-## 9. Running the MCP Server
-
-The MCP server exposes the platform's full functionality to AI hosts (Claude Desktop, Cursor, VS Code, etc.) via the Model Context Protocol over stdio transport.
-
-### What it is
-
-A **stateless stdio MCP server** with:
-- **60 tools** — authentication, expense management, receipts, manager approvals, finance review, dashboards, admin, and 5 offline compliance engine tools
-- **10 resources** — role-scoped data snapshots (profile, expenses, receipts, history, queues, dashboard, directory, activity)
-- **8 workflow prompts** — summarize, explain rejection, approval briefing, finance report, find duplicates, audit trail, policy violations
-- **7 domain agent personas** — Employee, Manager, Finance, Admin, Policy, Audit, Reporting
-- **1 orchestrator prompt** — routes user intent to the right specialist agent
-
-### Architecture
-
-```
-AI Host (Claude Desktop / Cursor / VS Code)
-    ↓ stdio (MCP protocol)
-expense_mcp (FastMCP)
-    ↓ httpx with Bearer token
-FastAPI backend (enforces JWT, RBAC, audit)
-    ↓
-Database / Azure services
-```
-
-The MCP server adds **no business logic** — it forwards tokens and the API enforces everything.
-
-### Installation
-
-```bash
-cd mcp-server
-pip install -e .
-# or: pip install -e ./core-engine && pip install -e ./mcp-server
-```
-
-### Running manually
-
-```bash
-# Start the backend first
-uvicorn api.app.main:app --reload
-
-# Then run the MCP server
-python -m expense_mcp
-# or: auxilab-mcp-expense-mgmt
-```
-
-### Environment variables
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `EXPENSE_API_URL` | `http://localhost:8000` | No | FastAPI backend base URL |
-| `EXPENSE_API_TIMEOUT` | `30` | No | Per-request timeout (seconds) |
-| `EXPENSE_API_MAX_RETRIES` | `2` | No | Retries for transient GET failures |
-| `EXPENSE_API_TOKEN` | — | No | Bootstrap JWT; leave blank and use `login` tool instead |
-| `AZURE_FOUNDRY_ENDPOINT` | — | No | For LLM engine tools only (`use_llm=True`) |
-| `AZURE_FOUNDRY_DEPLOYMENT` | — | No | Azure Foundry deployment name |
-
-### Connecting Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+For **Claude Desktop**, add this to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "expense-mgmt": {
+    "expense-compliance": {
       "command": "python",
-      "args": ["-m", "expense_mcp"],
-      "env": {
-        "EXPENSE_API_URL": "http://localhost:8000",
-        "EXPENSE_API_TOKEN": "<your-jwt-here-or-omit-to-use-login-tool>"
-      }
+      "args": ["/absolute/path/to/auxilab-mcp-expense-mgmt/mcp_server.py"]
     }
   }
 }
 ```
 
-Without `EXPENSE_API_TOKEN`, ask Claude to log in: *"Log in as finance@demo.local with password demo"*
+Two of the tools read the local database so the agent doesn't have to remember anything:
 
-### Connecting Cursor
+- `duplicate_detector` compares against stored history by default — just give it an employee and a total.
+- `report_summariser` aggregates stored items when you don't pass any.
 
-Add to `.cursor/mcp.json` in your project:
+Optional environment variables — **all of them optional, every one has a working default**:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `EXPENSE_DB_PATH` | `local_db/sqlite.db` | Where the database lives |
+| `EXPENSE_POLICY_PATH` | packaged `baseline_policy.json` | Use a custom policy |
+| `EXPENSE_RECEIPT_DIR` | the working directory | Directory `receipt_parser` may read from; `*` removes the limit |
+| `EXPENSE_PERSIST` | `1` | Set to `0` to stop recording tool runs |
+| `EXPENSE_LOG_LEVEL` | `INFO` | Server log verbosity |
+
+### A note on file access
+
+`receipt_parser` accepts a `file_path`, and **reads are sandboxed by default**. The server
+runs with your privileges, and the caller is usually a language model acting on text it was
+handed — so without a boundary a crafted tool call could ask for any file you can read and
+get the contents back in the result.
+
+Three limits apply out of the box:
+
+- **Only the working directory.** Paths are fully resolved before the check, so `../` and
+  symlinks cannot escape it.
+- **Only `.txt`, `.text`, `.md` and `.pdf`.** Checked before the file is opened.
+- **Nothing over 10 MB.**
+
+The working directory is the boundary because it is one your MCP client already controls —
+`cwd` is a standard field in a server definition:
 
 ```json
 {
   "mcpServers": {
-    "expense-mgmt": {
+    "expense-compliance": {
       "command": "python",
-      "args": ["-m", "expense_mcp"],
-      "env": {
-        "EXPENSE_API_URL": "http://localhost:8000"
-      }
+      "args": ["/absolute/path/to/mcp_server.py"],
+      "cwd": "/home/you/receipts"
     }
   }
 }
 ```
 
-### Connecting VS Code (Copilot)
+To put the sandbox somewhere other than the working directory, set `EXPENSE_RECEIPT_DIR`.
+To remove it entirely — restoring pre-1.1 behaviour — set `EXPENSE_RECEIPT_DIR=*`.
 
-Add to `.vscode/mcp.json`:
+A refusal names the resolved path, the active root, and how to change it. Nothing else in
+the server touches the filesystem, opens a socket, or reads a credential.
+
+---
+
+## Bring your own policy
+
+A policy is JSON — no code, no DSL. Version it in git and diff it in a pull request.
 
 ```json
 {
-  "servers": {
-    "expense-mgmt": {
-      "command": "python",
-      "args": ["-m", "expense_mcp"],
-      "env": {
-        "EXPENSE_API_URL": "http://localhost:8000"
-      }
-    }
-  }
+  "currency": "USD",
+  "prohibited_categories": ["Client Entertainment"],
+  "category_limits": {
+    "Meals & Entertainment": 75,
+    "Travel - Hotel": 250
+  },
+  "receipt_required_over": 25,
+  "max_expense_age_days": 90,
+  "duplicate_near_match_days": 3,
+  "cap_boundary": "inclusive"
 }
 ```
 
-### Example MCP queries
+```python
+from compliance_tools import load_policy
 
-Once connected, ask your AI:
+policy = load_policy("my-company-policy.json")
+```
 
-- *"Show me my pending expense sheets"*
-- *"Is a $45 lunch at Noodle House policy-compliant?"*
-- *"List all sheets waiting for finance approval"*
-- *"Approve all line items on sheet EXP-001"*
-- *"Generate a finance report for June 2025"*
-- *"Find any duplicate expense submissions"*
+`cap_boundary` decides whether an expense of exactly the cap passes (`inclusive`) or fails
+(`exclusive`). Set `receipt_required_over` or `max_expense_age_days` to `null` to switch those rules
+off. A worked example lives in [demo/sample_policy.json](demo/sample_policy.json).
 
-### Tool categories
+## Bring your own model
 
-| Category | Count | Description |
-|---|---|---|
-| Authentication | 3 | `login`, `whoami`, `logout` |
-| Expense Management | 13 | Create, edit, submit, search, withdraw drafts |
-| Receipts | 4 | List, upload, download, metadata |
-| Manager Approvals | 5 | Queue, approve/reject line items, return to employee |
-| Finance | 8 | Review queue, decisions, overrides, audit, policies |
-| Dashboard | 3 | KPIs, spend by category, finance metrics |
-| Admin | 8 | Agencies + users CRUD |
-| Users & Audit | 5 | Directory, roles, activity trail |
-| Policy Assistant | 1 | RAG Q&A against agency policy |
-| Compliance Engine | 5 | Policy check, receipt parse, classify, duplicate detect, summarise |
-| Agent Routing | 1 | Deterministic intent router |
-| System | 2 | Health check, value sets |
-| Notifications | 2 | List, mark read |
+There is no model SDK in this repository, and there doesn't need to be. Any object with a
+`complete()` method satisfies the `LLMGateway` protocol:
+
+```python
+class MyProvider:
+    def complete(self, messages, *, temperature=0.0, max_tokens=1024) -> str:
+        return my_client.chat([{"role": m.role, "content": m.content} for m in messages])
+
+    @property
+    def model_version(self) -> str:
+        return "my-model-1"
+
+
+parse_receipt(text, llm=MyProvider())
+```
+
+Three tools accept one: `parse_receipt`, `classify_category`, `summarise_report`. Each validates
+whatever comes back and falls through to its deterministic path if the response is unusable — so
+adding a model can improve results but cannot break correctness.
 
 ---
 
-## 10. Authentication
+## The local database
 
-### Local email/password (default)
+SQLite via the standard library. No ORM, no migrations, no server. The database is created
+and seeded the first time anything asks for it, so a fresh clone has data to work with immediately.
 
-Set `APP_AUTH_PROVIDER=db` in `api/.env`. Demo users are seeded automatically in dev mode.
+```python
+from local_db import get_store
 
-### Microsoft Entra ID
+store = get_store()
+store.stats()
+# {'line_items': 6, 'employees': 2, 'analyses': 0,
+#  'total_amount': Decimal('1015.88'), 'path': '.../local_db/sqlite.db'}
 
-```env
-APP_AUTH_PROVIDER=entra
-APP_ENTRA_TENANT_ID=<your-tenant-id>
-APP_ENTRA_AUDIENCE=<your-api-client-id>
+store.add_line_item(
+    employee_id="emp-003",
+    merchant="Blue Bottle",
+    amount="6.50",
+    expense_date="2026-06-10",
+)
+store.history_for("emp-003")  # feeds the duplicate detector
+store.recent_analyses()  # audit trail of every tool run
 ```
 
-The frontend also needs:
+Two tables: `line_items` and `analyses`. Money is stored as **TEXT**, not `REAL` — SQLite has no
+decimal type, and round-tripping `48.88` through a float is how reconciliation bugs start.
 
-```env
-AUTH_MICROSOFT_ENTRA_ID_ID=<client-id>
-AUTH_MICROSOFT_ENTRA_ID_SECRET=<client-secret>
-AUTH_MICROSOFT_ENTRA_ID_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
-```
+Where the file lives:
 
-### Hybrid mode (local + Entra simultaneously)
-
-```env
-APP_AUTH_PROVIDER=hybrid
-```
-
-Users with `source=azure` use Entra; all others use local password. Tokens are distinguished by algorithm (HS256 = local, RS256 = Entra).
-
-### Forgot password
-
-1. POST `http://localhost:8000/auth/forgot-password` with `{ "email": "..." }`
-2. Check terminal (dev, `APP_EMAIL_BACKEND=console`) or email inbox (prod, SMTP)
-3. Follow the reset link (valid for 24 hours)
-
-### Role-based access
-
-| Role | Capabilities |
+| How you're running it | Default location |
 |---|---|
-| `employee` | Create, edit, submit, withdraw own sheets; view own activity |
-| `manager` | Review own-agency sheets; approve/reject/return line items (SoD enforced) |
-| `finance` | View org-wide sheets; resolve routed sheets; override AI decisions; publish policies |
-| `admin` | Manage agencies and users; view all data; run escalation sweep |
+| Cloned repository (the normal case) | `local_db/sqlite.db` |
+| `pip install`ed | `%LOCALAPPDATA%\expense-compliance\` or `~/.local/share/expense-compliance/` |
+| `EXPENSE_DB_PATH` set | wherever you point it |
+
+The binary is gitignored on purpose — it is generated state, and a `.db` in version control means
+diff noise and merge conflicts for no benefit. Delete it any time; it rebuilds and reseeds.
+
+[ARCHITECTURE.md](ARCHITECTURE.md#why-sqlite-is-auto-created-and-seeded) explains the reasoning
+in full.
 
 ---
 
-## 11. Database
+## Architecture
 
-### Local development (SQLite, default)
+```mermaid
+flowchart TD
+    subgraph entry ["Entry points"]
+        A["app.py<br/><i>Gradio UI</i>"]
+        C["cli.py<br/><i>terminal</i>"]
+        M["mcp_server.py<br/><i>5 MCP tools</i>"]
+    end
 
-SQLite is the default — zero setup required. The DB file is created at `expense.db` in the repo root.
+    subgraph engine ["compliance_tools/ — depends on pydantic, nothing else"]
+        T1["policy_checker"]
+        T2["receipt_parser"]
+        T3["category_classifier"]
+        T4["duplicate_detector"]
+        T5["report_summariser"]
+        S["schemas · policy · llm (Protocol)"]
+    end
 
-```bash
-# Start fresh (delete the DB and let it be re-created with demo data)
-rm expense.db
-cd api && uvicorn app.main:app --reload
+    subgraph storage ["local_db/ — stdlib sqlite3"]
+        DB[("line_items<br/>analyses")]
+    end
+
+    A --> engine
+    C --> engine
+    M --> engine
+    A --> storage
+    C --> storage
+    M --> storage
+    engine -.->|"history injected<br/>by callers, never imported"| storage
+
+    style engine fill:#f6f8fa,stroke:#6E56CF,stroke-width:2px
+    style storage fill:#f6f8fa,stroke:#57606a
+    style entry fill:#f6f8fa,stroke:#57606a
 ```
 
-### PostgreSQL (production)
+Three properties worth keeping if you extend this:
 
-```bash
-# Start local Postgres via Docker Compose
-docker compose up -d
+1. **`compliance_tools/` depends on nothing but pydantic.** Not the database, not MCP, not Gradio.
+   That is what makes it embeddable and what keeps the tests fast.
+2. **Persistence is injected, never imported.** The duplicate detector takes history as an argument.
+   Callers decide where it comes from — SQLite, your own database, or a literal list.
+3. **The model seam is a Protocol, not a base class.** No SDK, no registration, no inheritance.
 
-# Set the connection string
-export APP_DATABASE_URL=postgresql+psycopg://expense:expense@localhost:5432/expense
-```
-
-### Migrations (Alembic)
-
-```bash
-cd api
-
-# Apply all pending migrations
-alembic upgrade head
-
-# Create a new migration after a model change
-alembic revision --autogenerate -m "describe the change"
-
-# Show current revision
-alembic current
-
-# Downgrade one step
-alembic downgrade -1
-```
-
-### Seed demo data
-
-Demo data is seeded automatically in dev mode (`APP_SEED_DEMO_DATA=true`, `APP_ENVIRONMENT=dev`). To reseed, delete the database and restart.
+[ARCHITECTURE.md](ARCHITECTURE.md) explains the reasoning behind these and every other design
+decision — the determinism boundary, why there are exactly five MCP tools, why the enterprise code
+is isolated rather than deleted.
 
 ---
 
-## 12. Running Tests
+## Project layout
 
-> **302 automated tests, 278 passing.** The submission requirement of 3+ meaningful
-> tests is exceeded by 90×. See [`docs/TESTING.md`](docs/TESTING.md) for the full
-> inventory, test descriptions, synthetic data, and CI/CD details.
-
-### Prerequisites (one-time)
-
-```bash
-pip install -e ./core-engine[dev]
-pip install -e ./api[dev]
-pip install -e ./workers[dev]
-pip install -e ./mcp-server[dev]
 ```
-
-No Azure credentials, no Docker, no live database — all suites run fully offline.
-
-### Backend — Compliance Engine
-
-```bash
-cd core-engine && pytest -q
-```
-
-9 acceptance tests covering the §20.E contract: meal caps, receipt reconciliation,
-category classification, duplicate detection, and policy version pinning.
-
-### Backend — REST API
-
-```bash
-cd api && pytest -q
-```
-
-208 integration tests (FastAPI + SQLite + seeded demo data). Covers:
-authentication, RBAC, full expense lifecycle, malware scanning, AI assistant,
-policy documents, reports, notifications, and OIDC federation.
-
-### Backend — AI Workers
-
-```bash
-cd workers && pytest -q
-```
-
-14 tests: LangGraph finance approver (auto-approve/reject/route-to-human),
-document ingestion pipeline, finance queue consumer.
-
-### MCP Server
-
-```bash
-cd mcp-server && pytest -q
-```
-
-71 tests: all 5 compliance tool contracts, 60+ API adapters, agent registry,
-retry policy, correlation IDs, token safety, and full-coverage API mapping.
-
-### Frontend — type safety
-
-```bash
-cd frontend && npm install
-npm run typecheck   # tsc --noEmit
-npm run lint        # ESLint
-npm run build       # full production Next.js build
-```
-
-### Run a single test file or test
-
-```bash
-cd api && pytest tests/test_auth.py -v
-cd api && pytest tests/test_malware_scan.py -v
-cd api && pytest tests/test_auth.py::test_login_and_me -v
-```
-
-### Run everything (sequential)
-
-```bash
-cd core-engine && pytest -q && \
-cd ../api      && pytest -q && \
-cd ../workers  && pytest -q && \
-cd ../mcp-server && pytest -q
-```
-
-### Test summary
-
-| Suite | Command | Tests | Passing |
-|---|---|---:|---:|
-| Compliance engine | `cd core-engine && pytest -q` | 9 | 9 |
-| REST API | `cd api && pytest -q` | 208 | 184 |
-| AI Workers | `cd workers && pytest -q` | 14 | 14 |
-| MCP Server | `cd mcp-server && pytest -q` | 71 | 71 |
-| **Total** | | **302** | **278** |
-
-The 24 API failures are pre-existing on the `feature/employee-api-integration-25-06`
-branch (password-reset wiring, finance-admin contract changes in progress).
-All 302 pass on `main`. None are regressions from the malware-scanning work.
-
-Full test documentation → [`docs/TESTING.md`](docs/TESTING.md)
-
----
-
-## 13. Production Build
-
-### Backend
-
-```bash
-cd api
-# Build Docker image
-docker build -t expense-api:latest .
-
-# Run with env from file
-docker run -p 8000:8000 --env-file .env expense-api:latest
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm run build      # Next.js production build (includes TypeScript check)
-npm start          # Serve the production build locally
-```
-
-### Workers
-
-```bash
-# Finance approver worker
-docker build -t expense-workers:latest ./workers
-docker run --env-file workers/.env -e WORKER_CONSUMER=finance expense-workers:latest
-
-# Document ingestion worker
-docker run --env-file workers/.env -e WORKER_CONSUMER=ingestion expense-workers:latest
+.
+├── app.py                      Gradio demo — builds and launches the interface
+├── demo_handlers.py            the logic behind each tab, with no Gradio in it
+├── cli.py                      Terminal demo — no browser, no Gradio
+├── mcp_server.py               MCP server — exactly five tools, stdio
+│
+├── compliance_tools/           The engine. Only depends on pydantic.
+│   ├── policy_checker.py         1 · deterministic rule evaluation
+│   ├── receipt_parser.py         2 · assembly + arithmetic verification
+│   ├── receipt_lines.py             line classification (one kind per line)
+│   ├── money.py                     amounts, across locale conventions
+│   ├── category_classifier.py    3 · eight-category classification
+│   ├── duplicate_detector.py     4 · duplicate screening
+│   ├── report_summariser.py      5 · aggregation + narrative
+│   ├── schemas.py                typed I/O contracts (Decimal money)
+│   ├── policy.py                 policy model + JSON loader
+│   ├── llm.py                    optional model seam (Protocol)
+│   └── baseline_policy.json      the default ruleset
+│
+├── local_db/                   Local persistence
+│   ├── store.py                  ExpenseStore — stdlib sqlite3
+│   └── schema.sql                tables + indexes
+│
+├── demo/                       Sample documents
+│   ├── sample_receipt.txt/.pdf   a receipt that reconciles
+│   ├── sample_policy.json/.pdf   a worked policy
+│   ├── sample_report.json/.pdf   a worked report
+│   └── generate_samples.py       regenerates all of the above
+│
+├── docs/                       Screenshots and the script that captures them
+├── tests/                      96% coverage, 3 Python versions
+├── enterprise/                 archived enterprise implementation — isolated, not installed
+│
+├── ARCHITECTURE.md             why the design is the way it is
+├── CONTRIBUTING.md             how to work on it
+├── SECURITY.md                 threat model and reporting
+├── CHANGELOG.md                what changed and when
+└── DEPLOYMENT.md               enterprise deployment (archived)
 ```
 
 ---
 
-## 14. Deployment (Azure)
+## Development
 
-Infrastructure is fully defined in Bicep (`infra/`) and deployed via GitHub Actions (`deploy-dev.yml`).
+```bash
+pip install -r requirements-dev.txt
 
-### Required GitHub Secrets
+pytest                           # the test suite
+pytest --cov                     # with coverage (must stay ≥ 90%)
+ruff check . && ruff format .    # lint + format
+python demo/generate_samples.py  # regenerate demo assets
+```
 
-| Secret | Description |
+`make help` lists the same targets if you prefer make — though `make` is not installed by
+default on Windows, and every target is just a single command you can run directly.
+
+CI runs lint, format, an enterprise correctness gate, tests with coverage, a CLI smoke test, and a
+packaging job on Python 3.11, 3.12 and 3.13.
+
+### Testing
+
+96% line coverage, enforced in CI — the build fails below 90%. Beyond the per-tool tests, four
+suites exist to stop specific classes of regression:
+
+| Suite | Stops |
 |---|---|
-| `AZURE_CLIENT_ID` | App registration federated for OIDC (no stored secret) |
-| `AZURE_TENANT_ID` | Entra tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
-| `PG_ADMIN_PASSWORD` | PostgreSQL admin password |
+| `test_offline_guarantee.py` | Cloud dependencies creeping back in from `enterprise/` |
+| `test_mcp_server.py` | The tool surface growing past five, or a clock override reappearing |
+| `test_app.py` | The demo breaking — it launches the real server, because `build_ui()` succeeding does not mean `launch()` will |
+| `test_local_db.py` | Money precision loss, and an installed package writing into `site-packages` |
 
-### Deploy
+### The offline guarantee
 
-1. Set the four GitHub secrets above
-2. Go to Actions → Deploy (Dev) → Run workflow
+[tests/test_offline_guarantee.py](tests/test_offline_guarantee.py) parses the AST of every published
+file and fails the build if it finds an Azure/AWS/GCP import, a cloud SDK in `requirements.txt`, an
+`AZURE_*` environment variable, an auth token, or an HTTP client. Since `enterprise/` lives in the
+same repository, this is what stops it leaking back into the published package.
 
-The workflow deploys in order: Bicep infra → ACR images (api + workers) → DB migration → Container Apps rollout.
+### Regenerating screenshots
 
-See `docs/Deployment.md` for the full Azure deployment guide.
+```bash
+pip install playwright pillow
+python -m playwright install chromium
+python docs/capture_screenshots.py
+```
 
----
-
-## 15. Known Limitations
-
-1. **AI finance approver requires Azure AI Foundry** — without it, uncertain sheets are routed to a human reviewer. The offline fallback is fully functional.
-
-2. **Receipt OCR requires Azure Document Intelligence** — image/PDF receipts fall back to manual entry without it. Plain-text receipts parse offline.
-
-3. **Policy RAG requires Azure AI Search** — without it, the assistant searches uploaded documents directly. Less precise on large policy libraries but still functional.
-
-4. **SQLite for development only** — switch to PostgreSQL for production or load testing.
-
-5. **Email uses console logging in dev** — password reset links print to the terminal. Set real SMTP credentials to send emails.
-
-6. **No mobile layout** — the web portal is desktop-only.
-
-7. **nextauth v5 beta** — `next-auth@5.0.0-beta.31` is used; the API is stable for this use case but not a final release.
+Starts the real app against a throwaway database, drives each tab with a headless browser, and
+writes the PNGs and GIF in [docs/images/](docs/images/). Run it after any visible UI change.
 
 ---
 
-## 16. Future Enhancements
+## Known limitations
 
-- Mobile-responsive portal
-- Bulk expense import (CSV/Excel)
-- Multi-currency reporting with live FX rates
-- Custom spend caps per agency/category
-- Slack / Teams notification integration
-- Direct bank feed reconciliation
-- Multi-tenant SaaS deployment
-- Custom approval routing rules (beyond 3-step)
-- Expense forecasting and anomaly detection
+These are deliberate scope decisions, documented so nobody discovers them the hard way:
+
+- **The receipt parser reads text, not pixels.** It parses strings and PDFs that carry a text
+  layer. A scanned image or photo has no text layer and yields nothing — run OCR first and pass
+  the output in. It also never "corrects" characters: a misread `O` for `0` stays wrong, because
+  silently rewriting digits in a financial document would be worse than reporting a failure.
+- **Receipt labels are matched in English** — `Total`, `Subtotal`, `Tax`, `VAT`, card and cash
+  settlement words. Amounts in international formats (`1.234,56`, `1 234,56`, `1'234.56`) parse
+  correctly, but a receipt whose *labels* are in another language falls back to layout heuristics.
+- **A line starting with a totals keyword is a totals row.** `Total Recall DVD 10.00` is read as
+  a total, not a purchase. The looser alternative silently dropped real items, and a wrong total
+  is easier to notice than a missing line. The full list of parser trade-offs is in
+  [ARCHITECTURE.md](ARCHITECTURE.md#what-the-parser-deliberately-does-not-do).
+- **The category classifier is keyword-based.** Eight fixed categories; the confidence score is a
+  fixed heuristic, not a model probability. An unrecognised merchant lands in `Other` with low
+  confidence rather than a guess.
+- **Duplicate detection sees only its own database.** Exact and near matches are found within the
+  local SQLite store; expenses recorded in any other system are invisible to it.
+- **One currency per receipt.** Reconciliation assumes the amounts on a receipt share a single
+  currency; there is no FX conversion.
+- **The baseline policy is a demo default, not advice.** The caps in
+  [baseline_policy.json](compliance_tools/baseline_policy.json) are illustrative numbers for a
+  mid-market company. Replace them with your organisation's real policy
+  ([Bring your own policy](#bring-your-own-policy)); nothing here is tax or legal guidance.
 
 ---
 
-## 17. Acknowledgements
+## FAQ
 
-| Library | License | Used for |
-|---|---|---|
-| [FastAPI](https://github.com/tiangolo/fastapi) | MIT | REST API framework |
-| [SQLModel](https://github.com/tiangolo/sqlmodel) | MIT | Database ORM |
-| [Alembic](https://github.com/sqlalchemy/alembic) | MIT | Database migrations |
-| [Pydantic v2](https://github.com/pydantic/pydantic) | MIT | Data validation |
-| [Uvicorn](https://github.com/encode/uvicorn) | BSD-3 | ASGI server |
-| [PyJWT](https://github.com/jpadilla/pyjwt) | MIT | JWT authentication |
-| [argon2-cffi](https://github.com/hynek/argon2-cffi) | MIT | Password hashing |
-| [slowapi](https://github.com/laurentS/slowapi) | MIT | Rate limiting |
-| [LangGraph](https://github.com/langchain-ai/langgraph) | MIT | AI approver workflow |
-| [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | MIT | MCP server |
-| [Next.js](https://github.com/vercel/next.js) | MIT | Web portal |
-| [NextAuth v5](https://github.com/nextauthjs/next-auth) | ISC | Frontend authentication |
-| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | MIT | Styling |
-| [TanStack Query](https://github.com/TanStack/query) | MIT | Server state management |
-| [Radix UI](https://github.com/radix-ui/primitives) | MIT | UI primitives |
-| [OpenAI Python SDK](https://github.com/openai/openai-python) | MIT | Azure AI / OpenAI client |
-| [pytest](https://github.com/pytest-dev/pytest) | MIT | Test framework |
-| [Playwright](https://github.com/microsoft/playwright) | Apache-2.0 | E2E testing |
-| [Pillow](https://github.com/python-pillow/Pillow) | HPND | Image processing |
+<details>
+<summary><b>Does this send my expense data anywhere?</b></summary>
+
+No. There is no network code in the package at all — no HTTP client, no telemetry, no cloud SDK.
+A test parses every shipped file and fails the build if one appears. Your data stays in a local
+SQLite file you can delete at any time.
+</details>
+
+<details>
+<summary><b>Do I need an LLM API key?</b></summary>
+
+No. All five tools work with no model. Three of them can *optionally* use one to improve results —
+reading an awkward receipt layout, or phrasing a summary — but they validate whatever comes back and
+fall through to a deterministic path if it is unusable. No provider SDK ships with this project.
+</details>
+
+<details>
+<summary><b>Why only five tools when the MCP server it came from had 61?</b></summary>
+
+A tool list is a prompt. Every tool is described to the model on every call, so a large surface costs
+tokens and invites plausible-but-wrong choices. The other 56 were adapters over an authenticated REST
+API and cannot function without a backend, a bearer token and an RBAC context — none of which exist
+here. See [ARCHITECTURE.md](ARCHITECTURE.md#why-exactly-five-mcp-tools).
+</details>
+
+<details>
+<summary><b>Can I use my own expense policy?</b></summary>
+
+Yes — that is the intended use. A policy is a JSON file: per-category caps, prohibited categories,
+receipt thresholds, claim window. `load_policy("my-policy.json")`, or set `EXPENSE_POLICY_PATH` for
+the MCP server. See [Bring your own policy](#bring-your-own-policy).
+</details>
+
+<details>
+<summary><b>Can I use this as a library without the MCP server or the demo?</b></summary>
+
+Yes. `compliance_tools/` depends only on `pydantic` and imports nothing else in the project — not the
+database, not MCP, not Gradio. `pip install .` then `from compliance_tools import check_policy`.
+</details>
+
+<details>
+<summary><b>Is the receipt parser OCR?</b></summary>
+
+No. It works on text — either text you pass in, or text extracted from a PDF's text layer via
+`pypdf`. A scanned image with no text layer will not parse. Run your own OCR first and pass the
+result to `parse_receipt()`.
+</details>
+
+<details>
+<summary><b>What happened to the enterprise version?</b></summary>
+
+It is still here, in [enterprise/](enterprise/) — the multi-tenant platform these tools were
+extracted from. It is not installed, not imported, and not needed; a test fails the build if any of
+it leaks into the published package. See [DEPLOYMENT.md](DEPLOYMENT.md).
+</details>
+
+<details>
+<summary><b>Is it production ready?</b></summary>
+
+The code is: 96% covered, tested on three Python versions, deterministic where it matters. But it is
+a *component*, not a system — no auth, no multi-tenancy, no audit workflow, no UI for end users. Use
+it as an engine inside something that provides those, which is exactly what `enterprise/` does.
+</details>
+
+---
+
+## Troubleshooting
+
+<details>
+<summary><b><code>python app.py</code> falls back to the terminal demo</b></summary>
+
+Gradio failed to import. Run `pip install -r requirements.txt`. If it is installed and still failing,
+its `pandas` dependency may be blocked — on Windows this is usually an Application Control / Smart App
+Control policy. `python cli.py` and `python mcp_server.py` work regardless.
+</details>
+
+<details>
+<summary><b><code>ModuleNotFoundError: No module named 'compliance_tools'</code></b></summary>
+
+Run commands from the repository root, or `pip install -e .`.
+</details>
+
+<details>
+<summary><b>Port 7860 is already in use</b></summary>
+
+Another Gradio app is running. Stop it, or set `GRADIO_SERVER_PORT` to a free port.
+</details>
+
+<details>
+<summary><b>The duplicate detector finds nothing</b></summary>
+
+It compares against stored history for that *specific* `employee_id`. Check `get_store().stats()`,
+and remember totals must match exactly for any duplicate signal.
+</details>
+
+<details>
+<summary><b>A receipt won't reconcile</b></summary>
+
+That may well be correct — it means the numbers genuinely don't add up. Check `delta`, which gives
+the exact discrepancy.
+
+To see how the parser read the receipt, ask it:
+
+```python
+from compliance_tools.receipt_lines import scan
+
+for line in scan(receipt_text):
+    print(line)
+# [  0] merchant   'NOODLE HOUSE'
+# [  2] item       'Pad Thai (x2)          18.00' = 18.00
+# [  5] tax        'Tax (8.625%)            3.88' = 3.88
+# [  6] total      'Total                  48.88' = 48.88
+```
+
+Every line gets exactly one classification, so that output explains any result. The usual surprise
+is a purchase whose name *begins with* a totals keyword — `Total Recall DVD` is read as a totals
+row. A name that merely contains one (`Postcard`, `Cardamom Tea`, `Taxi Receipt Book`) is kept.
+</details>
+
+<details>
+<summary><b>Reading a PDF raises "needs pypdf"</b></summary>
+
+`pip install pypdf`. Plain text works without it.
+</details>
+
+<details>
+<summary><b>How do I reset everything?</b></summary>
+
+Delete the database file — it rebuilds and reseeds on the next run. Not sure where it is?
+`python -c "from local_db import get_store; print(get_store().path)"`.
+</details>
+
+---
+
+## Enterprise deployment
+
+The multi-tenant platform these tools were extracted from — a full backend with SSO, background
+workers, a document-retrieval pipeline and a web portal — is archived in
+**[enterprise/](enterprise/)**. It is not installed by `requirements.txt` and is not needed for
+anything above.
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+The standalone tool has no relationship to it: no shared configuration, no shared credentials, and a
+test suite that fails if any of it leaks back in.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome — including "the docs confused me", which is a real bug.
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — setup, style, tests, commit conventions, PR process
+- **[Report a bug or request a feature](https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/issues/new/choose)**
+- **[SECURITY.md](SECURITY.md)** — vulnerabilities go through a private advisory, not an issue
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — Contributor Covenant
+
+The short version: keep `compliance_tools/` dependency-free, keep money in `Decimal`, and add a test.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). This project follows
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html) and
+[Keep a Changelog](https://keepachangelog.com/).
+
+## Acknowledgements
+
+Built by team **MCP Mavericks** — **Ankit Kumar** and **Parteek** — for the AuxiLab MCP Hackathon.
+
+- [**Model Context Protocol**](https://modelcontextprotocol.io/) — the open standard that lets these
+  tools plug into any compatible AI client
+- [**Pydantic**](https://docs.pydantic.dev/) — the typed contracts at every boundary
+- [**Gradio**](https://www.gradio.app/) — the browser demo, in far less code than it looks
+- [**pypdf**](https://pypdf.readthedocs.io/) — pure-Python PDF text extraction
+- [**Ruff**](https://docs.astral.sh/ruff/) — formatting and linting in one fast tool
+- [**SQLite**](https://sqlite.org/) — a database that needs no server, no setup and no explanation
+- [**Keep a Changelog**](https://keepachangelog.com/) and
+  [**Contributor Covenant**](https://www.contributor-covenant.org/) — conventions worth adopting
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, sell it. Attribution appreciated, not required.

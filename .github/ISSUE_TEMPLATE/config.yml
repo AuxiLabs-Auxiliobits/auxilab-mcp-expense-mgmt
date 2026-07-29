@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/security/advisories/new
+    about: Report privately, not as a public issue. See SECURITY.md for the policy and threat model.
+
+  - name: Documentation
+    url: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt#readme
+    about: Quick start, the five tools with worked examples, MCP setup, FAQ and troubleshooting.
+
+  - name: Architecture and design decisions
+    url: https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/ARCHITECTURE.md
+    about: Why the database auto-creates, why there are exactly five MCP tools, why the enterprise code is isolated.
