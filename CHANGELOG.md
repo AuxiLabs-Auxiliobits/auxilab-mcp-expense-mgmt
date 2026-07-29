@@ -12,6 +12,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Known limitations** section in the README: text-not-pixels parsing, English label matching,
   totals-keyword precedence, keyword-based classification, local-only duplicate detection,
   single-currency reconciliation, and the demo nature of the baseline policy.
+- [`demo/mcp_e2e.py`](demo/mcp_e2e.py) — a dependency-free end-to-end check that spawns the MCP
+  server over stdio exactly as a client would, exercises all five tools with realistic inputs
+  (including a sandboxed file read of the new [`demo/test_receipt.txt`](demo/test_receipt.txt)),
+  and verifies every answer. `python demo/mcp_e2e.py` → 14 checks.
 
 ### Changed
 
