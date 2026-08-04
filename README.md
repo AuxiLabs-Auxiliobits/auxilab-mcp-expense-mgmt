@@ -156,3 +156,15 @@ MIT
 ## Setup
 1. Install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki
 2. Copy .env.example to .env and set your Tesseract path.
+
+
+---
+
+## Built By
+
+| Name | GitHub |
+|------|--------|
+| Itika Ghai | [@Itikaghai](https://github.com/Itikaghai) |
+| Kashish Aneja | [@KashishAbt](https://github.com/KashishAbt) |
+
+Built during the **AuxiLab Founding Hackathon** by [Auxiliobits Technologies](https://auxiliobits.com) · [AuxiLab Catalogue](https://auxiliobits.com/auxilab)
