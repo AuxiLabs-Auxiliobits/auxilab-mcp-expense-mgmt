@@ -836,3 +836,15 @@ Built by team **MCP Mavericks** — **Ankit Kumar** and **Parteek** — for the 
 ## License
 
 MIT — see [LICENSE](LICENSE). Use it, fork it, sell it. Attribution appreciated, not required.
+
+
+---
+
+## Built By
+
+| Name | GitHub |
+|------|--------|
+| Ankit Kumar | [@ankitkumar-dotcom](https://github.com/ankitkumar-dotcom) |
+| Parteek Kumar | [@Parteek-git2813](https://github.com/Parteek-git2813) |
+
+Built during the **AuxiLab Founding Hackathon** by [Auxiliobits Technologies](https://auxiliobits.com) · [AuxiLab Catalogue](https://auxiliobits.com/auxilab)
