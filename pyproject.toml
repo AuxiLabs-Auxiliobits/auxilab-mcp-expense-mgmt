@@ -46,7 +46,8 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.7,<3",
-    "mcp>=1.2",
+    # <2: mcp 2.0 moved FastMCP out of `mcp.server.fastmcp`. See requirements.txt.
+    "mcp>=1.2,<2",
     "pypdf>=4.2",
 ]
 
