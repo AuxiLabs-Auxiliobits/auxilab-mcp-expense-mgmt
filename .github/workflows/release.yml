@@ -1,0 +1,178 @@
+name: Release
+
+# Cutting a release:
+#   1. Bump `version` in pyproject.toml
+#   2. Move the [Unreleased] entries into a new section in CHANGELOG.md
+#   3. git tag v1.2.3 && git push origin v1.2.3
+#
+# Everything below is checks-then-publish. The validate job refuses to build if the tag,
+# pyproject and changelog disagree, so a mislabelled release cannot reach anyone.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to validate and build (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate version and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag, pyproject and changelog must agree
+        id: check
+        run: |
+          set -euo pipefail
+          RAW="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${RAW#v}"
+          echo "Releasing version: $VERSION"
+
+          # The version is single-sourced in compliance_tools/__init__.py; hatch reads it
+          # from there when building the wheel.
+          DECLARED=$(python -c "import re,pathlib; print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('compliance_tools/__init__.py').read_text()).group(1))")
+          if [ "$DECLARED" != "$VERSION" ]; then
+            echo "::error::Tag says $VERSION but compliance_tools/__init__.py says $DECLARED"
+            exit 1
+          fi
+
+          if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Extract the changelog section for this version
+        run: |
+          python - <<'PY' > release-notes.md
+          import os, pathlib, re
+          version = os.environ["VERSION"]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(
+              rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)",
+              text, re.S | re.M,
+          )
+          print((match.group(1) if match else "").strip())
+          PY
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
+
+  verify:
+    name: Full test suite must pass
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      GRADIO_ANALYTICS_ENABLED: "False"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check . && ruff format --check .
+      - run: python demo/generate_samples.py
+      - run: pytest --cov
+      - run: python cli.py
+
+  build:
+    name: Build distributions
+    needs: [validate, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+
+      - name: Check metadata
+        run: twine check dist/*
+
+      - name: Wheel installs and imports cleanly
+        run: |
+          pip install dist/*.whl
+          cd /tmp
+          python -c "import compliance_tools, local_db; print('version', compliance_tools.__version__)"
+
+      - name: Package version matches the tag
+        run: |
+          set -euo pipefail
+          INSTALLED=$(cd /tmp && python -c "import compliance_tools; print(compliance_tools.__version__)")
+          if [ "$INSTALLED" != "${{ needs.validate.outputs.version }}" ]; then
+            echo "::error::Built package reports $INSTALLED, expected ${{ needs.validate.outputs.version }}"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 90
+
+  publish:
+    name: Publish GitHub release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ needs.validate.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*
+          draft: false
+          prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
+
+  # Publishing to PyPI is intentionally left off until the project name is claimed.
+  # To enable: configure a Trusted Publisher on PyPI for this repository, then add
+  #
+  #   pypi:
+  #     needs: [validate, build]
+  #     runs-on: ubuntu-latest
+  #     environment: pypi
+  #     permissions:
+  #       id-token: write        # OIDC — no API token stored in the repository
+  #     steps:
+  #       - uses: actions/download-artifact@v4
+  #         with: { name: dist, path: dist }
+  #       - uses: pypa/gh-action-pypi-publish@release/v1

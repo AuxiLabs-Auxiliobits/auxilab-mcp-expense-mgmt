@@ -1,43 +1,70 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
 *.egg-info/
-.eggs/
-*.egg
-
-# Virtual environments
-.env
-.venv
-env/
+.venv/
 venv/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Testing
+dist/
+build/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
 .coverage
+coverage.xml
+junit.xml
 htmlcov/
-.tox/
 
-# Secrets — never commit these
-.env.local
-secrets.json
-*_secret*
-*_key*
+# Local database. Created and seeded automatically on first run — see local_db/store.py.
+# Deliberately not committed: it is generated state, and a binary in git would produce
+# diff noise and merge conflicts on every run.
+local_db/*.db
+local_db/*.db-shm
+local_db/*.db-wal
 
-# OS
+# Local uploads / scratch
+uploads/
+*.log
+
+# Gradio
+.gradio/
+flagged/
+
+# Node (enterprise/frontend)
+node_modules/
+.next/
+out/
+
+# Secrets — never commit.
+#
+# The standalone tool reads no .env at all: it has no required configuration, and the few
+# optional variables (EXPENSE_DB_PATH and friends) are read straight from the environment.
+# These rules exist for enterprise/, whose packages each ship a committed .env.example —
+# hence the negation.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+Expense-Management-Credentials.*
+
+# Office lock files
+~$*
+
+# Claude Code per-machine state (a shared .claude/settings.json is still committable)
+.claude/settings.local.json
+.claude/*.lock
+
+# Not published from this repo — kept local only.
+/enterprise/
+/DEPLOYMENT.md
+/api/
+/frontend/
+/policy_uploads/
+/receipt_uploads/
+
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# AuxiLab demo outputs
-demo_output/
-*.demo.json
+.idea/
+.vscode/

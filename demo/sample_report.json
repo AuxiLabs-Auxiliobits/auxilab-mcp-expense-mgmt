@@ -1,0 +1,27 @@
+[
+  {
+    "category": "Meals & Entertainment",
+    "amount": "48.88",
+    "is_compliant": true
+  },
+  {
+    "category": "Travel - Air",
+    "amount": "320.00",
+    "is_compliant": true
+  },
+  {
+    "category": "Travel - Hotel",
+    "amount": "462.00",
+    "is_compliant": false
+  },
+  {
+    "category": "Software / Subscriptions",
+    "amount": "100.00",
+    "is_compliant": true
+  },
+  {
+    "category": "Office Supplies",
+    "amount": "28.50",
+    "is_compliant": false
+  }
+]

@@ -1,20 +1,23 @@
-# ── Core dependencies ─────────────────────────────────────────────────────────
-# Add your dependencies here.
-# Example: anthropic>=0.25.0
+# Runtime dependencies — four packages, all installable from prebuilt wheels on every
+# major platform, so no toolchain is required. (Some of what they pull in transitively is
+# compiled — pydantic-core is Rust, and gradio brings numpy and pandas — but wheels mean
+# you never build it yourself.)
+#
+#   pip install -r requirements.txt
 
-# ── MCP SDK (all MCP server briefs) ──────────────────────────────────────────
-mcp>=1.0.0
+# Typed schemas and validation for every tool boundary.
+pydantic>=2.7,<3
 
-# ── Agent frameworks ──────────────────────────────────────────────────────────
-# langgraph>=0.1.0  # Uncomment if using LangGraph
+# Model Context Protocol server (mcp_server.py). Ships the FastMCP runtime.
+mcp>=1.2
 
-# ── Data handling ─────────────────────────────────────────────────────────────
-pandas>=2.0.0
-pydantic>=2.0.0
+# Browser demo (app.py). Drop this line if you only need the tools, the MCP
+# server, or cli.py — nothing else imports it, and app.py falls back to the
+# terminal demo when it is absent. Upper bound because Gradio majors move API:
+# 6.0 relocated Blocks(theme=...) to launch(), for instance.
+gradio>=5,<7
 
-# ── Demo UI ───────────────────────────────────────────────────────────────────
-gradio>=4.0.0
-
-# ── Testing ───────────────────────────────────────────────────────────────────
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
+# Reading .pdf receipts from the local filesystem. Optional: the tools work on
+# plain text without it, and receipt_parser raises a clear message if a PDF is
+# passed while it's missing.
+pypdf>=4.2

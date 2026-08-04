@@ -1,26 +1,156 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
-
 [project]
-name = "auxilab-mcp-expense-mgmt"
-version = "0.1.0"
-description = "MCP Server · Expense policy enforcement, receipt parsing, category classification, and duplicate claim detection"
+name = "expense-compliance-tools"
+# Single-sourced from compliance_tools/__init__.py so the package, the wheel metadata and
+# the release tag cannot drift apart. See [tool.hatch.version] below.
+dynamic = ["version"]
+description = "Five offline expense-compliance tools — policy checks, receipt reconciliation, duplicate detection — exposed to AI agents over MCP. No cloud, no credentials, no network."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
-keywords = ["agentic-ai", "mcp", "finance", "ap-automation", "auxiliobits"]
+requires-python = ">=3.11"
+authors = [{ name = "Ankit Kumar" }, { name = "Parteek" }]
+maintainers = [{ name = "Ankit Kumar" }, { name = "Parteek" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "expenses",
+    "expense-management",
+    "compliance",
+    "policy-engine",
+    "receipts",
+    "receipt-parsing",
+    "duplicate-detection",
+    "offline",
+    "local-first",
+    "sqlite",
+    "gradio",
+    "fintech",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
     "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.7,<3",
+    "mcp>=1.2",
+    "pypdf>=4.2",
 ]
 
 [project.urls]
 Homepage = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt"
-Organisation = "https://github.com/AuxiLabs-Auxiliobits"
-Website = "https://auxiliobits.com/auxilab"
+Documentation = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt#readme"
+Repository = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt"
+Changelog = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/CHANGELOG.md"
+Architecture = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/ARCHITECTURE.md"
+Issues = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/issues"
+Security = "https://github.com/AuxiLabs-Auxiliobits/auxilab-mcp-expense-mgmt/blob/mcp-mavericks/SECURITY.md"
+
+[project.optional-dependencies]
+demo = ["gradio>=5,<7"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5", "hypothesis>=6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "compliance_tools/__init__.py"
+
+# Only the two library packages are distributed. `app.py`, `cli.py` and `mcp_server.py`
+# are entry-point scripts you run from a clone — `python mcp_server.py` — not modules
+# anyone should import from site-packages.
+#
+# They are deliberately NOT force-included. Hatchling copies force-included files into
+# site-packages even for editable installs, and that copy shadows the source: after
+# `pip install -e .`, edits to mcp_server.py would be silently ignored. Shipping the
+# library and leaving the scripts in the checkout avoids the whole problem.
+[tool.hatch.build.targets.wheel]
+packages = ["compliance_tools", "local_db"]
+
+# Hatchling's default sdist is "everything git does not ignore", which here would mean
+# shipping all 450+ files of enterprise/ — an archived enterprise implementation, Word
+# documents and a Next.js frontend — plus ~1.7 MB of README screenshots, to anyone who
+# installs from source. That took the sdist to 2.8 MB against a 37 KB wheel.
+#
+# So the sdist is an explicit allowlist: the packages, their data, the entry-point
+# scripts, the test suite and the sample documents it reads, and the docs a package index
+# or a downstream packager would want.
+#
+# Every pattern is anchored with a leading "/". Without it `tests` also matches
+# `enterprise/api/tests`, and `README.md` matches `enterprise/README.md` — which is
+# exactly how 46 enterprise files survived the first attempt at this allowlist.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/compliance_tools",
+    "/local_db",
+    "/tests",
+    "/demo",
+    "/app.py",
+    "/demo_handlers.py",
+    "/cli.py",
+    "/mcp_server.py",
+    "/pyproject.toml",
+    "/requirements.txt",
+    "/requirements-dev.txt",
+    "/README.md",
+    "/LICENSE",
+    "/CHANGELOG.md",
+    "/ARCHITECTURE.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
+    "/CODE_OF_CONDUCT.md",
+]
+exclude = ["/enterprise"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# `enterprise/` is excluded from the style pass. It is archived reference code deployed
+# separately, each subpackage carries its own pyproject and tooling config, and restyling
+# 200+ files nobody is actively editing produces churn rather than maintainability.
+#
+# It is NOT unchecked: CI runs `ruff check enterprise --select F --isolated`, which
+# catches genuine defects (unused imports, dead locals, undefined names) while ignoring
+# style entirely. `--isolated` is needed because ruff would otherwise pick up the nested
+# per-package configs instead of this one. See `make lint-enterprise`.
+extend-exclude = ["enterprise"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning:compliance_tools.*", "error::DeprecationWarning:local_db.*"]
+
+[tool.coverage.run]
+source = ["compliance_tools", "local_db", "app", "cli", "mcp_server"]
+branch = true
+
+[tool.coverage.report]
+# The badge in the README quotes this number, so CI enforces it: coverage cannot quietly
+# rot below the figure the README advertises.
+fail_under = 90
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    'if __name__ == .__main__.:',
+]

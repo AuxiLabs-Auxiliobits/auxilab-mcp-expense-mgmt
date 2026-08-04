@@ -1,0 +1,78 @@
+name: Feature request
+description: Suggest a capability or improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before writing, two constraints worth knowing — they shape what is likely to be
+        accepted, and they are both enforced by tests:
+
+        - **`compliance_tools/` depends on `pydantic` and nothing else.** Proposals that
+          need a new runtime dependency there face a high bar.
+        - **The MCP server exposes exactly five tools.** A sixth needs a strong argument;
+          the small surface is a deliberate feature. See
+          [ARCHITECTURE.md](../blob/main/ARCHITECTURE.md#why-exactly-five-mcp-tools).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you are in, not the solution you have in mind.
+      placeholder: |
+        Our policy caps hotel spend per night rather than per expense, so a three-night
+        stay is flagged even when the nightly rate is within limits.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like it to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "do nothing" — sometimes that is the right answer.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: What would this touch?
+      multiple: true
+      options:
+        - A policy rule
+        - An existing tool's behaviour
+        - A new MCP tool
+        - The MCP schema or descriptions
+        - The browser demo
+        - The terminal demo
+        - The database layer
+        - Documentation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: This does not require the package to make a network call
+          required: true
+        - label: This does not require credentials or a cloud account
+          required: true
+        - label: I have read the relevant section of ARCHITECTURE.md
+          required: false
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Are you willing to help?
+      options:
+        - label: I would be willing to open a pull request for this
+          required: false

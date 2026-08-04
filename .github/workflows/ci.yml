@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main, mcp-mavericks]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes the previous run on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  # Gradio phones home on import unless told not to. The offline guarantee is the whole
+  # point of this project; CI should honour it too.
+  GRADIO_ANALYTICS_ENABLED: "False"
+
+jobs:
+  quality:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check . --output-format=github
+
+      - name: Format check
+        run: ruff format --check .
+
+      # Archived enterprise code is not restyled, but it is still checked for real defects:
+      # unused imports, dead locals, undefined names. `--isolated` bypasses the nested
+      # per-package configs so this root invocation actually applies.
+      - name: Lint enterprise for correctness only
+        run: ruff check enterprise --select F --isolated --output-format=github
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Regenerated rather than trusted: this proves demo/ is reproducible from source,
+      # and the test suite then parses the results.
+      - name: Generate demo samples
+        run: python demo/generate_samples.py
+
+      - name: Test with coverage
+        run: pytest --cov --cov-report=term --cov-report=xml --junitxml=junit.xml
+
+      - name: Smoke-test the CLI demo
+        run: python cli.py
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Python ${{ matrix.python-version }}"
+            echo
+            if [ -f coverage.xml ]; then
+              python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("coverage.xml").getroot()
+          rate = float(root.get("line-rate", 0)) * 100
+          branch = float(root.get("branch-rate", 0)) * 100
+          print(f"- **Line coverage:** {rate:.1f}%")
+          print(f"- **Branch coverage:** {branch:.1f}%")
+          PY
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            junit.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+  package:
+    name: Package installs cleanly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build twine
+          python -m build
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      # Installs the built wheel with no repository on sys.path. Catches packaging
+      # mistakes the test job cannot see — a data file left out of the wheel still loads
+      # fine when pytest is running from the source tree.
+      - name: Install the wheel
+        run: pip install dist/*.whl
+
+      - name: Imports and data files resolve outside the source tree
+        working-directory: /tmp
+        run: |
+          python -c "import compliance_tools, local_db; print('imports OK')"
+          python -c "from compliance_tools import load_policy; print('baseline_policy.json packaged:', load_policy().currency)"
+          python -c "from local_db import ExpenseStore; print('schema.sql packaged, rows:', ExpenseStore(':memory:').seed())"
+
+      # An installed package must never write into site-packages: it can be read-only,
+      # and it is the wrong home for user data.
+      - name: Installed database path is outside site-packages
+        working-directory: /tmp
+        run: |
+          python - <<'PY'
+          from local_db import DEFAULT_DB_PATH
+          print("default db path:", DEFAULT_DB_PATH)
+          assert "site-packages" not in str(DEFAULT_DB_PATH), DEFAULT_DB_PATH
+          PY
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14
