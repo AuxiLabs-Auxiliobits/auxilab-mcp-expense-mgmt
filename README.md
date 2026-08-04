@@ -840,11 +840,22 @@ MIT — see [LICENSE](LICENSE). Use it, fork it, sell it. Attribution appreciate
 
 ---
 
+---
+
 ## Built By
+
+### MCP Mavericks — Offline Expense Compliance Tools
 
 | Name | GitHub |
 |------|--------|
 | Ankit Kumar | [@ankitkumar-dotcom](https://github.com/ankitkumar-dotcom) |
 | Parteek Kumar | [@Parteek-git2813](https://github.com/Parteek-git2813) |
 
-Built during the **AuxiLab Founding Hackathon** by [Auxiliobits Technologies](https://auxiliobits.com) · [AuxiLab Catalogue](https://auxiliobits.com/auxilab)
+### AuxiMate — Travel Expense Management Tools
+
+| Name | GitHub |
+|------|--------|
+| Itika Ghai | [@Itikaghai](https://github.com/Itikaghai) |
+| Kashish Aneja | [@KashishAbt](https://github.com/KashishAbt) |
+
+Both teams built during the **AuxiLab Founding Hackathon** by [Auxiliobits Technologies](https://auxiliobits.com) · [AuxiLab Catalogue](https://auxiliobits.com/auxilab)
