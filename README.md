@@ -842,6 +842,8 @@ MIT — see [LICENSE](LICENSE). Use it, fork it, sell it. Attribution appreciate
 
 ---
 
+---
+
 ## Built By
 
 ### MCP Mavericks — Offline Expense Compliance Tools
