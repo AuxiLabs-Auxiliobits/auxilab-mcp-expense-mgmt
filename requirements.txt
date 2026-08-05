@@ -9,7 +9,12 @@
 pydantic>=2.7,<3
 
 # Model Context Protocol server (mcp_server.py). Ships the FastMCP runtime.
-mcp>=1.2
+#
+# Upper bound for the same reason as gradio below: majors move the API. mcp 2.0
+# relocated FastMCP out of `mcp.server.fastmcp`, which is the import mcp_server.py
+# makes, so an unbounded pin broke CI the day 2.0 was published. Lift this once
+# mcp_server.py is ported to the 2.x API.
+mcp>=1.2,<2
 
 # Browser demo (app.py). Drop this line if you only need the tools, the MCP
 # server, or cli.py — nothing else imports it, and app.py falls back to the
